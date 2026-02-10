@@ -1,0 +1,7 @@
+{
+    "video": "AkerBP 2",
+    "ground_truth_transcript": [],
+    "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+    "scene_annotations": [],
+    "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

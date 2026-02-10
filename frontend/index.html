@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Semantic Search</title>
+    <meta name="description" content="Search Videos">
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <!-- <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M14 7L19 2M19 2H15M19 2V6" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                    </svg> -->
+                    <h1>Video Semantic Search</h1>
+                </div>
+                <div class="stats" id="stats">
+                    <div class="stat-item">
+                        <span class="stat-value" id="videoCount">-</span>
+                        <span class="stat-label">Videos</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <span class="stat-value status-indicator" id="statusIndicator">●</span>
+                        <span class="stat-label" id="statusText">Connecting...</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Search Section -->
+            <section class="search-section">
+                <div class="search-container">
+                    <div class="search-input-wrapper">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        </svg>
+                        <input type="text" id="searchInput" class="search-input"
+                            placeholder="Search videos... (e.g., 'drilling techniques', 'Omega Alpha well')"
+                            autocomplete="on" />
+                        <button id="clearBtn" class="clear-btn" style="display: none;">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" />
+                            </svg>
+                        </button>
+                    </div>
+                    <!-- Image Upload Button -->
+                    <input type="file" id="imageFileInput" accept="image/*" style="display: none;" />
+                    <button id="imageUploadBtn" class="image-upload-btn" title="Search by image">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
+                            <path d="M3 16L8 11L13 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                            <path d="M14 14L17 11L21 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                    <button id="searchBtn" class="search-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <!-- <span>Search</span> -->
+                    </button>
+                </div>
+
+                <!-- Image Preview (shown when user selects an image) -->
+                <div id="imagePreviewArea" class="image-preview-area" style="display: none;">
+                    <div class="image-preview-card">
+                        <img id="imagePreviewImg" src="" alt="Search image preview" />
+                        <div class="image-preview-info">
+                            <span id="imagePreviewName" class="image-preview-name">image.jpg</span>
+                            <span class="image-preview-label">Image Search</span>
+                        </div>
+                        <button id="removeImageBtn" class="remove-image-btn" title="Remove image">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Search Options -->
+                <div class="search-options">
+                    <div class="option-group">
+                        <label for="limitSelect">Results:</label>
+                        <select id="limitSelect" class="select-input">
+                            <option value="5">5</option>
+                            <option value="10" selected>10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                    <div class="option-group">
+                        <label for="videoFilter">Video:</label>
+                        <select id="videoFilter" class="select-input">
+                            <option value="">All Videos</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Quick Search Examples -->
+                <div class="quick-searches">
+                    <span class="quick-label">Try:</span>
+                    <button class="quick-search-btn" data-query="drilling">drilling</button>
+                    <button class="quick-search-btn" data-query="well">well</button>
+                    <button class="quick-search-btn" data-query="techniques">techniques</button>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section" id="resultsSection" style="display: none;">
+                <div class="results-header">
+                    <h2 id="resultsTitle">Search Results</h2>
+                    <span class="results-count" id="resultsCount">0 results</span>
+                </div>
+                <div class="results-container" id="resultsContainer">
+                    <!-- Results will be inserted here -->
+                </div>
+            </section>
+
+            <!-- Loading State -->
+            <div class="loading-state" id="loadingState" style="display: none;">
+                <div class="loading-spinner"></div>
+                <p>Searching...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState">
+                <svg class="empty-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                </svg>
+                <h3>Found Results</h3>
+                <p>Enter a query to search through the database</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Video Player Modal -->
+    <div id="videoModal" class="video-modal" style="display: none;">
+        <div class="video-modal-overlay" id="videoModalOverlay"></div>
+        <div class="video-modal-content">
+            <div class="video-modal-header">
+                <div class="video-modal-title">
+                    <h3 id="videoModalTitle">Video Title</h3>
+                    <span id="videoModalTimestamp" class="video-modal-timestamp">00:00:00</span>
+                </div>
+                <div class="video-modal-actions">
+                    <button class="modal-action-btn" id="copyTimestampBtn" title="Copy timestamp">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2" />
+                            <path
+                                d="M5 15H4C2.89543 15 2 14.1046 2 13V4C2 2.89543 2.89543 2 4 2H13C14.1046 2 15 2.89543 15 4V5"
+                                stroke="currentColor" stroke-width="2" />
+                        </svg>
+                    </button>
+                    <button class="modal-close-btn" id="videoModalClose">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="video-container">
+                <video id="videoPlayer" controls preload="metadata">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            <div class="video-modal-info">
+                <p id="videoModalText" class="video-modal-text"></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

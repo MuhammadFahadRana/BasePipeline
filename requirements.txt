@@ -1,0 +1,39 @@
+# Existing requirements
+torch
+torchvision
+torchaudio
+whisper
+opencv-python
+scenedetect
+pillow
+moviepy
+transformers
+accelerate
+imageio-ffmpeg
+soundfile
+librosa
+
+# New database requirements
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
+pgvector>=0.2.4
+python-dotenv>=1.0.0
+
+# New API requirements
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+
+# New embedding requirements
+sentence-transformers>=2.2.2
+
+# Optional but recommended
+numpy
+pandas
+
+# Semantic Refiner dependencies
+ultralytics>=8.0.0
+open-clip-torch>=2.20.0
+
+# Spelling correction
+neuspell>=1.0.0
