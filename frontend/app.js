@@ -105,6 +105,15 @@ function attachEventListeners() {
         }
     });
 
+    // Re-run search when limit dropdown changes
+    limitSelect.addEventListener('change', () => {
+        if (selectedImageFile) {
+            performImageSearch();
+        } else if (searchInput.value.trim()) {
+            performSearch();
+        }
+    });
+
     // Enter key on search input
     searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
@@ -385,7 +394,7 @@ function displayResults(data) {
     hideLoading();
     hideEmpty();
 
-    const { query, results, results_count, search_time_seconds } = data;
+    const { query, results, results_count, search_time_seconds, search_strategy, search_message } = data;
 
     resultsTitle.textContent = `Results for "${query}"`;
 
@@ -403,17 +412,35 @@ function displayResults(data) {
 
     resultsContainer.innerHTML = '';
 
-    // Similarity threshold feedback: warn if all results are low confidence
-    const maxScore = Math.max(...results.map(r => r.score || 0));
-    if (maxScore < 0.2 && results_count > 0) {
+    // Contextual search strategy feedback
+    if (search_message) {
         const banner = document.createElement('div');
-        banner.className = 'low-confidence-banner';
-        banner.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        banner.className = 'search-strategy-banner';
+
+        // Style based on strategy type
+        let icon = '';
+        let bannerType = 'info';
+
+        if (search_strategy === 'expanded') {
+            icon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 9V13M12 17H12.01M12 3L2 21H22L12 3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span>Low confidence results. Try a different image or use text search for better matches.</span>
-        `;
+            </svg>`;
+            bannerType = 'warning';
+        } else if (search_strategy === 'relaxed') {
+            icon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                <path d="M12 8V12M12 16H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>`;
+            bannerType = 'info';
+        } else if (search_strategy === 'direct') {
+            icon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>`;
+            bannerType = 'success';
+        }
+
+        banner.setAttribute('data-type', bannerType);
+        banner.innerHTML = `${icon}<span>${search_message}</span>`;
         resultsContainer.appendChild(banner);
     }
 

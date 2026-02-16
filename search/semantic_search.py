@@ -15,6 +15,54 @@ from sqlalchemy.orm import Session
 from database.models import Video, TranscriptSegment, Embedding, SearchQuery
 from embeddings.text_embeddings import get_embedding_generator
 
+# Global NeuSpell checker cache (lazy loaded once)
+_neuspell_checker = None
+_neuspell_loaded = False
+
+
+def _get_neuspell_checker():
+    """Get or create global NeuSpell BertChecker instance (loaded once)."""
+    global _neuspell_checker, _neuspell_loaded
+    if _neuspell_loaded:
+        return _neuspell_checker
+    
+    _neuspell_loaded = True
+    try:
+        import torch
+        import torch.nn as nn
+        from neuspell import BertChecker
+        
+        # Monkeypatches for legacy model loading
+        original_load = torch.load
+        original_load_state_dict = nn.Module.load_state_dict
+        
+        try:
+            def new_load(*args, **kwargs):
+                if 'weights_only' not in kwargs:
+                    kwargs['weights_only'] = False
+                return original_load(*args, **kwargs)
+            torch.load = new_load
+            
+            def new_load_state_dict(self, state_dict, strict=True, **kwargs):
+                if hasattr(self, 'bert_model'):
+                    strict = False
+                return original_load_state_dict(self, state_dict, strict=strict, **kwargs)
+            nn.Module.load_state_dict = new_load_state_dict
+            
+            checker = BertChecker()
+            checker.from_pretrained()
+            _neuspell_checker = checker
+            print("NeuSpell BertChecker loaded successfully (cached globally)")
+        finally:
+            torch.load = original_load
+            nn.Module.load_state_dict = original_load_state_dict
+            
+    except Exception as e:
+        print(f"Failed to load NeuSpell: {e}")
+        _neuspell_checker = None
+    
+    return _neuspell_checker
+
 
 @dataclass
 class SearchResult:
@@ -74,13 +122,8 @@ class SemanticSearchEngine:
         self.db = db
         self.embedding_gen = get_embedding_generator()
 
-        # Initialize NeuSpell for autocorrection
-        try:
-            self.checker = self._load_neuspell()
-            print("NeuSpell BertChecker loaded successfully")
-        except Exception as e:
-            print(f"Failed to load NeuSpell: {e}")
-            self.checker = None
+        # Use globally cached NeuSpell checker (loaded once, reused across requests)
+        self.checker = _get_neuspell_checker()
         
         # Caching configuration
         self.cache_enabled = cache_enabled
@@ -214,7 +257,7 @@ class SemanticSearchEngine:
         top_k: int = 10,
         semantic_weight: float = 0.7,
         text_weight: float = 0.3,
-        min_score: float = 0.25,
+        min_score: float = 0.15,
         video_filter: Optional[str] = None,
         log_query: bool = True,
         use_cache: bool = True,
@@ -228,7 +271,7 @@ class SemanticSearchEngine:
             top_k: Number of results to return
             semantic_weight: Weight for semantic similarity (0-1)
             text_weight: Weight for fuzzy text matching (0-1)
-            min_score: Minimum combined score threshold (0.4 removes noise)
+            min_score: Minimum combined score threshold
             video_filter: Optional video filename to filter results
             log_query: Log query to database for analytics
             use_cache: Use cached results if available (OPTIMIZATION #5)
@@ -267,13 +310,11 @@ class SemanticSearchEngine:
             print(f"Corrected query: {corrected_query}")
 
         # Generate query embedding (optimized for Qwen3-Embedding)
-        # Using the standard Qwen-instruct format for retrieval
         query_instruction = "Given a query, retrieve relevant passages that answer the query\nQuery: "
         query_embedding = self.embedding_gen.encode_single(corrected_query, instruction=query_instruction)
 
         # OPTIMIZATION #4: Parallel execution if enabled
         if self.parallel_enabled and self._executor:
-            # Run semantic and fuzzy searches simultaneously
             semantic_future = self._executor.submit(
                 self._semantic_search, query_embedding, top_k=top_k * 3, video_filter=video_filter
             )
@@ -283,7 +324,6 @@ class SemanticSearchEngine:
             semantic_results = semantic_future.result()
             fuzzy_results = fuzzy_future.result()
         else:
-            # Sequential (original behavior, if parallel disabled)
             semantic_results = self._semantic_search(
                 query_embedding, top_k=top_k * 3, video_filter=video_filter
             )
@@ -300,7 +340,6 @@ class SemanticSearchEngine:
         )
         
         # Filter out extremely short noisy segments (e.g. "Talking", "Except")
-        # These often get high semantic scores but are uninformative
         combined_results = [r for r in combined_results if len(r.text.strip()) > 7]
 
         # Sort by score first
@@ -312,8 +351,8 @@ class SemanticSearchEngine:
         # Dynamic/Relative Filtering: Drop results that are much worse than top result
         if combined_results:
             top_score = combined_results[0].score
-            # Keep results that are at least 60% as good as top result
-            relative_threshold = top_score * 0.75
+            # Keep results within 60% of top score (was 75%, relaxed for better recall)
+            relative_threshold = top_score * 0.60
             combined_results = [r for r in combined_results if r.score >= relative_threshold]
 
         final_results = combined_results[:top_k]
@@ -331,6 +370,142 @@ class SemanticSearchEngine:
         
         self._update_latency_stats((time.time() - start_time) * 1000)
         return final_results
+
+    def search_with_fallback(
+        self,
+        query: str,
+        top_k: int = 10,
+        video_filter: Optional[str] = None,
+        log_query: bool = True,
+    ) -> Dict:
+        """
+        Tiered search with fallback strategy (Google-like behavior).
+        
+        Tier 1: Full query search (semantic + fuzzy)
+        Tier 2: Relaxed thresholds if Tier 1 returns too few results
+        Tier 3: Word decomposition — search individual words, merge results
+        
+        Returns:
+            Dict with 'results', 'search_metadata' containing strategy info
+        """
+        # Typo correction applied once
+        corrected_query, corrections = self._correct_typos(query)
+        search_query = corrected_query if corrections else query
+        
+        metadata = {
+            "original_query": query,
+            "corrected_query": search_query if corrections else None,
+            "corrections": corrections,
+            "search_strategy": "exact",
+            "search_message": None,
+            "tiers_tried": [],
+        }
+        
+        # ── Tier 1: Full query search with standard thresholds ──
+        results = self.search(
+            query=search_query,
+            top_k=top_k,
+            min_score=0.20,
+            video_filter=video_filter,
+            log_query=log_query,
+        )
+        metadata["tiers_tried"].append("full_query")
+        
+        # Check quality: enough results with decent scores?
+        good_results = [r for r in results if r.score >= 0.30]
+        if len(good_results) >= min(3, top_k):
+            metadata["search_strategy"] = "direct"
+            if corrections:
+                metadata["search_message"] = f"Showing results for \"{search_query}\" (corrected from \"{query}\")"
+            return {"results": results, "search_metadata": metadata}
+        
+        # ── Tier 2: Relaxed thresholds ──
+        relaxed_results = self.search(
+            query=search_query,
+            top_k=top_k,
+            min_score=0.10,
+            video_filter=video_filter,
+            log_query=False,  # Don't double-log
+        )
+        metadata["tiers_tried"].append("relaxed")
+        
+        if len(relaxed_results) > len(results):
+            results = relaxed_results
+        
+        good_results = [r for r in results if r.score >= 0.20]
+        if len(good_results) >= min(2, top_k):
+            metadata["search_strategy"] = "relaxed"
+            metadata["search_message"] = f"Showing best available matches for \"{search_query}\""
+            return {"results": results, "search_metadata": metadata}
+        
+        # ── Tier 3: Word decomposition ──
+        # Filter out stop words / filler words that add no search value
+        STOP_WORDS = {
+            "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
+            "for", "of", "with", "by", "from", "is", "it", "as", "are",
+            "was", "were", "be", "been", "being", "have", "has", "had",
+            "do", "does", "did", "will", "would", "shall", "should",
+            "may", "might", "must", "can", "could", "not", "no", "nor",
+            "so", "if", "then", "than", "that", "this", "these", "those",
+            "what", "which", "who", "whom", "how", "when", "where", "why",
+            "all", "each", "every", "both", "few", "more", "most", "some",
+            "any", "other", "into", "about", "between", "through", "during",
+            "before", "after", "above", "below", "up", "down", "out", "off",
+            "over", "under", "again", "further", "once", "here", "there",
+            "very", "just", "also", "too", "only", "own", "same", "such",
+        }
+        words = [w for w in search_query.lower().split() if len(w) >= 3 and w not in STOP_WORDS]
+        
+        if len(words) > 1:
+            metadata["tiers_tried"].append("decomposed")
+            all_word_results = {}
+            
+            for word in words:
+                word_results = self.search(
+                    query=word,
+                    top_k=top_k,
+                    min_score=0.15,
+                    video_filter=video_filter,
+                    log_query=False,
+                )
+                for r in word_results:
+                    key = r.segment_id
+                    if key in all_word_results:
+                        # Boost score for segments matching multiple words
+                        existing = all_word_results[key]
+                        existing.score = max(existing.score, r.score) * 1.15
+                    else:
+                        all_word_results[key] = r
+            
+            decomposed_results = sorted(
+                all_word_results.values(),
+                key=lambda x: x.score, 
+                reverse=True
+            )[:top_k]
+            
+            if decomposed_results and (
+                not results or decomposed_results[0].score > (results[0].score if results else 0)
+            ):
+                results = decomposed_results
+                metadata["search_strategy"] = "expanded"
+                matched_words = ", ".join(f'"{w}"' for w in words)
+                metadata["search_message"] = (
+                    f"No exact matches for \"{search_query}\". "
+                    f"Showing results for individual terms: {matched_words}"
+                )
+            elif results:
+                metadata["search_strategy"] = "relaxed"
+                metadata["search_message"] = f"Showing best available matches for \"{search_query}\""
+        
+        # Final fallback message if still no results
+        if not results:
+            metadata["search_strategy"] = "no_results"
+            metadata["search_message"] = (
+                f"No results found for \"{search_query}\". "
+                f"Try simpler or different keywords."
+            )
+        
+        return {"results": results, "search_metadata": metadata}
 
     def _semantic_search(
         self, query_embedding, top_k: int = 20, video_filter: Optional[str] = None

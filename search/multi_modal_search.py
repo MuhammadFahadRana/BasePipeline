@@ -159,9 +159,131 @@ class MultiModalSearchEngine:
             mm_res = MultiModalSearchResult(**res_data)
             final_results.append(mm_res)
             
-        # 5. Sort and return
+    # 5. Sort and return
         final_results.sort(key=lambda x: x.combined_score, reverse=True)
         return final_results[:top_k]
+
+    def search_with_fallback(
+        self,
+        query: str,
+        top_k: int = 10,
+        video_filter: Optional[str] = None,
+    ) -> dict:
+        """
+        Multi-modal search with tiered fallback strategy.
+        
+        Uses the text search engine's fallback tiers, then enriches
+        with vision scores. Auto-adjusts text/vision weights when
+        text results are low confidence to avoid score dilution.
+        
+        Returns:
+            Dict with 'results', 'search_metadata'
+        """
+        # 1. Get text results with fallback
+        fallback_data = self.text_search.search_with_fallback(
+            query=query,
+            top_k=top_k * 3 if self.vision_weight > 0 else top_k,
+            video_filter=video_filter,
+        )
+        
+        text_results = fallback_data["results"]
+        metadata = fallback_data["search_metadata"]
+        
+        # If no vision needed or no text results, return as-is
+        if self.vision_weight == 0 or not text_results:
+            mm_results = [
+                MultiModalSearchResult(
+                    **r.__dict__,
+                    vision_score=0.0,
+                    combined_score=r.score
+                )
+                for r in text_results[:top_k]
+            ]
+            return {"results": mm_results, "search_metadata": metadata}
+        
+        # 2. Auto-adjust weights: if text results are weak, favor text more
+        #    to avoid vision scores diluting already-weak text matches
+        top_text_score = text_results[0].score if text_results else 0
+        effective_text_weight = self.text_weight
+        effective_vision_weight = self.vision_weight
+        
+        if top_text_score < 0.3:
+            # Low confidence text — go text-heavy to preserve what we found
+            effective_text_weight = 0.7
+            effective_vision_weight = 0.3
+        
+        # 3. Enrich with vision scores
+        try:
+            query_vision_embedding = self.vision_gen.encode_text(query, normalize=True)
+        except Exception:
+            # Vision unavailable — return text-only results
+            mm_results = [
+                MultiModalSearchResult(
+                    **r.__dict__,
+                    vision_score=0.0,
+                    combined_score=r.score
+                )
+                for r in text_results[:top_k]
+            ]
+            return {"results": mm_results, "search_metadata": metadata}
+        
+        # Also get visual-only candidates
+        try:
+            visual_candidates = self.search_visual_only(
+                query=query,
+                top_k=top_k * 2,
+                video_filter=video_filter
+            )
+        except Exception:
+            visual_candidates = []
+        
+        # Build candidate map
+        candidate_map = {}
+        for r in text_results:
+            key = f"seg_{r.segment_id}" if r.segment_id else f"scene_{r.video_id}_{r.start_time}"
+            candidate_map[key] = [r.score, 0.0, r]
+        
+        for r in visual_candidates:
+            key = f"seg_{r.segment_id}" if r.segment_id else f"scene_{r.video_id}_{r.start_time}"
+            if key in candidate_map:
+                candidate_map[key][1] = r.vision_score
+            else:
+                candidate_map[key] = [0.0, r.vision_score, r]
+        
+        # Fill missing vision scores
+        final_results = []
+        for key, (t_score, v_score, base_result) in candidate_map.items():
+            current_v_score = v_score
+            current_keyframe = base_result.keyframe_path
+            
+            if current_v_score == 0.0 and hasattr(base_result, 'segment_id') and base_result.segment_id:
+                vision_data = self._get_vision_embedding_for_segment(base_result.segment_id)
+                if vision_data:
+                    emb, path = vision_data
+                    current_v_score = float(np.dot(query_vision_embedding, emb))
+                    if not current_keyframe:
+                        current_keyframe = path
+            
+            combined_score = (effective_text_weight * t_score) + (effective_vision_weight * current_v_score)
+            
+            res_data = base_result.__dict__.copy()
+            res_data.update({
+                "vision_score": current_v_score,
+                "combined_score": combined_score,
+                "score": combined_score,
+                "keyframe_path": current_keyframe
+            })
+            
+            # Remove any keys that don't belong to MultiModalSearchResult
+            for extra_key in list(res_data.keys()):
+                if extra_key not in MultiModalSearchResult.__dataclass_fields__:
+                    del res_data[extra_key]
+            
+            mm_res = MultiModalSearchResult(**res_data)
+            final_results.append(mm_res)
+        
+        final_results.sort(key=lambda x: x.combined_score, reverse=True)
+        return {"results": final_results[:top_k], "search_metadata": metadata}
     
     def _get_vision_embedding_for_segment(self, segment_id: int) -> Optional[tuple]:
         """

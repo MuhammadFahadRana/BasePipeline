@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import json
 from typing import Dict, Optional, List
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlalchemy.orm import Session
 
 from database.config import SessionLocal
@@ -86,62 +86,78 @@ class DataIngester:
         )
 
         if existing_video:
-            # Check if update is needed based on timestamps
+            # ── Compare video fingerprints (content-based, not filesystem mtime) ──
             should_update = False
             reason = "no_changes"
-            
+
             if update_existing:
-                # Get file modification time in UTC
-                file_mtime = results_file.stat().st_mtime
-                file_dt = datetime.fromtimestamp(file_mtime, timezone.utc)
-                
-                # Get DB updated_at (ensure it's aware)
-                db_dt = existing_video.updated_at
-                if db_dt and db_dt.tzinfo is None:
-                    db_dt = db_dt.replace(tzinfo=timezone.utc)
-                
-                # Check if file is newer (add 1s buffer for FS precision)
-                if db_dt is None or file_dt > db_dt:
+                new_fingerprint = video_info.get("mtime_iso")
+                db_fingerprint = existing_video.video_fingerprint
+
+                if new_fingerprint != db_fingerprint:
+                    # Video file itself has changed → full re-ingest
                     should_update = True
-                    reason = "file_newer"
-                    print(f"Changes detected for {video_name} (File: {file_dt.strftime('%H:%M:%S')} > DB: {db_dt.strftime('%H:%M:%S')})")
+                    reason = "video_changed"
+                    print(f"Video content changed for {video_name} "
+                          f"(DB: {db_fingerprint} → New: {new_fingerprint})")
                 else:
-                    reason = "up_to_date"
-                    
-                    # SMART CHECK: Even if up to date, do we have embeddings?
-                    # If tables were rebuilt, we might have Video but no Embedding records.
-                    has_text_embs = self.db.query(Embedding).join(TranscriptSegment).filter(TranscriptSegment.video_id == existing_video.id).first() is not None
-                    has_visual_embs = self.db.query(VisualEmbedding).join(Scene).filter(Scene.video_id == existing_video.id).first() is not None
-                    
-                    if (generate_embeddings and not has_text_embs) or (generate_visual_embeddings and not has_visual_embs):
-                        should_update = True
-                        reason = "missing_embeddings"
-                        print(f"Missing embeddings detected for {video_name}, forcing re-ingestion.")
+                    # Fingerprint matches – check if embeddings are present
+                    has_text_embs = (
+                        self.db.query(Embedding)
+                        .join(TranscriptSegment)
+                        .filter(TranscriptSegment.video_id == existing_video.id)
+                        .first() is not None
+                    )
+                    has_visual_embs = (
+                        self.db.query(VisualEmbedding)
+                        .join(Scene)
+                        .filter(Scene.video_id == existing_video.id)
+                        .first() is not None
+                    )
+
+                    need_text = generate_embeddings and not has_text_embs
+                    need_visual = generate_visual_embeddings and not has_visual_embs
+
+                    if need_text or need_visual:
+                        # Fill only the missing embeddings, don't delete anything
+                        print(f"Filling missing embeddings for {video_name} "
+                              f"(text={need_text}, visual={need_visual})")
+                        filled = self._fill_missing_embeddings(
+                            existing_video, need_text, need_visual
+                        )
+                        return {
+                            "video": video_name,
+                            "status": "filled_embeddings",
+                            "video_id": existing_video.id,
+                            **filled,
+                        }
+                    else:
+                        reason = "up_to_date"
 
             if should_update:
                 print(f"Updating existing video: {video_name} (Replacing record)")
                 self.db.delete(existing_video)
-                self.db.commit() # Commit deletion to ensure clean slate
+                self.db.commit()  # Commit deletion to ensure clean slate
             elif skip_existing:
                 if update_existing and reason == "up_to_date":
-                     print(f"Video up to date: {video_name}")
+                    print(f"  ✓ Video up to date: {video_name}")
                 else:
-                     print(f"Video already in database: {video_name}")
-                
+                    print(f"  ✓ Video already in database: {video_name}")
+
                 return {
                     "video": video_name,
                     "status": "skipped",
                     "video_id": existing_video.id,
-                    "reason": reason
+                    "reason": reason,
                 }
-            else: 
+            else:
                 # Not updating and not skipping explicitly -> Skip
-                print(f"Video already in database: {video_name} (Skipping)")
+                print(f"  ✓ Video already in database: {video_name} (Skipping)")
                 return {
                     "video": video_name,
                     "status": "skipped",
                     "video_id": existing_video.id,
-                    "reason": "already_exists"
+                    "reason": "already_exists",
                 }
 
 
@@ -259,6 +275,67 @@ class DataIngester:
             "visual_embeddings": visual_count,
         }
 
+    def _fill_missing_embeddings(
+        self, video: Video, need_text: bool, need_visual: bool
+    ) -> Dict:
+        """
+        Generate only the missing embeddings for an existing video record.
+        Does NOT delete/re-create the video, scenes, or segments.
+        """
+        result = {"text_embeddings_added": 0, "visual_embeddings_added": 0}
+
+        if need_text:
+            # Get segments that don't have embeddings yet
+            segments = (
+                self.db.query(TranscriptSegment)
+                .filter(TranscriptSegment.video_id == video.id)
+                .all()
+            )
+            segments_without_emb = [
+                seg for seg in segments
+                if not self.db.query(Embedding)
+                    .filter(Embedding.segment_id == seg.id)
+                    .first()
+            ]
+
+            if segments_without_emb:
+                print(f"  Generating text embeddings for {len(segments_without_emb)} segments...")
+                texts = [seg.text for seg in segments_without_emb]
+                embeddings = self.embedding_gen.encode(
+                    texts, batch_size=32, show_progress=True
+                )
+                for seg, emb_vec in zip(segments_without_emb, embeddings):
+                    emb = Embedding(
+                        segment_id=seg.id,
+                        embedding=emb_vec.tolist(),
+                        embedding_model=self.embedding_gen.model_name,
+                    )
+                    self.db.add(emb)
+                result["text_embeddings_added"] = len(segments_without_emb)
+                print(f"  ✓ {len(segments_without_emb)} text embeddings generated")
+
+        if need_visual:
+            scenes = (
+                self.db.query(Scene)
+                .filter(Scene.video_id == video.id)
+                .all()
+            )
+            scenes_without_emb = [
+                s for s in scenes
+                if s.keyframe_path
+                and not self.db.query(VisualEmbedding)
+                    .filter(VisualEmbedding.scene_id == s.id)
+                    .first()
+            ]
+
+            if scenes_without_emb:
+                count = self.ingest_visual_embeddings(scenes_without_emb)
+                result["visual_embeddings_added"] = count
+
+        self.db.commit()
+        print(f"  ✓ Missing embeddings filled for {video.filename}")
+        return result
+
     def ingest_visual_embeddings(self, scenes: List[Scene], batch_size: int = 32) -> int:
         """Generate and store visual embeddings for a list of scenes."""
         scenes_with_keyframes = [s for s in scenes if s.keyframe_path]
@@ -361,7 +438,7 @@ class DataIngester:
                     update_existing=update_existing or force,
                 )
 
-                if result["status"] == "success":
+                if result["status"] in ("success", "filled_embeddings"):
                     stats["success"] += 1
                 elif result["status"] == "skipped":
                     stats["skipped"] += 1

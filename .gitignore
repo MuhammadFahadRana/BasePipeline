@@ -68,3 +68,7 @@ logs/
 temp_*.wav
 temp_*.mp3
 *.tmp
+
+
+# Videos
+*.ts

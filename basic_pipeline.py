@@ -1,3 +1,5 @@
+# ATLAS – AI-driven Temporal Linking and Search, this is the name of the project. 
+
 import hashlib
 import json
 from pathlib import Path

@@ -273,10 +273,12 @@ async def quick_search(
     search_engine = SemanticSearchEngine(db)
 
     try:
-        results = search_engine.search(
-            query=q, top_k=limit, video_filter=video, log_query=True
+        fallback_data = search_engine.search_with_fallback(
+            query=q, top_k=limit, video_filter=video
         )
         
+        results = fallback_data["results"]
+        metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
 
         return {
@@ -284,6 +286,8 @@ async def quick_search(
             "results_count": len(results),
             "results": [r.to_dict() for r in results],
             "search_time_seconds": round(search_time, 3),
+            "search_strategy": metadata.get("search_strategy"),
+            "search_message": metadata.get("search_message"),
         }
 
     except Exception as e:
@@ -432,18 +436,23 @@ async def quick_multimodal_search(
     try:
         text_weight, vision_weight = set_optimal_weights(mode)
 
+        start_time = time.time()
+
         mm_search = MultiModalSearchEngine(
             db=db,
             text_weight=text_weight,
             vision_weight=vision_weight
         )
 
-        results = mm_search.search(
+        fallback_data = mm_search.search_with_fallback(
             query=q,
             top_k=limit,
             video_filter=video,
-            use_vision=True
         )
+
+        results = fallback_data["results"]
+        metadata = fallback_data["search_metadata"]
+        search_time = time.time() - start_time
 
         return {
             "query": q,
@@ -451,6 +460,9 @@ async def quick_multimodal_search(
             "weights": {"text": text_weight, "vision": vision_weight},
             "results_count": len(results),
             "results": [r.to_dict() for r in results],
+            "search_time_seconds": round(search_time, 3),
+            "search_strategy": metadata.get("search_strategy"),
+            "search_message": metadata.get("search_message"),
         }
 
     except Exception as e:
@@ -463,13 +475,21 @@ async def quick_multimodal_search(
         if any(w in str(e).lower() for w in ["vision", "clip", "siglip", "embedding"]):
             print(f"Vision search unavailable, using text-only: {e}")
             search_engine = SemanticSearchEngine(db)
-            results = search_engine.search(query=q, top_k=limit, video_filter=video)
+            fallback_data = search_engine.search_with_fallback(
+                query=q, top_k=limit, video_filter=video
+            )
+            results = fallback_data["results"]
+            metadata = fallback_data["search_metadata"]
+            search_time = time.time() - start_time
             return {
                 "query": q,
                 "mode": "text_only (vision unavailable)",
                 "weights": {"text": 1.0, "vision": 0.0},
                 "results_count": len(results),
                 "results": [r.to_dict() for r in results],
+                "search_time_seconds": round(search_time, 3),
+                "search_strategy": metadata.get("search_strategy"),
+                "search_message": metadata.get("search_message"),
             }
         else:
             raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
