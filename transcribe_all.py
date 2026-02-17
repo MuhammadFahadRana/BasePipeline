@@ -105,7 +105,7 @@ class SimpleTranscriber:
     Multi-backend ASR transcriber supporting Whisper, WhisperX, Distil-Whisper, Wav2Vec2, and NeMo.
     """
 
-    VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"}
+    VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".ts"}
     AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"}
 
     def __init__(self, backend: str, model_variant: dict, device: str = "auto"):

@@ -13,6 +13,7 @@ from embeddings.vision_embeddings import get_vision_embedding_generator
 @dataclass
 class MultiModalSearchResult(SearchResult):
     """Search result with both text and vision scores."""
+    text_score: float = 0.0
     vision_score: float = 0.0
     combined_score: float = 0.0
     # keyframe_path is inherited from SearchResult
@@ -21,6 +22,7 @@ class MultiModalSearchResult(SearchResult):
         """Convert to dictionary for JSON serialization."""
         base_dict = super().to_dict()
         base_dict.update({
+            "text_score": round(self.text_score, 4),
             "vision_score": round(self.vision_score, 4),
             "combined_score": round(self.combined_score, 4)
         })
@@ -211,6 +213,10 @@ class MultiModalSearchEngine:
             # Low confidence text — go text-heavy to preserve what we found
             effective_text_weight = 0.7
             effective_vision_weight = 0.3
+        elif top_text_score > 0.6:
+            # High confidence text — favor text so vision doesn't dilute strong matches
+            effective_text_weight = 0.65
+            effective_vision_weight = 0.35
         
         # 3. Enrich with vision scores
         try:
@@ -251,7 +257,7 @@ class MultiModalSearchEngine:
                 candidate_map[key] = [0.0, r.vision_score, r]
         
         # Fill missing vision scores
-        final_results = []
+        raw_vision_scores = {}
         for key, (t_score, v_score, base_result) in candidate_map.items():
             current_v_score = v_score
             current_keyframe = base_result.keyframe_path
@@ -264,11 +270,27 @@ class MultiModalSearchEngine:
                     if not current_keyframe:
                         current_keyframe = path
             
-            combined_score = (effective_text_weight * t_score) + (effective_vision_weight * current_v_score)
+            raw_vision_scores[key] = (current_v_score, current_keyframe)
+        
+        # Min-max normalize vision scores to [0, 1] for fair combination with text
+        all_v = [v for v, _ in raw_vision_scores.values()]
+        v_min = min(all_v) if all_v else 0
+        v_max = max(all_v) if all_v else 0
+        v_range = v_max - v_min if v_max > v_min else 1.0
+        
+        final_results = []
+        for key, (t_score, _, base_result) in candidate_map.items():
+            current_v_score, current_keyframe = raw_vision_scores[key]
+            
+            # Apply min-max normalization
+            norm_v_score = (current_v_score - v_min) / v_range if v_range > 0 else 0.0
+            
+            combined_score = (effective_text_weight * t_score) + (effective_vision_weight * norm_v_score)
             
             res_data = base_result.__dict__.copy()
             res_data.update({
-                "vision_score": current_v_score,
+                "text_score": t_score,
+                "vision_score": norm_v_score,
                 "combined_score": combined_score,
                 "score": combined_score,
                 "keyframe_path": current_keyframe

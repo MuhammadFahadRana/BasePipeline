@@ -355,6 +355,9 @@ class SemanticSearchEngine:
             relative_threshold = top_score * 0.60
             combined_results = [r for r in combined_results if r.score >= relative_threshold]
 
+        # Deduplicate overlapping segments from the same video (keep higher scored)
+        combined_results = self._deduplicate_overlapping(combined_results, overlap_window=5.0)
+
         final_results = combined_results[:top_k]
         
         # OPTIMIZATION #5: Save to cache
@@ -659,6 +662,28 @@ class SemanticSearchEngine:
 
         return fuzzy_scores
 
+    def _deduplicate_overlapping(
+        self,
+        results: List[SearchResult],
+        overlap_window: float = 5.0,
+    ) -> List[SearchResult]:
+        """Remove near-duplicate results from the same video within a time window."""
+        if not results:
+            return results
+        
+        deduplicated = []
+        for result in results:
+            is_duplicate = False
+            for kept in deduplicated:
+                if (result.video_id == kept.video_id and
+                    abs(result.start_time - kept.start_time) < overlap_window):
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                deduplicated.append(result)
+        
+        return deduplicated
+
     def _combine_results(
         self,
         semantic_results: Dict,
@@ -669,6 +694,12 @@ class SemanticSearchEngine:
         """Combine semantic and fuzzy search results with weighted scoring."""
         # Get all unique segment IDs
         all_segment_ids = set(semantic_results.keys()) | set(fuzzy_results.keys())
+
+        # Find max fuzzy score for rank-based normalization
+        max_fuzzy = 0.0
+        for key in all_segment_ids:
+            fuzzy_entry = fuzzy_results.get(key, (0, None, None))
+            max_fuzzy = max(max_fuzzy, fuzzy_entry[0])
 
         combined = []
         for key in all_segment_ids:
@@ -691,8 +722,8 @@ class SemanticSearchEngine:
             
             segment_id = segment.id if segment.id else 0
 
-            # Normalize fuzzy score (ts_rank is usually small, so boost it)
-            fuzzy_score_norm = min(fuzzy_score * 10.0, 1.0)
+            # Normalize fuzzy score relative to best fuzzy match (rank-based)
+            fuzzy_score_norm = (fuzzy_score / max_fuzzy) if max_fuzzy > 0 else 0.0
 
             # Combined score
             combined_score = (
@@ -702,7 +733,7 @@ class SemanticSearchEngine:
             # Determine match type
             if semantic_score > 0.7:
                 match_type = "semantic"
-            elif fuzzy_score > 0.5:
+            elif fuzzy_score_norm > 0.5:
                 match_type = "fuzzy"
             else:
                 match_type = "hybrid"

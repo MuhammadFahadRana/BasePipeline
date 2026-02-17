@@ -6,7 +6,8 @@ const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
 const clearBtn = document.getElementById('clearBtn');
 const limitSelect = document.getElementById('limitSelect');
-const videoFilter = document.getElementById('videoFilter');
+// videoFilter
+// const videoFilter = document.getElementById('videoFilter');
 const resultsSection = document.getElementById('resultsSection');
 const resultsContainer = document.getElementById('resultsContainer');
 const resultsTitle = document.getElementById('resultsTitle');
@@ -81,13 +82,14 @@ async function loadVideos() {
 
         videoCount.textContent = videos.length;
 
+        // videoFilter
         // Populate video filter dropdown
-        videos.forEach(video => {
-            const option = document.createElement('option');
-            option.value = video.filename;
-            option.textContent = video.filename;
-            videoFilter.appendChild(option);
-        });
+        // videos.forEach(video => {
+        //     const option = document.createElement('option');
+        //     option.value = video.filename;
+        //     option.textContent = video.filename;
+        //     videoFilter.appendChild(option);
+        // });
     } catch (error) {
         console.error('Failed to load videos:', error);
         videoCount.textContent = '?';
@@ -280,7 +282,9 @@ async function performImageSearch() {
 
     try {
         const limit = parseInt(limitSelect.value);
-        const video = videoFilter.value || null;
+        // videoFilter
+        // const video = videoFilter.value || null;
+        const video = null;
 
         const formData = new FormData();
         formData.append('file', selectedImageFile);
@@ -331,7 +335,9 @@ async function performSearch() {
 
     try {
         const limit = parseInt(limitSelect.value);
-        const video = videoFilter.value || null;
+        // videoFilter
+        // const video = videoFilter.value || null;
+        const video = null;
 
         let response;
         let data;

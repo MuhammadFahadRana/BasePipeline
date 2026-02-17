@@ -42,15 +42,17 @@ class SimpleTranscriber:
     Multi-backend ASR transcriber supporting Whisper, WhisperX, and Distil-Whisper.
     """
 
-    VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"}
+    VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".ts"}
     AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"}
 
-    def __init__(self, model_size: str = "large", device: str = "auto"):
+    def __init__(self, backend: str = "whisper", model_variant: dict = None, model_size: str = "large", device: str = "auto"):
         """
         Initialize transcriber with selected backend.
 
         Args:
-            model_size: Model size (tiny/base/small/medium/large for Whisper/WhisperX)
+            backend: "whisper", "whisperx", or "distil-whisper"
+            model_variant: Dict with model details (e.g. {'name': 'base'})
+            model_size: fallback if model_variant is None
             device: "auto", "cpu", or "cuda"
         """
         if device == "auto":
@@ -59,40 +61,58 @@ class SimpleTranscriber:
         print(f"Using device: {device}")
 
         self.device = device
-        self.model_size = model_size
+        
+        # Handle arguments
+        self.backend = backend
+        if model_variant and "name" in model_variant:
+            self.model_size = model_variant["name"]
+        else:
+            self.model_size = model_size
 
         # MODEL SELECTION
+        print(f"Initializing {self.backend} with model: {self.model_size}")
 
-        # # OpenAI Whisper (tiny / base / small / medium / large)
-        # self.backend = "whisper"
-        # self.model_name = f"Whisper-{model_size.capitalize()}"
-        # print(f"Loading {self.model_name} on {device}")
-        # self.model = whisper.load_model(model_size, device=device)
+        if self.backend == "whisper":
+            # OpenAI Whisper
+            self.model_name = f"Whisper-{self.model_size.capitalize()}"
+            print(f"Loading {self.model_name} on {device}")
+            self.model = whisper.load_model(self.model_size, device=device)
 
-        # WhisperX (Better timestamps, speaker diarization)
-        # self.backend = "whisperx"
-        # self.model_name = f"WhisperX-{model_size.capitalize()}"
-        # print(f"Loading {self.model_name} on {device}")
-        # try:
-        #     import whisperx
-        #     self.model = whisperx.load_model(model_size, device=device, compute_type="float16" if device == "cuda" else "int8")
-        #     self.whisperx = whisperx  # Store module reference
-        # except ImportError:
-        #     raise ImportError("WhisperX not installed. Run: pip install whisperx")
+        elif self.backend == "whisperx":
+            # WhisperX
+            self.model_name = f"WhisperX-{self.model_size.capitalize()}"
+            print(f"Loading {self.model_name} on {device}")
+            try:
+                import whisperx
+                compute_type = "float16" if device == "cuda" else "int8"
+                self.model = whisperx.load_model(self.model_size, device=device, compute_type=compute_type)
+                self.whisperx = whisperx
+            except ImportError:
+                raise ImportError("WhisperX not installed. Run: pip install whisperx")
 
-        # Distil-Whisper (6x faster, 95% accuracy of Whisper Large)
-        self.backend = "distil-whisper"
-        self.model_name = "Distil-Whisper-Large-v3"
-        model_id = "distil-whisper/distil-large-v3"
-        print(f"Loading {self.model_name} on {device}")
-        self.processor = AutoProcessor.from_pretrained(model_id)
-        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            model_id,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            use_safetensors=True,
-        ).to(device)
+        elif self.backend == "distil-whisper":
+            # Distil-Whisper
+            self.model_name = "Distil-Whisper-Large-v3"
+            model_id = "distil-whisper/distil-large-v3"
+            if model_variant and "model_id" in model_variant:
+                model_id = model_variant["model_id"]
+                self.model_name = model_id.split("/")[-1]
 
-        print(f"{self.model_name} loaded successfully")
+            print(f"Loading {self.model_name} on {device}")
+            self.processor = AutoProcessor.from_pretrained(model_id)
+            self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                model_id,
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                use_safetensors=True,
+            ).to(device)
+            print(f"{self.model_name} loaded successfully")
+        
+        else:
+            # Default fallback or error
+            print(f"Warning: Unknown backend '{backend}', falling back to Whisper")
+            self.backend = "whisper"
+            self.model_name = f"Whisper-{self.model_size.capitalize()}"
+            self.model = whisper.load_model(self.model_size, device=device)
 
     def transcribe_video(self, file_path: str, output_dir: str = "processed"):
         """

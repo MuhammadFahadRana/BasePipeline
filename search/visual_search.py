@@ -98,28 +98,31 @@ class VisualSearchEngine:
             query_filter = "AND v.filename = :video_filter"
         
         sql_query = text(f"""
-            SELECT 
-                ts.id as segment_id,
-                ts.video_id,
-                v.filename,
-                v.file_path,
-                ts.start_time,
-                ts.end_time,
-                ts.text,
-                s.scene_id,
-                ve.keyframe_path,
-                1 - (ve.embedding <=> CAST(:query_embedding AS vector)) AS visual_similarity
-            FROM visual_embeddings ve
-            JOIN scenes s ON ve.scene_id = s.id
-            JOIN videos v ON s.video_id = v.id
-            -- Get corresponding transcript segment
-            LEFT JOIN transcript_segments ts ON (
-                ts.video_id = v.id
-                AND ts.start_time <= s.start_time + 1
-                AND ts.end_time >= s.start_time - 1
-            )
-            WHERE 1=1 {query_filter}
-            ORDER BY ve.embedding <=> CAST(:query_embedding AS vector)
+            SELECT * FROM (
+                SELECT DISTINCT ON (s.scene_id)
+                    ts.id as segment_id,
+                    ts.video_id,
+                    v.filename,
+                    v.file_path,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.text,
+                    s.scene_id,
+                    ve.keyframe_path,
+                    1 - (ve.embedding <=> CAST(:query_embedding AS vector)) AS visual_similarity
+                FROM visual_embeddings ve
+                JOIN scenes s ON ve.scene_id = s.id
+                JOIN videos v ON s.video_id = v.id
+                -- Get corresponding transcript segment
+                LEFT JOIN transcript_segments ts ON (
+                    ts.video_id = v.id
+                    AND ts.start_time <= s.start_time + 1
+                    AND ts.end_time >= s.start_time - 1
+                )
+                WHERE 1=1 {query_filter}
+                ORDER BY s.scene_id, ve.embedding <=> CAST(:query_embedding AS vector)
+            ) AS deduplicated
+            ORDER BY visual_similarity DESC
             LIMIT :top_k
         """)
         

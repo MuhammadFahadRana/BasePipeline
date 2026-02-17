@@ -8,9 +8,10 @@ from datetime import timedelta, datetime
 import time
 
 # Import from transcribe_all for multi-model support
-from transcribe_all import SimpleTranscriber
-from scene_detector import SceneDetector
-from semantic_refiner import SemanticSceneRefiner, RefinerConfig
+#from transcribe_all import SimpleTranscriber
+
+from transcriber import SimpleTranscriber
+from scene_detector import SceneDetector, SceneConfig
 
 # Database ingestion
 try:
@@ -55,19 +56,17 @@ class BasicVideoPipeline:
         self.transcriber = SimpleTranscriber(
             backend=backend, model_variant=model_variant, device=device
         )
-        self.scene_detector = SceneDetector(threshold=scene_threshold)
-        self.backend = backend
-        self.model_variant = model_variant
-        self.skip_ingest = skip_ingest
-
-        self.semantic_refiner = SemanticSceneRefiner(
-        RefinerConfig(
+        scene_cfg = SceneConfig(
+            threshold=scene_threshold,
             yolo_model="yolov8n.pt",
             yolo_person_conf=0.35,
             clip_sim_merge_threshold=0.90,
             device="cuda" if device in ("auto", "cuda") else "cpu",
         )
-    )
+        self.scene_detector = SceneDetector(config=scene_cfg)
+        self.backend = backend
+        self.model_variant = model_variant
+        self.skip_ingest = skip_ingest
 
     # ---------------------------
     # Caching helpers (FIXED)
@@ -144,7 +143,7 @@ class BasicVideoPipeline:
         # TODO: Make this more dynamic
         current_cfg = {
             "whisper_model": getattr(self.transcriber, "model_name", "unknown"),
-            "scene_threshold": getattr(self.scene_detector, "threshold", None),
+            "scene_threshold": self.scene_detector.config.threshold,
             "semantic_refine": False,
             "yolo_model": "yolov8n.pt",
             "yolo_person_conf": 0.35,
@@ -207,18 +206,23 @@ class BasicVideoPipeline:
             print("    Continuing with empty transcript.")
             transcript = {"text": "", "segments": [], "language": "unknown"}
 
-        print("\n2. Detecting scenes...")
+        print("\n2. Detecting & refining scenes...")
         scenes = self.scene_detector.detect_scenes(
             video_path, 
             base_output_dir=str(output_base / "scenes")
         )
 
-        print("\n2b. Refining scenes (YOLO + SigLIP)...")
+        print("\n2b. Refining scenes (YOLO + CLIP)...")
         try:
-            scenes = self.semantic_refiner.refine(scenes)
+            scenes = self.scene_detector.refine_scenes(scenes)
         except Exception as e:
             print(f"  ! Scene refinement failed: {e}")
-            pass
+
+        print("\n2c. Enriching scenes with OCR...")
+        try:
+            scenes = self.scene_detector.enrich_with_ocr(scenes)
+        except Exception as e:
+            print(f"  ! OCR enrichment failed: {e}")
 
 
         print("\n3. Aligning transcripts with scenes...")
@@ -348,7 +352,7 @@ class BasicVideoPipeline:
             },
             "processing_info": {
                 "whisper_model": getattr(self.transcriber, "model_name", "unknown"),
-                "scene_threshold": getattr(self.scene_detector, "threshold", None),
+                "scene_threshold": self.scene_detector.config.threshold,
                 "processing_duration": round(processing_duration, 2),
             },
         }
