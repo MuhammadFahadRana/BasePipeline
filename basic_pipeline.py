@@ -206,23 +206,42 @@ class BasicVideoPipeline:
             print("    Continuing with empty transcript.")
             transcript = {"text": "", "segments": [], "language": "unknown"}
 
-        print("\n2. Detecting & refining scenes...")
-        scenes = self.scene_detector.detect_scenes(
-            video_path, 
-            base_output_dir=str(output_base / "scenes")
-        )
+        # Check if audio-only
+        is_audio = video_path.suffix.lower() in self.scene_detector.config.audio_extensions
 
-        print("\n2b. Refining scenes (YOLO + CLIP)...")
-        try:
-            scenes = self.scene_detector.refine_scenes(scenes)
-        except Exception as e:
-            print(f"  ! Scene refinement failed: {e}")
+        if is_audio:
+            print("\n2. Audio file detected - Skipping scene detection & refinement.")
+            # Create synthetic scene for the whole file
+            last_end = 0.0
+            if transcript.get("segments"):
+                last_end = transcript["segments"][-1]["end"]
+            
+            scenes = [{
+                "scene_id": 0,
+                "start_time": 0.0,
+                "end_time": last_end,
+                "duration": last_end,
+                "keyframe_path": None,
+                "ocr_text": None
+            }]
+        else:
+            print("\n2. Detecting & refining scenes...")
+            scenes = self.scene_detector.detect_scenes(
+                video_path, 
+                base_output_dir=str(output_base / "scenes")
+            )
 
-        print("\n2c. Enriching scenes with OCR...")
-        try:
-            scenes = self.scene_detector.enrich_with_ocr(scenes)
-        except Exception as e:
-            print(f"  ! OCR enrichment failed: {e}")
+            print("\n2b. Refining scenes (YOLO + CLIP)...")
+            try:
+                scenes = self.scene_detector.refine_scenes(scenes)
+            except Exception as e:
+                print(f"Scene refinement failed: {e}")
+
+            print("\n2c. Enriching scenes with OCR...")
+            try:
+                scenes = self.scene_detector.enrich_with_ocr(scenes)
+            except Exception as e:
+                print(f"OCR enrichment failed: {e}")
 
 
         print("\n3. Aligning transcripts with scenes...")

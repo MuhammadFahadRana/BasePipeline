@@ -1,7 +1,9 @@
 {
-    "video": "AkerBP 2",
-    "ground_truth_transcript": [],
-    "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
-    "scene_annotations": [],
-    "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+  "video": "AkerBP 2",
+  "ground_truth_transcript": [
+    "The base was made of three steel structures, each with a stand, a roof and various equipment modules on top of the roof. The doors werepaired of marks ofGHT with a 6-speed gear knob placement. respondersenoe completed these construction process using forward working automation to Thank you. Thank you. Thank you. Thank you. Thank you. Thank you. Thank you. Thank you. Thank you."
+  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
 }

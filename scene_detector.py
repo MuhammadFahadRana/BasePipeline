@@ -79,6 +79,7 @@ class SceneConfig:
     # Format conversion
     ffmpeg_path: str = "ffmpeg"  # assumes ffmpeg is on PATH
     compatible_extensions: Tuple[str, ...] = (".mp4", ".avi", ".mov")
+    audio_extensions: Tuple[str, ...] = (".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma")
 
     # Device
     device: str = "auto"  # "auto", "cuda", "cpu"
@@ -251,6 +252,11 @@ class SceneDetector:
                     return json.load(f)
             except json.JSONDecodeError:
                 print(f"Corrupt scene file found for {video_path.name}, reprocessing...")
+
+        # Check for audio-only files
+        if video_path.suffix.lower() in self.config.audio_extensions:
+            print(f"Audio file detected: {video_path.name}. Skipping scene detection.")
+            return []
 
         print(f"Detecting scenes in: {video_path.name}")
 

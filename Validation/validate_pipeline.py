@@ -72,8 +72,13 @@ class PipelineValidator:
 
     def validate_video(self, results_file: Path) -> Dict:
         """Validate a single video's processing results."""
-        with open(results_file, "r", encoding="utf-8") as f:
-            results = json.load(f)
+        try:
+            with open(results_file, "r", encoding="utf-8") as f:
+                results = json.load(f)
+        except UnicodeDecodeError:
+            # Fallback: try UTF-16 or latin-1 for files with BOM or other encodings
+            with open(results_file, "r", encoding="utf-8-sig") as f:
+                results = json.load(f)
 
         metrics = {
             "transcription": self.validate_transcription(results),
@@ -340,4 +345,10 @@ if __name__ == "__main__":
 
     # Optionally create ground truth templates for manual validation
     # Uncomment the following to create templates:
-    create_ground_truth_template("AkerBP 3")
+    #create_ground_truth_template("AkerBP 3")
+
+    # Create ground truth for all videos
+    results_dir = Path("processed") / "results"
+    video_names = [d.name for d in results_dir.iterdir() if d.is_dir()]
+    for video_name in video_names:
+        create_ground_truth_template(video_name)
