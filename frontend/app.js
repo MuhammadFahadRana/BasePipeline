@@ -6,8 +6,7 @@ const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
 const clearBtn = document.getElementById('clearBtn');
 const limitSelect = document.getElementById('limitSelect');
-// videoFilter
-// const videoFilter = document.getElementById('videoFilter');
+const searchModeSelect = document.getElementById('searchModeSelect');
 const resultsSection = document.getElementById('resultsSection');
 const resultsContainer = document.getElementById('resultsContainer');
 const resultsTitle = document.getElementById('resultsTitle');
@@ -34,12 +33,16 @@ let currentQuery = '';
 let videos = [];
 let currentVideoResult = null; // Store current result for copy functionality
 let selectedImageFile = null; // Store selected image for visual search
+let lastResults = []; // Store results for tab re-sorting
+let lastSearchData = null; // Store full response for re-rendering
+let currentView = 'combined'; // Current active tab view
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
     attachEventListeners();
     attachModalEventListeners();
+    attachTabListeners();
 });
 
 // Initialize App
@@ -109,6 +112,15 @@ function attachEventListeners() {
 
     // Re-run search when limit dropdown changes
     limitSelect.addEventListener('change', () => {
+        if (selectedImageFile) {
+            performImageSearch();
+        } else if (searchInput.value.trim()) {
+            performSearch();
+        }
+    });
+
+    // Re-run search when search mode changes (dynamic switching)
+    searchModeSelect.addEventListener('change', () => {
         if (selectedImageFile) {
             performImageSearch();
         } else if (searchInput.value.trim()) {
@@ -335,8 +347,7 @@ async function performSearch() {
 
     try {
         const limit = parseInt(limitSelect.value);
-        // videoFilter
-        // const video = videoFilter.value || null;
+        const searchMode = searchModeSelect.value;
         const video = null;
 
         let response;
@@ -347,7 +358,7 @@ async function performSearch() {
             const params = new URLSearchParams({
                 q: query,
                 limit: limit,
-                mode: 'balanced'
+                mode: searchMode
             });
 
             if (video) {
@@ -402,6 +413,11 @@ function displayResults(data) {
 
     const { query, results, results_count, search_time_seconds, search_strategy, search_message } = data;
 
+    // Store for tab re-sorting
+    lastResults = results.slice();
+    lastSearchData = data;
+    currentView = 'combined';
+
     resultsTitle.textContent = `Results for "${query}"`;
 
     // Display count and search time (like Google)
@@ -413,9 +429,26 @@ function displayResults(data) {
 
     if (results_count === 0) {
         showEmptyResults();
+        document.getElementById('resultTabs').style.display = 'none';
         return;
     }
 
+    // Show/hide tabs based on whether multimodal scores are available
+    const hasMultimodalScores = results.some(r => r.text_score !== undefined && r.vision_score !== undefined);
+    const tabsEl = document.getElementById('resultTabs');
+    tabsEl.style.display = hasMultimodalScores ? 'flex' : 'none';
+
+    // Reset active tab to Combined
+    tabsEl.querySelectorAll('.result-tab').forEach(tab => tab.classList.remove('active'));
+    tabsEl.querySelector('[data-view="combined"]').classList.add('active');
+
+    renderResultCards(results, search_strategy, search_message);
+
+    resultsSection.style.display = 'block';
+}
+
+// Render result cards into the container
+function renderResultCards(results, search_strategy, search_message) {
     resultsContainer.innerHTML = '';
 
     // Contextual search strategy feedback
@@ -454,8 +487,6 @@ function displayResults(data) {
         const card = createResultCard(result, index);
         resultsContainer.appendChild(card);
     });
-
-    resultsSection.style.display = 'block';
 }
 
 // Create Result Card
@@ -466,8 +497,21 @@ function createResultCard(result, index) {
     const videoName = result.video_filename || 'Unknown';
     const timestamp = result.timestamp || '00:00:00';
     const text = result.text || '';
-    const score = (result.score || 0).toFixed(3);
     const keyframePath = result.keyframe_path || '';
+
+    // Determine which score to highlight based on current view
+    let primaryScore;
+    let primaryLabel;
+    if (currentView === 'text' && result.text_score !== undefined) {
+        primaryScore = result.text_score;
+        primaryLabel = 'Text';
+    } else if (currentView === 'visual' && result.vision_score !== undefined) {
+        primaryScore = result.vision_score;
+        primaryLabel = 'Visual';
+    } else {
+        primaryScore = result.combined_score || result.score || 0;
+        primaryLabel = 'Score';
+    }
 
     // Highlight query terms in text
     const highlightedText = highlightText(text, currentQuery);
@@ -480,6 +524,22 @@ function createResultCard(result, index) {
                     onerror="this.parentElement.style.display='none'" />
            </div>`
         : '';
+
+    // Build score badges (only if multimodal scores available)
+    const hasMultimodal = result.text_score !== undefined && result.vision_score !== undefined;
+    let scoreBadgesHtml = '';
+    if (hasMultimodal) {
+        scoreBadgesHtml = `
+            <div class="score-badges">
+                <span class="score-badge score-badge-text ${currentView === 'text' ? 'active' : ''}"
+                      title="Text embedding similarity">T: ${result.text_score.toFixed(3)}</span>
+                <span class="score-badge score-badge-visual ${currentView === 'visual' ? 'active' : ''}"
+                      title="Visual embedding similarity">V: ${result.vision_score.toFixed(3)}</span>
+                <span class="score-badge score-badge-combined ${currentView === 'combined' ? 'active' : ''}"
+                      title="Combined score">C: ${(result.combined_score || 0).toFixed(3)}</span>
+            </div>
+        `;
+    }
 
     card.innerHTML = `
         <div class="result-header">
@@ -497,10 +557,11 @@ function createResultCard(result, index) {
             </div>
             <div class="result-meta">
                 <div class="result-timestamp">${timestamp}</div>
-                <div class="result-score">Score: ${score}</div>
+                <div class="result-score">${primaryLabel}: ${primaryScore.toFixed(3)}</div>
             </div>
         </div>
         <div class="result-text">${highlightedText}</div>
+        ${scoreBadgesHtml}
     `;
 
     // Add click handler to open video player
@@ -509,6 +570,43 @@ function createResultCard(result, index) {
     });
 
     return card;
+}
+
+// ========================================
+// RESULT TAB FUNCTIONS
+// ========================================
+
+// Attach tab click listeners
+function attachTabListeners() {
+    const tabsContainer = document.getElementById('resultTabs');
+    tabsContainer.addEventListener('click', (e) => {
+        const tab = e.target.closest('.result-tab');
+        if (!tab) return;
+
+        const view = tab.dataset.view;
+        if (view === currentView) return;
+
+        currentView = view;
+
+        // Update active tab styling
+        tabsContainer.querySelectorAll('.result-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        // Re-sort results based on selected view
+        const sorted = lastResults.slice();
+        if (view === 'text') {
+            sorted.sort((a, b) => (b.text_score || 0) - (a.text_score || 0));
+        } else if (view === 'visual') {
+            sorted.sort((a, b) => (b.vision_score || 0) - (a.vision_score || 0));
+        } else {
+            sorted.sort((a, b) => (b.combined_score || b.score || 0) - (a.combined_score || a.score || 0));
+        }
+
+        // Re-render cards (preserve strategy banner)
+        const strategy = lastSearchData?.search_strategy;
+        const message = lastSearchData?.search_message;
+        renderResultCards(sorted, strategy, message);
+    });
 }
 
 // ========================================
@@ -581,16 +679,34 @@ function closeVideoPlayer() {
     currentVideoResult = null;
 }
 
+// Stop words to exclude from highlighting (mirrors backend STOP_WORDS)
+const HIGHLIGHT_STOP_WORDS = new Set([
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
+    "for", "of", "with", "by", "from", "is", "it", "as", "are",
+    "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "shall", "should",
+    "may", "might", "must", "can", "could", "not", "no", "nor",
+    "so", "if", "then", "than", "that", "this", "these", "those",
+    "what", "which", "who", "whom", "how", "when", "where", "why",
+    "all", "each", "every", "both", "few", "more", "most", "some",
+    "any", "other", "into", "about", "between", "through", "during",
+    "before", "after", "above", "below", "up", "down", "out", "off",
+    "over", "under", "again", "further", "once", "here", "there",
+    "very", "just", "also", "too", "only", "own", "same", "such",
+    "tell", "me", "show", "give", "let", "please", "find", "get",
+    "list", "display", "search", "look", "see", "want", "need",
+]);
+
 // Highlight Text
 function highlightText(text, query) {
     if (!query) return escapeHtml(text);
 
-    const words = query.toLowerCase().split(/\s+/);
+    const words = query.toLowerCase().split(/\s+/).filter(
+        word => word.length >= 3 && !HIGHLIGHT_STOP_WORDS.has(word)
+    );
     let highlightedText = escapeHtml(text);
 
     words.forEach(word => {
-        if (word.length < 3) return; // Skip very short words
-
         const regex = new RegExp(`(${escapeRegex(word)})`, 'gi');
         highlightedText = highlightedText.replace(regex, '<span class="highlight">$1</span>');
     });

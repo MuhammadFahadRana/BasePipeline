@@ -198,6 +198,7 @@ class DataIngester:
                 start_frame=scene_data.get("start_frame"),
                 end_frame=scene_data.get("end_frame"),
                 keyframe_path=scene_data.get("keyframe_path"),
+                ocr_text=scene_data.get("ocr_text"),
             )
             self.db.add(scene)
             scene_db_objects.append(scene)

@@ -240,6 +240,11 @@ class BasicVideoPipeline:
             print("\n2c. Enriching scenes with OCR...")
             try:
                 scenes = self.scene_detector.enrich_with_ocr(scenes)
+                # Re-save scenes cache with OCR data included
+                scenes_cache = output_base / "scenes" / video_path.stem / f"{video_path.stem}_scenes.json"
+                if scenes_cache.exists():
+                    with open(scenes_cache, "w", encoding="utf-8") as f:
+                        json.dump(scenes, f, indent=2, ensure_ascii=False)
             except Exception as e:
                 print(f"OCR enrichment failed: {e}")
 

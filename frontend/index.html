@@ -108,14 +108,14 @@
                             <option value="50">50</option>
                         </select>
                     </div>
-                    <!-- videoFilter -->
-                    <!-- <div class="option-group">
-                        <label for="videoFilter">Video:</label>
-                        <select id="videoFilter" class="select-input">
-                            <option value="">All Videos</option>
+                    <div class="option-group">
+                        <label for="searchModeSelect">Mode:</label>
+                        <select id="searchModeSelect" class="select-input">
+                            <option value="balanced" selected>Balanced</option>
+                            <option value="text_heavy">Text Heavy</option>
+                            <option value="vision_heavy">Vision Heavy</option>
                         </select>
-                    </div> -->
-
+                    </div>
                 </div>
 
                 <!-- Quick Search Examples -->
@@ -132,6 +132,21 @@
                 <div class="results-header">
                     <h2 id="resultsTitle">Search Results</h2>
                     <span class="results-count" id="resultsCount">0 results</span>
+                </div>
+                <!-- Result View Tabs -->
+                <div class="result-tabs" id="resultTabs" style="display: none;">
+                    <button class="result-tab active" data-view="combined">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Combined
+                    </button>
+                    <button class="result-tab" data-view="text">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 7V4H20V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 20H15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 4V20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Text Embeddings
+                    </button>
+                    <button class="result-tab" data-view="visual">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/><path d="M21 15L16 10L5 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Visual Embeddings
+                    </button>
                 </div>
                 <div class="results-container" id="resultsContainer">
                     <!-- Results will be inserted here -->

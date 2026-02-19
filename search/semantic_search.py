@@ -1,12 +1,12 @@
-"""Semantic search engine with typo/fuzzy matching support - OPTIMIZED."""
+"""Semantic search engine with semantic-first search strategy - OPTIMIZED."""
 
 import re
 import hashlib
 import json
 import time
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 from dataclasses import dataclass
-from difflib import SequenceMatcher
+from difflib import SequenceMatcher, get_close_matches
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy import text
@@ -15,53 +15,33 @@ from sqlalchemy.orm import Session
 from database.models import Video, TranscriptSegment, Embedding, SearchQuery
 from embeddings.text_embeddings import get_embedding_generator
 
-# Global NeuSpell checker cache (lazy loaded once)
-_neuspell_checker = None
-_neuspell_loaded = False
+# Global vocabulary cache (built once from transcript data)
+_vocabulary: Optional[Set[str]] = None
+
+# ── Stop words and command verbs (shared across all search methods) ──
+STOP_WORDS = {
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
+    "for", "of", "with", "by", "from", "is", "it", "as", "are",
+    "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "shall", "should",
+    "may", "might", "must", "can", "could", "not", "no", "nor",
+    "so", "if", "then", "than", "that", "this", "these", "those",
+    "what", "which", "who", "whom", "how", "when", "where", "why",
+    "all", "each", "every", "both", "few", "more", "most", "some",
+    "any", "other", "into", "about", "between", "through", "during",
+    "before", "after", "above", "below", "up", "down", "out", "off",
+    "over", "under", "again", "further", "once", "here", "there",
+    "very", "just", "also", "too", "only", "own", "same", "such",
+    # Command verbs (natural-language queries)
+    "tell", "me", "show", "give", "let", "please", "find", "get",
+    "list", "display", "search", "look", "see", "want", "need",
+}
 
 
-def _get_neuspell_checker():
-    """Get or create global NeuSpell BertChecker instance (loaded once)."""
-    global _neuspell_checker, _neuspell_loaded
-    if _neuspell_loaded:
-        return _neuspell_checker
-    
-    _neuspell_loaded = True
-    try:
-        import torch
-        import torch.nn as nn
-        from neuspell import BertChecker
-        
-        # Monkeypatches for legacy model loading
-        original_load = torch.load
-        original_load_state_dict = nn.Module.load_state_dict
-        
-        try:
-            def new_load(*args, **kwargs):
-                if 'weights_only' not in kwargs:
-                    kwargs['weights_only'] = False
-                return original_load(*args, **kwargs)
-            torch.load = new_load
-            
-            def new_load_state_dict(self, state_dict, strict=True, **kwargs):
-                if hasattr(self, 'bert_model'):
-                    strict = False
-                return original_load_state_dict(self, state_dict, strict=strict, **kwargs)
-            nn.Module.load_state_dict = new_load_state_dict
-            
-            checker = BertChecker()
-            checker.from_pretrained()
-            _neuspell_checker = checker
-            print("NeuSpell BertChecker loaded successfully (cached globally)")
-        finally:
-            torch.load = original_load
-            nn.Module.load_state_dict = original_load_state_dict
-            
-    except Exception as e:
-        print(f"Failed to load NeuSpell: {e}")
-        _neuspell_checker = None
-    
-    return _neuspell_checker
+def extract_keywords(query: str) -> List[str]:
+    """Extract content-bearing keywords from a query, removing stop words."""
+    words = re.findall(r'[a-zA-Z0-9]+', query.lower())
+    return [w for w in words if w not in STOP_WORDS and len(w) >= 2]
 
 
 @dataclass
@@ -121,9 +101,6 @@ class SemanticSearchEngine:
         """
         self.db = db
         self.embedding_gen = get_embedding_generator()
-
-        # Use globally cached NeuSpell checker (loaded once, reused across requests)
-        self.checker = _get_neuspell_checker()
         
         # Caching configuration
         self.cache_enabled = cache_enabled
@@ -145,70 +122,60 @@ class SemanticSearchEngine:
             'avg_latency_ms': 0.0,
         }
 
-    def _load_neuspell(self):
-        """Load NeuSpell BertChecker with compatibility patches for legacy models."""
-        import torch
-        import torch.nn as nn
-        from neuspell import BertChecker
-        
-        # Monkeypatches for legacy model loading
-        original_load = torch.load
-        original_load_state_dict = nn.Module.load_state_dict
+    def _build_vocabulary(self) -> Set[str]:
+        """Build vocabulary from transcript segments for 'did you mean?' suggestions."""
+        global _vocabulary
+        if _vocabulary is not None:
+            return _vocabulary
         
         try:
-            # Patch torch.load to disable weights_only=True
-            def new_load(*args, **kwargs):
-                if 'weights_only' not in kwargs:
-                    kwargs['weights_only'] = False
-                return original_load(*args, **kwargs)
-            torch.load = new_load
-            
-            # Patch load_state_dict to be non-strict and ignore assign
-            def new_load_state_dict(self, state_dict, strict=True, **kwargs):
-                if hasattr(self, 'bert_model'):
-                    strict = False
-                return original_load_state_dict(self, state_dict, strict=strict, **kwargs)
-            nn.Module.load_state_dict = new_load_state_dict
-            
-            checker = BertChecker()
-            checker.from_pretrained()
-            return checker
-            
-        finally:
-            # Restore original functions safely
-            torch.load = original_load
-            nn.Module.load_state_dict = original_load_state_dict
+            result = self.db.execute(text("""
+                SELECT DISTINCT unnest(string_to_array(lower(text), ' ')) AS word
+                FROM transcript_segments
+            """))
+            # Only keep words >= 3 chars, strip punctuation
+            raw_words = {row[0].strip('.,!?\'"()-:;') for row in result}
+            _vocabulary = {w for w in raw_words if len(w) >= 3 and w.isalpha()}
+            print(f"Vocabulary built: {len(_vocabulary)} unique words")
+        except Exception as e:
+            print(f"Failed to build vocabulary: {e}")
+            _vocabulary = set()
+        
+        return _vocabulary
 
-    def _correct_typos(self, query: str) -> Tuple[str, List[str]]:
+    def _suggest_correction(self, query: str) -> Optional[str]:
         """
-        Correct common typos in query.
-
-        Args:
-            query: Original query
+        Suggest a correction for the query using vocabulary matching.
+        Only called when search returns no good results.
 
         Returns:
-            Tuple of (corrected_query, list_of_corrections)
+            Suggested corrected query, or None if no suggestion.
         """
-        if not self.checker:
-            return query, []
+        vocab = self._build_vocabulary()
+        if not vocab:
+            return None
+        
+        query_words = query.lower().split()
+        corrected_words = []
+        any_correction = False
+        
+        for word in query_words:
+            clean_word = word.strip('.,!?\'"()-:;?')
+            if len(clean_word) < 3 or clean_word in vocab:
+                corrected_words.append(word)
+                continue
             
-        try:
-            # Clean query first? NeuSpell handles punctuation usually, but let's be safe
-            # Actually, passing raw query is often better for context
-            corrected_query = self.checker.correct(query)
-            
-            # Remove any trailing periods if original didn't have them (NeuSpell sometimes adds punctuation)
-            if not query.endswith('.') and corrected_query.endswith('.'):
-                corrected_query = corrected_query[:-1]
-                
-            corrections = []
-            if corrected_query.lower() != query.lower():
-                corrections.append(f"{query} → {corrected_query}")
-                
-            return corrected_query, corrections
-        except Exception as e:
-            print(f"Autocorrection failed: {e}")
-            return query, []
+            # Find close matches in vocabulary
+            matches = get_close_matches(clean_word, vocab, n=1, cutoff=0.75)
+            if matches:
+                corrected_words.append(matches[0])
+                any_correction = True
+            else:
+                corrected_words.append(word)
+        
+        if any_correction:
+            return ' '.join(corrected_words)
+        return None
 
     def _fuzzy_match_score(self, query_term: str, text: str) -> float:
         """
@@ -255,8 +222,8 @@ class SemanticSearchEngine:
         self,
         query: str,
         top_k: int = 10,
-        semantic_weight: float = 0.7,
-        text_weight: float = 0.3,
+        semantic_weight: float = 0.85,
+        text_weight: float = 0.15,
         min_score: float = 0.15,
         video_filter: Optional[str] = None,
         log_query: bool = True,
@@ -302,16 +269,13 @@ class SemanticSearchEngine:
         
         self.stats['cache_misses'] += 1
         
-        # Typo correction
-        corrected_query, corrections = self._correct_typos(query)
-
-        if corrections:
-            print(f"Typo corrections applied: {', '.join(corrections)}")
-            print(f"Corrected query: {corrected_query}")
-
-        # Generate query embedding (optimized for Qwen3-Embedding)
+        # Generate query embedding (semantic-first, no autocorrection)
         query_instruction = "Given a query, retrieve relevant passages that answer the query\nQuery: "
-        query_embedding = self.embedding_gen.encode_single(corrected_query, instruction=query_instruction)
+        query_embedding = self.embedding_gen.encode_single(query, instruction=query_instruction)
+
+        # Extract keywords for fuzzy search (strip stop words)
+        keywords = extract_keywords(query)
+        fuzzy_query = ' '.join(keywords) if keywords else query
 
         # OPTIMIZATION #4: Parallel execution if enabled
         if self.parallel_enabled and self._executor:
@@ -319,7 +283,7 @@ class SemanticSearchEngine:
                 self._semantic_search, query_embedding, top_k=top_k * 3, video_filter=video_filter
             )
             fuzzy_future = self._executor.submit(
-                self._fuzzy_text_search, corrected_query, top_k=top_k * 3, video_filter=video_filter
+                self._fuzzy_text_search, fuzzy_query, top_k=top_k * 3, video_filter=video_filter
             )
             semantic_results = semantic_future.result()
             fuzzy_results = fuzzy_future.result()
@@ -328,7 +292,7 @@ class SemanticSearchEngine:
                 query_embedding, top_k=top_k * 3, video_filter=video_filter
             )
             fuzzy_results = self._fuzzy_text_search(
-                corrected_query, top_k=top_k * 3, video_filter=video_filter
+                fuzzy_query, top_k=top_k * 3, video_filter=video_filter
             )
 
         # Combine and re-rank results
@@ -391,18 +355,36 @@ class SemanticSearchEngine:
         Returns:
             Dict with 'results', 'search_metadata' containing strategy info
         """
-        # Typo correction applied once
-        corrected_query, corrections = self._correct_typos(query)
-        search_query = corrected_query if corrections else query
+        # Semantic-first: use the original query directly (no autocorrection)
+        search_query = query
         
         metadata = {
             "original_query": query,
-            "corrected_query": search_query if corrections else None,
-            "corrections": corrections,
+            "corrected_query": None,
+            "corrections": [],
+            "did_you_mean": None,
             "search_strategy": "exact",
             "search_message": None,
             "tiers_tried": [],
+            "keywords_used": None,
         }
+        
+        # ── Query preprocessing: extract content keywords ──
+        keywords = extract_keywords(search_query)
+        metadata["keywords_used"] = keywords
+        
+        # If NO meaningful keywords remain, the query is all stop/command words
+        # (e.g., "show me all videos", "the", "tell me")
+        if not keywords:
+            metadata["search_strategy"] = "no_keywords"
+            metadata["search_message"] = (
+                f'Your query "{search_query}" contains only common words. '
+                f'Try specific keywords like "drilling", "safety equipment", '
+                f'"offshore platform", etc.'
+            )
+            return {"results": [], "search_metadata": metadata}
+        
+        print(f"  Query: \"{search_query}\" → Keywords: {keywords}")
         
         # ── Tier 1: Full query search with standard thresholds ──
         results = self.search(
@@ -418,8 +400,6 @@ class SemanticSearchEngine:
         good_results = [r for r in results if r.score >= 0.30]
         if len(good_results) >= min(3, top_k):
             metadata["search_strategy"] = "direct"
-            if corrections:
-                metadata["search_message"] = f"Showing results for \"{search_query}\" (corrected from \"{query}\")"
             return {"results": results, "search_metadata": metadata}
         
         # ── Tier 2: Relaxed thresholds ──
@@ -441,23 +421,8 @@ class SemanticSearchEngine:
             metadata["search_message"] = f"Showing best available matches for \"{search_query}\""
             return {"results": results, "search_metadata": metadata}
         
-        # ── Tier 3: Word decomposition ──
-        # Filter out stop words / filler words that add no search value
-        STOP_WORDS = {
-            "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
-            "for", "of", "with", "by", "from", "is", "it", "as", "are",
-            "was", "were", "be", "been", "being", "have", "has", "had",
-            "do", "does", "did", "will", "would", "shall", "should",
-            "may", "might", "must", "can", "could", "not", "no", "nor",
-            "so", "if", "then", "than", "that", "this", "these", "those",
-            "what", "which", "who", "whom", "how", "when", "where", "why",
-            "all", "each", "every", "both", "few", "more", "most", "some",
-            "any", "other", "into", "about", "between", "through", "during",
-            "before", "after", "above", "below", "up", "down", "out", "off",
-            "over", "under", "again", "further", "once", "here", "there",
-            "very", "just", "also", "too", "only", "own", "same", "such",
-        }
-        words = [w for w in search_query.lower().split() if len(w) >= 3 and w not in STOP_WORDS]
+        # ── Tier 3: Word decomposition using extracted keywords ──
+        words = keywords  # Already cleaned of stop words
         
         if len(words) > 1:
             metadata["tiers_tried"].append("decomposed")
@@ -467,16 +432,15 @@ class SemanticSearchEngine:
                 word_results = self.search(
                     query=word,
                     top_k=top_k,
-                    min_score=0.15,
+                    min_score=0.30,
                     video_filter=video_filter,
                     log_query=False,
                 )
                 for r in word_results:
                     key = r.segment_id
                     if key in all_word_results:
-                        # Boost score for segments matching multiple words
                         existing = all_word_results[key]
-                        existing.score = max(existing.score, r.score) * 1.15
+                        existing.score = max(existing.score, r.score) * 1.10
                     else:
                         all_word_results[key] = r
             
@@ -500,8 +464,18 @@ class SemanticSearchEngine:
                 metadata["search_strategy"] = "relaxed"
                 metadata["search_message"] = f"Showing best available matches for \"{search_query}\""
         
+        # ── "Did you mean?" suggestion (only when no/poor results) ──
+        if not results or (results and results[0].score < 0.20):
+            suggestion = self._suggest_correction(query)
+            if suggestion and suggestion.lower() != query.lower():
+                metadata["did_you_mean"] = suggestion
+                metadata["search_message"] = (
+                    f"No results found for \"{query}\". "
+                    f"Did you mean \"{suggestion}\"?"
+                )
+        
         # Final fallback message if still no results
-        if not results:
+        if not results and not metadata.get("did_you_mean"):
             metadata["search_strategy"] = "no_results"
             metadata["search_message"] = (
                 f"No results found for \"{search_query}\". "
@@ -590,52 +564,83 @@ class SemanticSearchEngine:
         """
         Fuzzy text search using PostgreSQL full-text search.
         
-        NOW SEARCHES BOTH:
-        - Transcript text (spoken words)
-        - OCR text from keyframes (visible text like "Deepsea Stavanger")
+        Uses a UNION of two query paths:
+        1. Transcript text matches (standard path)
+        2. Direct OCR scene matches (searches scenes.ocr_text directly)
+        
+        This avoids the problem where transcript_segments.scene_id is NULL
+        for most segments, making OCR text unreachable via JOINs.
 
         Returns:
             Dict mapping segment_id -> (score, segment)
         """
         # PostgreSQL full-text search
-        query_filter = ""
+        query_filter_ts = ""
+        query_filter_ocr = ""
         if video_filter:
-            query_filter = "AND v.filename = :video_filter"
+            query_filter_ts = "AND v.filename = :video_filter"
+            query_filter_ocr = "AND v.filename = :video_filter"
 
-        # Enhanced query: searches transcript AND scene OCR text
+        # Pre-filter: strip stop words from fuzzy query to avoid noise matches
+        fuzzy_keywords = extract_keywords(query)
+        clean_query = ' '.join(fuzzy_keywords) if fuzzy_keywords else query
+        
+        # If all words are stop words, skip fuzzy search entirely
+        if not fuzzy_keywords:
+            return {}
+
+        # UNION query: transcript matches + direct OCR scene matches
         sql_query = text(f"""
-            SELECT 
-                ts.id,
-                ts.video_id,
-                v.filename,
-                v.file_path,
-                ts.start_time,
-                ts.end_time,
-                ts.text,
-                -- Combine scores from transcript and OCR (OCR weighted slightly lower)
-                GREATEST(
-                    ts_rank(to_tsvector('simple', ts.text), plainto_tsquery('simple', :query)),
-                    COALESCE(
-                        ts_rank(to_tsvector('simple', s.ocr_text), plainto_tsquery('simple', :query)) * 0.9,
-                        0
-                    )
-                ) AS rank,
-                s.ocr_text as scene_ocr,
-                ve.keyframe_path
-            FROM transcript_segments ts
-            JOIN videos v ON ts.video_id = v.id
-            LEFT JOIN scenes s ON ts.scene_id = s.id
-            LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
-            WHERE (
-                to_tsvector('simple', ts.text) @@ plainto_tsquery('simple', :query)
-                OR to_tsvector('simple', COALESCE(s.ocr_text, '')) @@ plainto_tsquery('simple', :query)
+            WITH combined AS (
+                -- Branch 1: Transcript text matches
+                SELECT 
+                    ts.id AS result_id,
+                    ts.video_id,
+                    v.filename,
+                    v.file_path,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.text AS result_text,
+                    ts_rank(to_tsvector('english', ts.text), plainto_tsquery('english', :query)) AS rank,
+                    NULL AS ocr_text,
+                    ve.keyframe_path,
+                    'transcript' AS match_source
+                FROM transcript_segments ts
+                JOIN videos v ON ts.video_id = v.id
+                LEFT JOIN scenes s ON ts.scene_id = s.id
+                LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
+                WHERE to_tsvector('english', ts.text) @@ plainto_tsquery('english', :query)
+                {query_filter_ts}
+
+                UNION ALL
+
+                -- Branch 2: Direct OCR scene matches (independent of scene_id linkage)
+                SELECT 
+                    -s.id AS result_id,
+                    s.video_id,
+                    v.filename,
+                    v.file_path,
+                    s.start_time,
+                    s.end_time,
+                    '[OCR] ' || s.ocr_text AS result_text,
+                    -- Boost OCR rank 10x so it competes with transcript ts_rank values
+                    ts_rank(to_tsvector('english', s.ocr_text), plainto_tsquery('english', :query)) * 10.0 AS rank,
+                    s.ocr_text,
+                    COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
+                    'ocr' AS match_source
+                FROM scenes s
+                JOIN videos v ON s.video_id = v.id
+                LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
+                WHERE s.ocr_text IS NOT NULL
+                  AND to_tsvector('english', s.ocr_text) @@ plainto_tsquery('english', :query)
+                {query_filter_ocr}
             )
-            {query_filter}
+            SELECT * FROM combined
             ORDER BY rank DESC
             LIMIT :top_k
         """)
 
-        params = {"query": query, "top_k": top_k}
+        params = {"query": clean_query, "top_k": top_k}
         if video_filter:
             params["video_filter"] = video_filter
 
@@ -643,22 +648,30 @@ class SemanticSearchEngine:
 
         fuzzy_scores = {}
         for row in results:
-            segment_id, video_id, filename, file_path, start, end, segment_text, rank, ocr_text, keyframe_path = row
+            result_id = row.result_id
+            video_id = row.video_id
+            filename = row.filename
+            file_path = row.file_path
+            start = row.start_time
+            end = row.end_time
+            result_text = row.result_text
+            rank = row.rank
+            keyframe_path = row.keyframe_path
+            match_source = row.match_source
+
             segment = TranscriptSegment(
-                id=segment_id,
+                id=abs(result_id),
                 video_id=video_id,
                 start_time=start,
                 end_time=end,
-                text=segment_text,
+                text=result_text,
             )
             segment.video_filename = filename
             segment.video_path = file_path
             
-            # If match came from OCR, append hint to text
-            if ocr_text and query.lower() in ocr_text.lower():
-                segment.text = f"{segment_text} [OCR: {ocr_text[:100]}]"
-            
-            fuzzy_scores[segment_id] = (rank, segment, keyframe_path)
+            # Use a unique key to avoid collisions between transcript and OCR results
+            key = f"ocr_{abs(result_id)}" if match_source == 'ocr' else result_id
+            fuzzy_scores[key] = (rank, segment, keyframe_path)
 
         return fuzzy_scores
 
@@ -729,6 +742,12 @@ class SemanticSearchEngine:
             combined_score = (
                 semantic_weight * semantic_score + text_weight * fuzzy_score_norm
             )
+            
+            # OCR-only matches (no semantic embedding) get a floor score
+            # since exact text matches from keyframes are inherently high quality
+            is_ocr_only = isinstance(key, str) and key.startswith('ocr_')
+            if is_ocr_only and semantic_score == 0 and fuzzy_score_norm > 0:
+                combined_score = max(combined_score, 0.45 * fuzzy_score_norm)
 
             # Determine match type
             if semantic_score > 0.7:

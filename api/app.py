@@ -288,6 +288,7 @@ async def quick_search(
             "search_time_seconds": round(search_time, 3),
             "search_strategy": metadata.get("search_strategy"),
             "search_message": metadata.get("search_message"),
+            "did_you_mean": metadata.get("did_you_mean"),
         }
 
     except Exception as e:
