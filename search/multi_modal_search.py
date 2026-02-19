@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from search.semantic_search import SemanticSearchEngine, SearchResult
 from embeddings.vision_embeddings import get_vision_embedding_generator
+from llm.query_parser import get_query_parser
 
 
 @dataclass
@@ -52,12 +53,17 @@ class MultiModalSearchEngine:
         self.text_weight = text_weight
         self.vision_weight = vision_weight
         
-        # Initialize text search engine
+        # Text search engine
         self.text_search = SemanticSearchEngine(db)
         
         # Lazy load vision model (only when needed)
         self._vision_gen = None
         self.vision_model_name = vision_model
+        
+        # LLM Query Parser (lazy loaded)
+        self.query_parser = None 
+        # Only load if we are likely to use it (or make it standard)
+        # For now, let's load it on demand in search_with_fallback
         
         # Validate weights
         if not np.isclose(text_weight + vision_weight, 1.0):
@@ -170,6 +176,7 @@ class MultiModalSearchEngine:
         query: str,
         top_k: int = 10,
         video_filter: Optional[str] = None,
+        use_llm: bool = True,
     ) -> dict:
         """
         Multi-modal search with tiered fallback strategy.
@@ -181,12 +188,39 @@ class MultiModalSearchEngine:
         Returns:
             Dict with 'results', 'search_metadata'
         """
+        # 0. LLM Query Parsing (Intent Understanding)
+        parsed_query = None
+        search_query = query
+        
+        if use_llm:
+            # Initialize parser if not done
+            if self.query_parser is None:
+                self.query_parser = get_query_parser(enabled=True)
+                
+            if self.query_parser:
+                parsed_query = self.query_parser.parse(query)
+            search_query = parsed_query.normalized_query
+            
+            # Dynamic weighting based on intent
+            if "vision" in parsed_query.targets and "transcript" not in parsed_query.targets:
+                # Visual search intent (e.g. "orange robot") -> Boost vision
+                self.vision_weight = max(self.vision_weight, 0.6)
+                self.text_weight = 1.0 - self.vision_weight
+            elif "ocr" in parsed_query.targets:
+                # OCR intent (e.g. "slide about X") -> Boost text (OCR is part of text search)
+                self.text_weight = max(self.text_weight, 0.7)
+                self.vision_weight = 1.0 - self.text_weight
+                
         # 1. Get text results with fallback
         fallback_data = self.text_search.search_with_fallback(
-            query=query,
+            query=search_query,
             top_k=top_k * 3 if self.vision_weight > 0 else top_k,
             video_filter=video_filter,
         )
+        
+        # Attach intent metadata
+        if parsed_query:
+            fallback_data["search_metadata"]["llm_intent"] = parsed_query.to_dict()
         
         text_results = fallback_data["results"]
         metadata = fallback_data["search_metadata"]
@@ -354,7 +388,7 @@ class MultiModalSearchEngine:
         video_filter: Optional[str] = None
     ) -> List[MultiModalSearchResult]:
         """
-        Perform vision-only search (query text → find similar keyframes).
+        Perform vision-only search (query text -> find similar keyframes).
         
         Args:
             query: Search query text

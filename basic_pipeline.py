@@ -547,7 +547,7 @@ class BasicVideoPipeline:
                 )
                 results.append({"video": video_path.name, "success": True})
             except Exception as e:
-                print(f"✗ Processing failed: {str(e)}")
+                print(f"Processing failed: {str(e)}")
                 results.append({"video": video_path.name, "success": False, "error": str(e)})
 
         self.create_batch_summary(results, output_base=output_base)

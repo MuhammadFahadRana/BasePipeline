@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from database.models import Video, TranscriptSegment, Embedding, SearchQuery
 from embeddings.text_embeddings import get_embedding_generator
+from search.reranker import get_reranker
 
 # Global vocabulary cache (built once from transcript data)
 _vocabulary: Optional[Set[str]] = None
@@ -87,7 +88,9 @@ class SemanticSearchEngine:
         cache_ttl_seconds: int = 3600,
         max_cache_size: int = 1000,
         # Parallel execution
-        parallel_enabled: bool = True
+        parallel_enabled: bool = True,
+        # Reranker
+        reranker_enabled: bool = True
     ):
         """
         Initialize search engine.
@@ -98,6 +101,7 @@ class SemanticSearchEngine:
             cache_ttl_seconds: Cache time-to-live in seconds (default: 1 hour)
             max_cache_size: Maximum entries in memory cache
             parallel_enabled: Run semantic + fuzzy searches in parallel (OPTIMIZATION #4)
+            reranker_enabled: Use cross-encoder reranker for improved precision
         """
         self.db = db
         self.embedding_gen = get_embedding_generator()
@@ -111,6 +115,10 @@ class SemanticSearchEngine:
         # Parallel execution
         self.parallel_enabled = parallel_enabled
         self._executor = ThreadPoolExecutor(max_workers=2) if parallel_enabled else None
+        
+        # Cross-encoder reranker (lazy loaded on first use)
+        self.reranker_enabled = reranker_enabled
+        self._reranker = None  # Loaded lazily
         
         # Performance statistics
         self.stats = {
@@ -309,6 +317,18 @@ class SemanticSearchEngine:
         # Sort by score first
         combined_results.sort(key=lambda x: x.score, reverse=True)
         
+        # ── Cross-encoder reranking (biggest quality jump) ──
+        if self.reranker_enabled:
+            if self._reranker is None:
+                self._reranker = get_reranker(enabled=True)
+            if self._reranker:
+                # Rerank top candidates (limit to avoid slow scoring)
+                rerank_count = min(len(combined_results), top_k * 3)
+                combined_results[:rerank_count] = self._reranker.rerank(
+                    query, combined_results[:rerank_count], top_k=rerank_count
+                )
+                combined_results.sort(key=lambda x: x.score, reverse=True)
+
         # Filter by minimum score
         combined_results = [r for r in combined_results if r.score >= min_score]
 

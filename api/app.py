@@ -49,6 +49,7 @@ class MultiModalSearchRequest(BaseModel):
         "balanced",
         description="Search mode: balanced, text_heavy, vision_heavy, visual_only",
     )
+    use_llm: bool = Field(True, description="Use LLM for intent parsing (disable for speed)")
     video_filter: Optional[str] = Field(None, description="Filter by video filename")
 
 
@@ -59,6 +60,7 @@ class SearchResponse(BaseModel):
     results_count: int
     results: List[dict]
     search_time_seconds: float = Field(..., description="Time taken to execute search in seconds")
+    search_metadata: Optional[dict] = Field(None, description="Additional search metadata (strategies, LLM intent, etc)")
 
 
 class VideoInfo(BaseModel):
@@ -369,21 +371,25 @@ async def multimodal_search(request: MultiModalSearchRequest, db: Session = Depe
             vision_weight=vision_weight
         )
 
-        # Perform search
-        results = mm_search.search(
+        # Perform search with fallback (includes LLM intent parsing)
+        fallback_data = mm_search.search_with_fallback(
             query=request.query,
             top_k=request.top_k,
             video_filter=request.video_filter,
-            use_vision=request.use_vision
+            use_llm=request.use_llm,
         )
+        
+        results = fallback_data["results"]
+        metadata = fallback_data["search_metadata"]
 
         search_time = time.time() - start_time
 
         return SearchResponse(
             query=request.query,
             results_count=len(results),
-            results=[r.to_dict() for r in results],
+            results=[r.to_dict() if hasattr(r, 'to_dict') else r for r in results],
             search_time_seconds=round(search_time, 3),
+            search_metadata=metadata,
         )
 
     except Exception as e:
@@ -417,6 +423,7 @@ async def quick_multimodal_search(
     q: str = Query(..., description="Search query", min_length=1),
     limit: int = Query(10, description="Number of results", ge=1, le=50),
     mode: str = Query("balanced", description="Search mode: balanced, text_heavy, vision_heavy, visual_only"),
+    use_llm: bool = Query(True, description="Use LLM for intent parsing (disable for speed)"),
     video: Optional[str] = Query(None, description="Filter by video filename"),
     db: Session = Depends(get_db),
 ):
@@ -449,6 +456,7 @@ async def quick_multimodal_search(
             query=q,
             top_k=limit,
             video_filter=video,
+            use_llm=use_llm,
         )
 
         results = fallback_data["results"]
@@ -464,6 +472,7 @@ async def quick_multimodal_search(
             "search_time_seconds": round(search_time, 3),
             "search_strategy": metadata.get("search_strategy"),
             "search_message": metadata.get("search_message"),
+            "llm_intent": metadata.get("llm_intent"),
         }
 
     except Exception as e:

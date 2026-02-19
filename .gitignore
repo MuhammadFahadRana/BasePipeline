@@ -72,3 +72,6 @@ temp_*.mp3
 
 # Videos
 *.ts
+
+# All the csv files
+*.csv
