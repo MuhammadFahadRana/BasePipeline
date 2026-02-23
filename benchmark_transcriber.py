@@ -30,13 +30,17 @@ import warnings
 from datetime import timedelta
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+
 import torch
 import numpy as np
 
 warnings.filterwarnings("ignore")
-
-# HF_TOKEN should be set as an environment variable (e.g., in a .env file)
-# os.environ["HF_TOKEN"] = "your_token_here"
 
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".ts"}

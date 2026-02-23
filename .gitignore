@@ -67,6 +67,7 @@ logs/
 # Temp files
 temp_*.wav
 temp_*.mp3
+_benchmark_temp_*.wav
 *.tmp
 
 
