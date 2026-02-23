@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS scenes (
     start_frame INTEGER,
     end_frame INTEGER,
     keyframe_path TEXT,
+    ocr_text TEXT,
+    object_labels JSONB,
+    caption TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(video_id, scene_id)
 );

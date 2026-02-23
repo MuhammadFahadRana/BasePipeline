@@ -54,21 +54,40 @@ def main():
         print(f"No video transcriptions found in {ref_dir}")
         return
 
-    # 2. Discover models in benchmarking
-    if not bench_dir.exists():
-        print(f"Error: Benchmark directory not found: {bench_dir}")
-        return
+    # 2. Discover models
+    # Look at both the benchmarking folder and specific requested models in processed/transcripts
+    models = {} # name -> path
     
-    models = [d.name for d in bench_dir.iterdir() if d.is_dir()]
+    if bench_dir.exists():
+        for d in bench_dir.iterdir():
+            if d.is_dir():
+                models[d.name] = d
+                
+    # Add specific models from processed/transcripts
+    extra_models = [
+        "Qwen-qwen2-audio",
+        "Wav2Vec"
+    ]
+    transcripts_base = ref_dir.parent # This is "processed/transcripts"
+    
+    for model_name in extra_models:
+        model_path = transcripts_base / model_name
+        if model_path.exists():
+            models[model_name] = model_path
+        else:
+            print(f"Warning: Could not find extra model output: {model_path}")
+
     if not models:
-        print(f"No benchmarked models found in {bench_dir}")
+        print(f"No models found to compare in {bench_dir} or extra paths.")
         return
+
+    model_list = sorted(list(models.keys()))
 
     print("\n" + "=" * 90)
     print("  ASR BENCHMARK COMPARISON")
     print("=" * 90)
     print(f"  REFERENCE: {ref_dir.name}")
-    print(f"  MODELS   : {', '.join(models)}")
+    print(f"  MODELS   : {', '.join(model_list)}")
     print("=" * 90 + "\n")
 
     overall_results = []
@@ -78,10 +97,10 @@ def main():
     print(header)
     print("-" * len(header))
 
-    model_aggregates = {m: {"total_sim": 0, "count": 0, "total_time": 0} for m in models}
+    model_aggregates = {m: {"total_sim": 0, "count": 0, "total_time": 0} for m in models.keys()}
 
-    for model in models:
-        current_model_dir = bench_dir / model
+    for model_name, model_dir in models.items():
+        current_model_dir = model_dir
         
         for video in ref_videos:
             # Get reference data
@@ -107,17 +126,16 @@ def main():
                 word_diff = bench_words - ref_words
                 
                 # Processing time (if available)
-                # Some JSONs use "processing_time_seconds", some "processing_time" (different scripts)
                 bench_time = bench_data.get("processing_time_seconds") or bench_data.get("processing_time", 0)
                 
-                print(f"{model:<20} | {video[:30]:<30} | {sim:>7.2f}% | {word_diff:>+9} | {bench_time:>10.2f}")
+                print(f"{model_name:<20} | {video[:30]:<30} | {sim:>7.2f}% | {word_diff:>+9} | {bench_time:>10.2f}")
                 
-                model_aggregates[model]["total_sim"] += sim
-                model_aggregates[model]["total_time"] += bench_time
-                model_aggregates[model]["count"] += 1
+                model_aggregates[model_name]["total_sim"] += sim
+                model_aggregates[model_name]["total_time"] += bench_time
+                model_aggregates[model_name]["count"] += 1
                 
                 overall_results.append({
-                    "model": model,
+                    "model": model_name,
                     "video": video,
                     "similarity": sim,
                     "word_diff": word_diff,

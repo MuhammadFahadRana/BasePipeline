@@ -30,7 +30,11 @@ CREATE TABLE dbo.scenes (
     start_frame  INT NULL,
     end_frame    INT NULL,
     keyframe_path NVARCHAR(MAX) NULL,
+    ocr_text      NVARCHAR(MAX) NULL,
+    object_labels NVARCHAR(MAX) NULL, -- JSON
+    caption       NVARCHAR(MAX) NULL,
     created_at   DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT CK_scenes_object_labels_json CHECK (object_labels IS NULL OR ISJSON(object_labels) = 1),
     CONSTRAINT FK_scenes_videos
         FOREIGN KEY (video_id) REFERENCES dbo.videos(id) ON DELETE CASCADE,
     CONSTRAINT UQ_scenes_video_scene UNIQUE (video_id, scene_id)

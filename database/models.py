@@ -65,6 +65,10 @@ class Scene(Base):
     ocr_text = Column(Text)  # Text extracted from keyframe via OCR
     ocr_processed_at = Column(DateTime)  # When OCR was last run
     
+    # Semantic enrichment fields
+    object_labels = Column(JSON)  # All detected objects and labels
+    caption = Column(Text)        # Narrative description of the scene
+    
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
