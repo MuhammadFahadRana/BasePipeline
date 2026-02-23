@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────
+# Requirements for benchmark_transcriber.py
+# Install:  pip install -r requirements_benchmark.txt
+# ─────────────────────────────────────────────────────────────
+
+# Core (likely already installed)
+torch
+torchaudio
+transformers>=5.2.0
+numpy
+soundfile
+librosa
+moviepy
+imageio-ffmpeg
+
+# ── Vosk (Kaldi-based, offline) ──
+vosk>=0.3.45
+
+# ── SpeechT5 ASR ──
+# Uses transformers pipeline — no extra package needed
+
+# ── Voxtral Mini 4B ──
+mistral-common[audio]
+
+# ── pyannote Speaker Diarization ──
+pyannote.audio>=3.1
+
+# ── Google MedASR ──
+# Uses transformers AutoModelForCTC — no extra package needed
+# NOTE: May require transformers installed from git for latest support:
+#   pip install git+https://github.com/huggingface/transformers.git
+
+# ── VibeVoice ASR ──
+# Install from source:
+#   git clone https://github.com/microsoft/VibeVoice.git
+#   cd VibeVoice && pip install -e .
+# Also requires: flash-attn (for GPU acceleration)
+
+# Optional acceleration
+accelerate
+sentencepiece
