@@ -199,6 +199,8 @@ class DataIngester:
                 end_frame=scene_data.get("end_frame"),
                 keyframe_path=scene_data.get("keyframe_path"),
                 ocr_text=scene_data.get("ocr_text"),
+                object_labels=scene_data.get("object_labels", []),
+                caption=scene_data.get("caption"),
             )
             self.db.add(scene)
             scene_db_objects.append(scene)

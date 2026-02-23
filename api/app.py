@@ -22,6 +22,9 @@ import traceback
 import time
 from datetime import datetime
 
+# Lazy-loaded components
+_video_qa = None
+
 
 # Pydantic models for API
 class SearchRequest(BaseModel):
@@ -63,6 +66,32 @@ class SearchResponse(BaseModel):
     search_metadata: Optional[dict] = Field(None, description="Additional search metadata (strategies, LLM intent, etc)")
 
 
+class QARequest(BaseModel):
+    """Question Answering request model."""
+
+    question: str = Field(..., description="The question to ask about the video", min_length=3)
+    video_filter: Optional[str] = Field(None, description="Optional specific video to search in")
+    top_k: int = Field(5, description="Number of context snippets to use", ge=1, le=10)
+
+
+class QA_Citation(BaseModel):
+    """Citation for a QA answer."""
+
+    segment_id: int
+    video_filename: str
+    timestamp: str
+    text: str
+    score: float
+
+
+class QA_Response(BaseModel):
+    """Response from the QA system."""
+
+    answer: str
+    citations: List[dict]
+    metadata: dict
+
+
 class VideoInfo(BaseModel):
     """Video information model."""
 
@@ -96,6 +125,17 @@ async def startup_event():
     if not test_connection():
         raise RuntimeError("Failed to connect to database. Check your .env configuration.")
     print("✓ API server started successfully")
+
+
+def get_video_qa(db: Session = Depends(get_db)):
+    """Lazy loader for VideoQA."""
+    global _video_qa
+    if _video_qa is None:
+        from llm.video_qa import VideoQA
+
+        print("Initializing Video QA system (this may take a moment)...")
+        _video_qa = VideoQA(db)
+    return _video_qa
 
 
 
@@ -198,6 +238,35 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
 async def list_videos(db: Session = Depends(get_db)):
     """
     List all videos in the database.
+    """
+    videos = db.query(Video).all()
+    return [
+        VideoInfo(
+            id=v.id,
+            filename=v.filename,
+            duration_seconds=v.duration_seconds,
+            whisper_model=v.whisper_model,
+            processed_at=v.processed_at.isoformat() if v.processed_at else None,
+        )
+        for v in videos
+    ]
+
+
+@app.post("/qa/ask", response_model=QA_Response)
+async def ask_video_question(request: QARequest, qa_system=Depends(get_video_qa)):
+    """
+    Ask a natural language question about the available videos.
+    Uses RAG (Retrieval-Augmented Generation) to answer based on transcripts and visual semantics.
+    """
+    try:
+        result = qa_system.ask(
+            question=request.question, video_filter=request.video_filter, top_k=request.top_k
+        )
+        return result
+    except Exception as e:
+        print(f"QA Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
     """
     videos = db.query(Video).all()
 

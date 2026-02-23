@@ -63,7 +63,7 @@ class QwenTranscriber:
     Uses Alibaba's Qwen-Audio models for high-quality speech recognition.
     """
     
-    VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"}
+    VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".ts"}
     AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg"}
     
     SUPPORTED_MODELS = {
@@ -103,7 +103,11 @@ class QwenTranscriber:
         else:
             self.device = device
         
-        self.compute_type = compute_type
+        if device != "cuda" and not (device == "auto" and torch.cuda.is_available()):
+            self.compute_type = "float32"  # float16 segfaults on CPU
+        else:
+            self.compute_type = compute_type
+        
         self.language = language
         self.enable_timestamps = enable_timestamps
         
@@ -608,14 +612,14 @@ def main():
         model_name="qwen2-audio", device=selected_device
     )
 
-    # Batch process all videos in a folder
-    # transcriber.batch_transcribe(
-    #     folder_path="videos",  # Change to your video folder
-    #     output_dir="processed"
-    # )
+    ## Batch process all videos in a folder
+    transcriber.batch_transcribe(
+        folder_path="videos",  # Change to your video folder
+        output_dir="processed"
+    )
 
     # Process single video
-    transcriber.transcribe_video("videos\\Risk management.mp4", output_dir="processed")
+    # transcriber.transcribe_video("videos\\Risk management.mp4", output_dir="processed")
 
 
 if __name__ == "__main__":

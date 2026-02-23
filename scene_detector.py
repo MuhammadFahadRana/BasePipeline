@@ -76,6 +76,11 @@ class SceneConfig:
     ocr_use_gpu: bool = True
     ocr_confidence_threshold: float = 0.5
 
+    # Visual Enrichment (Qwen2-VL)
+    enable_visual_enrichment: bool = True
+    qwen_vl_model: str = "Qwen/Qwen2-VL-7B-Instruct"
+    qwen_vl_load_in_4bit: bool = True
+
     # Format conversion
     ffmpeg_path: str = "ffmpeg"  # assumes ffmpeg is on PATH
     compatible_extensions: Tuple[str, ...] = (".mp4", ".avi", ".mov")
@@ -118,6 +123,7 @@ class SceneDetector:
         self._clip_preprocess = None
         self._clip_tokenizer = None
         self._ocr = None
+        self._qwen_vl = None
 
     # ── Lazy model loaders ──────────────────────
 
@@ -150,10 +156,25 @@ class SceneDetector:
                     use_gpu=self.config.ocr_use_gpu,
                 )
             except ImportError:
-                print("Warning: embeddings.ocr not available, OCR disabled")
+                print("Warning: EasyOCR not found. OCR enrichment disabled.")
                 self.config.enable_ocr = False
                 return None
         return self._ocr
+
+    def _ensure_qwen_vl(self):
+        if self._qwen_vl is None:
+            try:
+                from extract_visual_features import VisualFeatureExtractor
+                self._qwen_vl = VisualFeatureExtractor(
+                    model_name=self.config.qwen_vl_model,
+                    device=self.config.get_device(),
+                    load_in_4bit=self.config.qwen_vl_load_in_4bit
+                )
+            except ImportError:
+                print("Warning: VisualFeatureExtractor dependencies not found. Visual enrichment disabled.")
+                self.config.enable_visual_enrichment = False
+                return None
+        return self._qwen_vl
 
     # ── 1. Format Conversion ────────────────────
 
@@ -551,7 +572,52 @@ class SceneDetector:
         print(f"  ✓ OCR complete: {ocr_count}/{len(scenes)} scenes had text")
         return scenes
 
-    # ── 5. Full Pipeline ────────────────────────
+    # ── 5. Visual Enrichment (Qwen2-VL) ─────────
+
+    def enrich_with_visual_features(self, scenes: List[Dict]) -> List[Dict]:
+        """
+        Enrich scenes with captions and object labels using Qwen2-VL.
+
+        Args:
+            scenes: List of scene dicts (must have keyframe_path)
+
+        Returns:
+            Same list with caption and object_labels added
+        """
+        if not self.config.enable_visual_enrichment:
+            return scenes
+
+        qwen = self._ensure_qwen_vl()
+        if qwen is None:
+            return scenes
+
+        print(f"  Running visual enrichment (Qwen2-VL) on {len(scenes)} scenes...")
+        count = 0
+
+        for scene in scenes:
+            kf = scene.get("keyframe_path")
+            if not kf or not Path(kf).exists():
+                scene["caption"] = None
+                scene["object_labels"] = []
+                continue
+
+            try:
+                result = qwen.analyze_image(kf)
+                scene.update({
+                    "caption": result.get("caption"),
+                    "object_labels": result.get("object_labels", []),
+                    "ocr_text": result.get("ocr_text")  # New: Qwen2-VL OCR
+                })
+                count += 1
+            except Exception as e:
+                print(f"    Visual enrichment failed for scene {scene.get('scene_id')}: {e}")
+                scene["caption"] = None
+                scene["object_labels"] = []
+
+        print(f"  ✓ Visual enrichment complete: {count}/{len(scenes)} scenes processed")
+        return scenes
+
+    # ── 6. Full Pipeline ────────────────────────
 
     def process_video(
         self,
@@ -589,13 +655,21 @@ class SceneDetector:
             except Exception as e:
                 print(f"  ! Refinement failed: {e}")
 
-        # OCR
+        # OCR (EasyOCR) - only if Qwen-VL is not fulfilling enrichment or specifically forced
         do_ocr = run_ocr if run_ocr is not None else self.config.enable_ocr
-        if do_ocr and scenes:
+        if do_ocr and scenes and not self.config.enable_visual_enrichment:
             try:
                 scenes = self.enrich_with_ocr(scenes)
             except Exception as e:
                 print(f"  ! OCR enrichment failed: {e}")
+
+        # Visual Enrichment (Qwen2-VL) - includes Caption, Labels, and OCR
+        if self.config.enable_visual_enrichment and scenes:
+            try:
+                # This now provides ocr_text as well, replacing the need for EasyOCR
+                scenes = self.enrich_with_visual_features(scenes)
+            except Exception as e:
+                print(f"  ! Visual enrichment failed: {e}")
 
         # Save enriched scenes
         video_path = Path(video_path)

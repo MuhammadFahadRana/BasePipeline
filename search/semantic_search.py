@@ -634,25 +634,27 @@ class SemanticSearchEngine:
 
                 UNION ALL
 
-                -- Branch 2: Direct OCR scene matches (independent of scene_id linkage)
+                UNION ALL
+
+                -- Branch 3: Visual Semantic matches (Qwen2-VL captions and labels)
                 SELECT 
-                    -s.id AS result_id,
+                    -(s.id + 1000000) AS result_id, -- Avoid ID collision with OCR branch
                     s.video_id,
                     v.filename,
                     v.file_path,
                     s.start_time,
                     s.end_time,
-                    '[OCR] ' || s.ocr_text AS result_text,
-                    -- Boost OCR rank 10x so it competes with transcript ts_rank values
-                    ts_rank(to_tsvector('english', s.ocr_text), plainto_tsquery('english', :query)) * 10.0 AS rank,
-                    s.ocr_text,
+                    '[Visual] ' || s.caption AS result_text,
+                    -- Boost Visual rank 8x
+                    ts_rank(to_tsvector('english', s.caption || ' ' || s.object_labels::text), plainto_tsquery('english', :query)) * 8.0 AS rank,
+                    NULL AS ocr_text,
                     COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
-                    'ocr' AS match_source
+                    'visual' AS match_source
                 FROM scenes s
                 JOIN videos v ON s.video_id = v.id
                 LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
-                WHERE s.ocr_text IS NOT NULL
-                  AND to_tsvector('english', s.ocr_text) @@ plainto_tsquery('english', :query)
+                WHERE (s.caption IS NOT NULL OR (s.object_labels IS NOT NULL AND jsonb_array_length(s.object_labels) > 0))
+                  AND to_tsvector('english', s.caption || ' ' || s.object_labels::text) @@ plainto_tsquery('english', :query)
                 {query_filter_ocr}
             )
             SELECT * FROM combined
@@ -689,8 +691,13 @@ class SemanticSearchEngine:
             segment.video_filename = filename
             segment.video_path = file_path
             
-            # Use a unique key to avoid collisions between transcript and OCR results
-            key = f"ocr_{abs(result_id)}" if match_source == 'ocr' else result_id
+            # Use a unique key to avoid collisions between transcript, OCR, and visual results
+            if match_source == 'ocr':
+                key = f"ocr_{abs(result_id)}"
+            elif match_source == 'visual':
+                key = f"visual_{abs(result_id)}"
+            else:
+                key = result_id
             fuzzy_scores[key] = (rank, segment, keyframe_path)
 
         return fuzzy_scores

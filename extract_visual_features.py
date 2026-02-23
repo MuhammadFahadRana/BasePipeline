@@ -105,21 +105,22 @@ class VisualFeatureExtractor:
 
     def analyze_image(self, image_path: Union[str, Path]) -> Dict[str, any]:
         """
-        Analyze an image to get a caption and object labels.
+        Analyze an image to get a caption, object labels, and OCR text.
         
         Args:
             image_path: Path to the image file
             
         Returns:
-            Dict containing 'caption' and 'object_labels'
+            Dict containing 'caption', 'object_labels', and 'ocr_text'
         """
         if not os.path.exists(image_path):
-            return {"caption": "", "object_labels": []}
+            return {"caption": "", "object_labels": [], "ocr_text": ""}
             
         # Prepare the query
         query = (
-            "Describe this video scene in a short, descriptive sentence. "
-            "Then, list all important objects visible in the scene as comma-separated tags."
+            "1. Describe this video scene in a short, descriptive sentence.\n"
+            "2. List all important objects visible in the scene as comma-separated tags.\n"
+            "3. Extract all visible text (OCR) from the scene. If no text is visible, say 'None'."
         )
         
         messages = [
@@ -147,7 +148,7 @@ class VisualFeatureExtractor:
         
         # Generate response
         with torch.no_grad():
-            generated_ids = self.model.generate(**inputs, max_new_tokens=256)
+            generated_ids = self.model.generate(**inputs, max_new_tokens=512)
             
         generated_ids_trimmed = [
             out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
@@ -162,26 +163,44 @@ class VisualFeatureExtractor:
     def _parse_output(self, text: str) -> Dict[str, any]:
         """
         Simple heuristic parser for the model's output.
-        Expected format: "Caption... Tags: object1, object2..." or similar.
+        Expected format:
+        1. Caption...
+        2. Tags: ...
+        3. OCR: ...
         """
-        lines = text.strip().split('\n')
-        caption = lines[0] if lines else ""
+        lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
         
-        # Try to find object labels/tags
+        caption = ""
         object_labels = []
-        if len(lines) > 1:
-            tags_line = lines[-1].lower()
-            # Clean up prefixes like "Tags:", "Objects:", etc.
-            for prefix in ["tags:", "objects:", "labels:", "important objects:"]:
-                if tags_line.startswith(prefix):
-                    tags_line = tags_line[len(prefix):].strip()
-                    break
+        ocr_text = ""
+        
+        current_section = None
+        
+        for line in lines:
+            lower_line = line.lower()
             
-            object_labels = [tag.strip() for tag in tags_line.split(',') if tag.strip()]
-            
+            # Detect sections
+            if "1." in lower_line or "description:" in lower_line or "caption:" in lower_line:
+                current_section = "caption"
+                content = line.split(":", 1)[1] if ":" in line else line.replace("1.", "").strip()
+                caption = content.strip()
+            elif "2." in lower_line or "tags:" in lower_line or "objects:" in lower_line:
+                current_section = "labels"
+                content = line.split(":", 1)[1] if ":" in line else line.replace("2.", "").strip()
+                object_labels = [tag.strip() for tag in content.split(',') if tag.strip()]
+            elif "3." in lower_line or "ocr:" in lower_line or "text:" in lower_line:
+                current_section = "ocr"
+                content = line.split(":", 1)[1] if ":" in line else line.replace("3.", "").strip()
+                if content.lower() != "none" and content.lower() != "none.":
+                    ocr_text = content.strip()
+            elif current_section == "ocr":
+                # Multi-line OCR output
+                ocr_text += " " + line
+                
         return {
             "caption": caption,
-            "object_labels": object_labels
+            "object_labels": object_labels,
+            "ocr_text": ocr_text
         }
 
 if __name__ == "__main__":
