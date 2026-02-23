@@ -23,7 +23,7 @@ Installation:
 
 Usage:
     python qwen_asr_transcriber.py
-    # Follow interactive prompts
+    # Automatically detects CUDA/CPU
 """
 
 import torch
@@ -553,31 +553,6 @@ class QwenTranscriber:
         return results
 
 
-def get_user_device_selection():
-    """Get user's device preference"""
-    print("\n" + "=" * 60)
-    print("DEVICE SELECTION")
-    print("=" * 60)
-    print("\nWhere do you want to load the model?\n")
-    print("1. CUDA (GPU)")
-    print("2. CPU")
-    print("=" * 60)
-
-    while True:
-        choice = input("\nEnter choice (1 or 2): ").strip()
-        if choice == "1":
-            if torch.cuda.is_available():
-                print(f"CUDA available: {torch.cuda.get_device_name(0)}")
-                return "cuda"
-            else:
-                print("Warning: CUDA not available, falling back to CPU.")
-                return "cpu"
-        elif choice == "2":
-            return "cpu"
-        else:
-            print("Invalid choice. Please enter 1 or 2.")
-
-
 def main():
     # If arguments provided, use CLI mode
     import argparse
@@ -625,14 +600,13 @@ def main():
             )
         return
 
-    # Non-interactive mode (default)
-    # Get user choice for device
-    selected_device = get_user_device_selection()
+    # Auto device selection
+    selected_device = "auto"
 
     # Initialize transcriber
     transcriber = QwenTranscriber(
         model_name="qwen2-audio", device=selected_device
-    )  # Qwen-Audio model selection: qwen2-audio (recommended) or qwen-audio-chat
+    )
 
     # Batch process all videos in a folder
     # transcriber.batch_transcribe(
