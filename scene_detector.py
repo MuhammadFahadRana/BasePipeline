@@ -530,12 +530,20 @@ class SceneDetector:
 
     # ── 4. OCR Enrichment ───────────────────────
 
-    def enrich_with_ocr(self, scenes: List[Dict]) -> List[Dict]:
+    def enrich_with_ocr(
+        self,
+        scenes: List[Dict],
+        cache_dir: Optional[Path] = None,
+    ) -> List[Dict]:
         """
         Run OCR on each scene keyframe and add ocr_text field.
+        Results are cached in a JSON sidecar file so repeated runs
+        skip already-processed keyframes.
 
         Args:
-            scenes: List of scene dicts (must have keyframe_path)
+            scenes:    List of scene dicts (must have keyframe_path)
+            cache_dir: Directory to store/read ``ocr_cache.json``.
+                       Defaults to the parent directory of the first keyframe.
 
         Returns:
             Same list with ocr_text added to each scene
@@ -547,13 +555,48 @@ class SceneDetector:
         if ocr is None:
             return scenes
 
-        print(f"  Running OCR on {len(scenes)} scene keyframes...")
+        # ── Resolve cache file ──────────────────────────────────────────
+        if cache_dir is None:
+            # Use the directory of the first scene's keyframe, if available
+            for s in scenes:
+                kf = s.get("keyframe_path")
+                if kf and Path(kf).exists():
+                    cache_dir = Path(kf).parent
+                    break
+
+        ocr_cache: Dict[str, str] = {}
+        cache_file: Optional[Path] = None
+        if cache_dir is not None:
+            cache_file = Path(cache_dir) / "ocr_cache.json"
+            if cache_file.exists():
+                try:
+                    ocr_cache = json.loads(cache_file.read_text(encoding="utf-8"))
+                except Exception:
+                    ocr_cache = {}
+
+        print(f"  Running OCR on {len(scenes)} scene keyframes (cache: {cache_file})...")
         ocr_count = 0
+        cache_hits = 0
 
         for scene in scenes:
             kf = scene.get("keyframe_path")
             if not kf or not Path(kf).exists():
                 scene["ocr_text"] = None
+                continue
+
+            kf_path = Path(kf)
+            # Cache key: filename + mtime (detects edits without hashing)
+            try:
+                mtime = str(kf_path.stat().st_mtime)
+            except OSError:
+                mtime = "unknown"
+            cache_key = f"{kf_path.name}::{mtime}"
+
+            if cache_key in ocr_cache:
+                scene["ocr_text"] = ocr_cache[cache_key] or None
+                if ocr_cache[cache_key]:
+                    ocr_count += 1
+                cache_hits += 1
                 continue
 
             try:
@@ -563,13 +606,26 @@ class SceneDetector:
                     clean=True,
                 )
                 scene["ocr_text"] = text if text else None
+                ocr_cache[cache_key] = text  # store even if empty string
                 if text:
                     ocr_count += 1
             except Exception as e:
                 print(f"    OCR failed for scene {scene.get('scene_id')}: {e}")
                 scene["ocr_text"] = None
+                ocr_cache[cache_key] = ""
 
-        print(f"  ✓ OCR complete: {ocr_count}/{len(scenes)} scenes had text")
+        # ── Persist updated cache ───────────────────────────────────────
+        if cache_file is not None:
+            try:
+                cache_file.write_text(
+                    json.dumps(ocr_cache, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            except Exception as e:
+                print(f"  Warning: could not write OCR cache: {e}")
+
+        hit_str = f", {cache_hits} from cache" if cache_hits else ""
+        print(f"  ✓ OCR complete: {ocr_count}/{len(scenes)} scenes had text{hit_str}")
         return scenes
 
     # ── 5. Visual Enrichment (Qwen2-VL) ─────────
@@ -594,11 +650,14 @@ class SceneDetector:
         print(f"  Running visual enrichment (Qwen2-VL) on {len(scenes)} scenes...")
         count = 0
 
+        failed_scenes: List[Dict] = []  # scenes where Qwen failed → EasyOCR fallback
+
         for scene in scenes:
             kf = scene.get("keyframe_path")
             if not kf or not Path(kf).exists():
                 scene["caption"] = None
                 scene["object_labels"] = []
+                scene.setdefault("ocr_text", None)
                 continue
 
             try:
@@ -606,13 +665,23 @@ class SceneDetector:
                 scene.update({
                     "caption": result.get("caption"),
                     "object_labels": result.get("object_labels", []),
-                    "ocr_text": result.get("ocr_text")  # New: Qwen2-VL OCR
+                    "ocr_text": result.get("ocr_text"),  # Qwen2-VL OCR
                 })
                 count += 1
             except Exception as e:
                 print(f"    Visual enrichment failed for scene {scene.get('scene_id')}: {e}")
-                scene["caption"] = None
-                scene["object_labels"] = []
+                scene.setdefault("caption", None)
+                scene.setdefault("object_labels", [])
+                # Mark for EasyOCR fallback so ocr_text is not silently null
+                failed_scenes.append(scene)
+
+        # ── Fallback: run EasyOCR on scenes where Qwen failed ──────────
+        if failed_scenes and self.config.enable_ocr:
+            print(f"  Falling back to EasyOCR for {len(failed_scenes)} scene(s) where Qwen failed...")
+            try:
+                self.enrich_with_ocr(failed_scenes)
+            except Exception as e:
+                print(f"  EasyOCR fallback also failed: {e}")
 
         print(f"  ✓ Visual enrichment complete: {count}/{len(scenes)} scenes processed")
         return scenes
