@@ -3,20 +3,38 @@ import time
 import torch
 from pathlib import Path
 from transcriber_utils import (
-    extract_audio_to_wav, save_results, get_device, ALL_MEDIA
+    extract_audio_to_wav, save_results, get_device, hf_auth, ALL_MEDIA
 )
 
 class MedASRTranscriber:
     def __init__(self, model_size="large", device="auto"):
         if device == "auto": device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
+        
+        # Authenticate
+        token = hf_auth()
+        
         from transformers import pipeline
+        from huggingface_hub.utils import HfHubHTTPError
+        
         print(f"Loading google/medasr on {device}...")
-        self.pipe = pipeline(
-            "automatic-speech-recognition",
-            model="google/medasr",
-            device=0 if device == "cuda" else -1,
-        )
+        try:
+            self.pipe = pipeline(
+                "automatic-speech-recognition",
+                model="google/medasr",
+                device=0 if device == "cuda" else -1,
+                token=token
+            )
+        except (HfHubHTTPError, Exception) as e:
+            if "403" in str(e):
+                print("\n" + "!"*60)
+                print("ACCESS DENIED: google/medasr is a gated model.")
+                print("1. Visit https://huggingface.co/google/medasr and Accept Terms.")
+                print("2. If using a FINE-GRAINED token, ensure it has the following permission:")
+                print("   'Read access to contents and metadata of public gated repositories'")
+                print("!"*60 + "\n")
+            raise e
+            
         self.model_name = "Google-MedASR"
 
     def transcribe_video(self, file_path, output_dir="processed"):
@@ -59,5 +77,5 @@ class MedASRTranscriber:
 if __name__ == "__main__":
     device = get_device()
     transcriber = MedASRTranscriber(model_size="large", device=device)
-    # transcriber.batch_transcribe(folder_path="videos_test", output_dir="processed")
+    # transcriber.batch_transcribe(folder_path="videos", output_dir="processed")
     transcriber.transcribe_video(r"videos_test\AkerBP 1.mp4", output_dir="processed")

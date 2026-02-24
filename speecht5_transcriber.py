@@ -17,19 +17,28 @@ import logging
 logging.getLogger("transformers.pipelines.base").setLevel(logging.ERROR)
 
 from transcriber_utils import (
-    extract_audio_to_wav, load_audio_array, save_results, get_device, ALL_MEDIA
+    extract_audio_to_wav, load_audio_array, save_results, get_device, hf_auth, ALL_MEDIA
 )
 
 class SpeechT5Transcriber:
     def __init__(self, model_size="large", device="auto"):
         if device == "auto": device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
-        from transformers import pipeline
+        
+        # Authenticate
+        token = hf_auth()
+        
+        from transformers import pipeline, SpeechT5Processor, SpeechT5ForConditionalGeneration
         print(f"Loading microsoft/speecht5_asr on {device}...")
+        self.processor = SpeechT5Processor.from_pretrained("microsoft/speecht5_asr", token=token)
+        self.model = SpeechT5ForConditionalGeneration.from_pretrained("microsoft/speecht5_asr", token=token).to(device)
         self.pipe = pipeline(
             "automatic-speech-recognition",
-            model="microsoft/speecht5_asr",
+            model=self.model,
+            tokenizer=self.processor.tokenizer,
+            feature_extractor=self.processor.feature_extractor,
             device=0 if device == "cuda" else -1,
+            token=token
         )
         self.model_name = "SpeechT5-ASR"
 

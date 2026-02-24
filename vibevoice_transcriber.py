@@ -1,16 +1,15 @@
-import os
-import time
-import torch
-import re
-from pathlib import Path
 from transcriber_utils import (
-    extract_audio_to_wav, save_results, get_device, ALL_MEDIA
+    extract_audio_to_wav, save_results, get_device, hf_auth, ALL_MEDIA
 )
 
 class VibeVoiceTranscriber:
     def __init__(self, model_size="large", device="auto"):
         if device == "auto": device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
+        
+        # Authenticate
+        token = hf_auth()
+        
         from transformers import AutoModelForCausalLM, AutoProcessor
         model_id = "microsoft/VibeVoice-ASR"
         print(f"Loading {model_id} on {device}...")
@@ -76,5 +75,5 @@ class VibeVoiceTranscriber:
 if __name__ == "__main__":
     device = get_device()
     transcriber = VibeVoiceTranscriber(model_size="large", device=device)
-    # transcriber.batch_transcribe(folder_path="videos_test", output_dir="processed")
-    transcriber.transcribe_video(r"videos_test\AkerBP 1.mp4", output_dir="processed")
+    transcriber.batch_transcribe(folder_path="videos", output_dir="processed")
+    # transcriber.transcribe_video(r"videos_test\AkerBP 1.mp4", output_dir="processed")

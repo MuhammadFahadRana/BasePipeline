@@ -78,6 +78,34 @@ def save_results(result: dict, output_dir: Path, video_name: str, model_name: st
             f.write(f"[{str(timedelta(seconds=s)).split('.')[0]} -> {str(timedelta(seconds=e)).split('.')[0]}] {spk}{t}\n")
         f.write("\n" + "="*60 + "\nFULL TEXT:\n" + result.get("text", "") + "\n")
 
+def hf_auth():
+    """Load .env and authenticate with Hugging Face Hub."""
+    # Check for offline mode override
+    if os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1":
+        print("Note: Hugging Face Offline Mode is active.")
+        return None
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    
+    if token:
+        print(f"Applying HF_TOKEN from .env...")
+        try:
+            from huggingface_hub import login
+            login(token=token, add_to_git_credential=True)
+            return token
+        except Exception as e:
+            print(f"Warning: Hugging Face login failed with .env token: {e}")
+    else:
+        print("Note: HF_TOKEN not found in .env. Using cached credentials from 'hf auth login' if any.")
+    
+    return token
+
 def get_device():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")

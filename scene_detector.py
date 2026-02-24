@@ -76,8 +76,8 @@ class SceneConfig:
     ocr_use_gpu: bool = True
     ocr_confidence_threshold: float = 0.5
 
-    # Visual Enrichment (Qwen2-VL)
-    enable_visual_enrichment: bool = True
+    # Visual Enrichment (Qwen2-VL) — disabled by default, use EasyOCR instead
+    enable_visual_enrichment: bool = False
     qwen_vl_model: str = "Qwen/Qwen2-VL-7B-Instruct"
     qwen_vl_load_in_4bit: bool = True
 

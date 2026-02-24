@@ -3,23 +3,28 @@ import time
 import torch
 from pathlib import Path
 from transcriber_utils import (
-    extract_audio_to_wav, save_results, get_device, ALL_MEDIA
+    extract_audio_to_wav, save_results, get_device, hf_auth, ALL_MEDIA
 )
 
 class VoxtralTranscriber:
     def __init__(self, model_size="large", device="auto"):
         if device == "auto": device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
+        
+        # Authenticate
+        token = hf_auth()
+        
         from transformers import VoxtralRealtimeForConditionalGeneration, AutoProcessor
         from mistral_common.tokens.tokenizers.audio import Audio
         
         self.Audio = Audio
         repo_id = "mistralai/Voxtral-Mini-4B-Realtime-2602"
         print(f"Loading {repo_id}...")
-        self.processor = AutoProcessor.from_pretrained(repo_id)
+        self.processor = AutoProcessor.from_pretrained(repo_id, token=token)
         self.model = VoxtralRealtimeForConditionalGeneration.from_pretrained(
             repo_id, device_map="auto",
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+            token=token
         )
         self.model_name = "Voxtral-Mini-4B"
 
@@ -59,5 +64,5 @@ class VoxtralTranscriber:
 if __name__ == "__main__":
     device = get_device()
     transcriber = VoxtralTranscriber(model_size="large", device=device)
-    # transcriber.batch_transcribe(folder_path="videos", output_dir="processed")
-    transcriber.transcribe_video(r"videos_test\AkerBP 1.mp4", output_dir="processed")
+    transcriber.batch_transcribe(folder_path="videos", output_dir="processed")
+    # transcriber.transcribe_video(r"videos_test\AkerBP 1.mp4", output_dir="processed")

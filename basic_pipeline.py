@@ -237,7 +237,7 @@ class BasicVideoPipeline:
             except Exception as e:
                 print(f"Scene refinement failed: {e}")
 
-            print("\n2c. Enriching scenes with OCR...")
+            print("\n2c. Enriching scenes with OCR (EasyOCR)...")
             try:
                 scenes = self.scene_detector.enrich_with_ocr(scenes)
                 # Re-save scenes cache with OCR data included

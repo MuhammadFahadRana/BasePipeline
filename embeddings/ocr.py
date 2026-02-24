@@ -74,9 +74,14 @@ class FrameOCR:
             results = self._reader.readtext(str(image_path))
             
             # Extract text with confidence above threshold
-            # results format: [[bbox, text, confidence], ...]
+            # results format may vary: [[bbox, text, confidence], ...] or tuples
             texts = []
-            for bbox, text, conf in results:
+            for item in results:
+                try:
+                    text = item[1] if len(item) > 1 else ""
+                    conf = float(item[2]) if len(item) > 2 else 1.0
+                except (IndexError, TypeError, ValueError):
+                    continue
                 if conf >= confidence_threshold and text.strip():
                     texts.append(text.strip())
             
@@ -117,11 +122,17 @@ class FrameOCR:
             results = self._reader.readtext(str(image_path))
             
             detections = []
-            for bbox, text, conf in results:
+            for item in results:
+                try:
+                    bbox = item[0] if len(item) > 0 else None
+                    text = item[1] if len(item) > 1 else ""
+                    conf = float(item[2]) if len(item) > 2 else 1.0
+                except (IndexError, TypeError, ValueError):
+                    continue
                 if conf >= confidence_threshold and text.strip():
                     detections.append({
                         'text': text.strip(),
-                        'confidence': float(conf),
+                        'confidence': conf,
                         'bbox': bbox
                     })
             

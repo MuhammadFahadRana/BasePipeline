@@ -3,20 +3,40 @@ import time
 import torch
 from pathlib import Path
 from transcriber_utils import (
-    extract_audio_to_wav, save_results, get_device, ALL_MEDIA
+    extract_audio_to_wav, save_results, get_device, hf_auth, ALL_MEDIA
 )
 
 class PyannoteTranscriber:
     def __init__(self, model_size="large", device="auto", hf_token=None):
         if device == "auto": device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
+        
+        # Authenticate
+        token = hf_token or hf_auth()
+        
         from pyannote.audio import Pipeline
-        token = hf_token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-        print(f"Loading pyannote/speaker-diarization... on {device}")
-        self.pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-community-1", use_auth_token=token
-        )
-        if device == "cuda": self.pipeline.to(torch.device("cuda"))
+        from huggingface_hub.utils import HfHubHTTPError
+        
+        print(f"Loading pyannote/speaker-diarization-community-1 on {device}...")
+        try:
+            self.pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-community-1", use_auth_token=token
+            )
+        except (HfHubHTTPError, Exception) as e:
+            if "403" in str(e):
+                print("\n" + "!"*60)
+                print("ACCESS DENIED: pyannote/speaker-diarization-community-1 is a gated model.")
+                print("1. Visit https://hf.co/pyannote/speaker-diarization-community-1 and Accept Terms.")
+                print("2. If using a FINE-GRAINED token, ensure it has the following permission:")
+                print("   'Read access to contents and metadata of public gated repositories'")
+                print("!"*60 + "\n")
+            self.pipeline = None
+            
+        if self.pipeline is None:
+            print("Warning: Pyannote pipeline failed to load. Diarization will not work.")
+        elif device == "cuda":
+            self.pipeline.to(torch.device("cuda"))
+            
         self.model_name = "Pyannote-Diarization"
 
     def transcribe_video(self, file_path, output_dir="processed"):
@@ -59,5 +79,5 @@ class PyannoteTranscriber:
 if __name__ == "__main__":
     device = get_device()
     transcriber = PyannoteTranscriber(model_size="large", device=device)
-    # transcriber.batch_transcribe(folder_path="videos_test", output_dir="processed")
-    transcriber.transcribe_video(r"videos_test\AkerBP 1.mp4", output_dir="processed")
+    transcriber.batch_transcribe(folder_path="videos", output_dir="processed")
+    # transcriber.transcribe_video(r"videos_test\AkerBP 1.mp4", output_dir="processed")
