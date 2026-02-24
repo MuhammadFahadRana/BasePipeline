@@ -267,7 +267,7 @@ async def ask_video_question(request: QARequest, qa_system=Depends(get_video_qa)
         print(f"QA Error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-    """
+    
     videos = db.query(Video).all()
 
     return [
@@ -280,8 +280,8 @@ async def ask_video_question(request: QARequest, qa_system=Depends(get_video_qa)
         )
         for v in videos
     ]
-
-
+    
+    
 @app.post("/search", response_model=SearchResponse)
 async def search(request: SearchRequest, db: Session = Depends(get_db)):
     """

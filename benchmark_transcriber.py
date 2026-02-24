@@ -327,12 +327,65 @@ class VoxtralTranscriber(BaseTranscriber):
         return {"text": text.strip(), "segments": [{"start": 0.0, "end": 0.0, "text": text.strip()}]}
 
     def cleanup(self):
-        del self.model
+        if hasattr(self, "model"):
+            del self.model
         torch.cuda.empty_cache()
 
 
 # -------------------------------------------------------------
-# 4. pyannote Speaker Diarization
+# 3. MedASR transcriber
+# -------------------------------------------------------------
+
+class MedASRTranscriber(BaseTranscriber):
+    name = "MedASR"
+    requires_gpu = False
+
+    def __init__(self, device="auto"):
+        super().__init__(device)
+        from transformers import pipeline
+        model_id = "google/medasr"
+        print(f"  [{self.name}] Loading {model_id}...")
+        self.pipe = pipeline(
+            "automatic-speech-recognition",
+            model=model_id,
+            device=0 if self.device == "cuda" else -1,
+        )
+        print(f"  [{self.name}] Loaded.")
+
+    def transcribe(self, wav_path: Path) -> dict:
+        audio, _ = load_audio_array(wav_path)
+        out = self.pipe(audio)
+        text = out.get("text", "")
+        return {"text": text, "segments": [{"start": 0, "end": 0, "text": text}]}
+
+# -------------------------------------------------------------
+# 4. VibeVoice transcriber
+# -------------------------------------------------------------
+
+class VibeVoiceTranscriber(BaseTranscriber):
+    name = "VibeVoice-ASR"
+    requires_gpu = False
+
+    def __init__(self, device="auto"):
+        super().__init__(device)
+        from transformers import pipeline
+        model_id = "microsoft/VibeVoice-ASR"
+        print(f"  [{self.name}] Loading {model_id}...")
+        self.pipe = pipeline(
+            "automatic-speech-recognition",
+            model=model_id,
+            device=0 if self.device == "cuda" else -1,
+        )
+        print(f"  [{self.name}] Loaded.")
+
+    def transcribe(self, wav_path: Path) -> dict:
+        audio, _ = load_audio_array(wav_path)
+        out = self.pipe(audio)
+        text = out.get("text", "")
+        return {"text": text, "segments": [{"start": 0, "end": 0, "text": text}]}
+
+# -------------------------------------------------------------
+# 5. pyannote Speaker Diarization
 # -------------------------------------------------------------
 
 class PyannoteTranscriber(BaseTranscriber):
@@ -397,175 +450,26 @@ class PyannoteTranscriber(BaseTranscriber):
 
 
 # -------------------------------------------------------------
-# 5. Google MedASR
-# -------------------------------------------------------------
-
-class MedASRTranscriber(BaseTranscriber):
-    name = "Google-MedASR"
-    requires_gpu = True
-
-    def __init__(self, device="auto"):
-        super().__init__(device)
-        from transformers import pipeline as hf_pipeline
-
-        model_id = "google/medasr"
-        print(f"  [{self.name}] Loading {model_id} ...")
-        self.pipe = hf_pipeline(
-            "automatic-speech-recognition",
-            model=model_id,
-            device=0 if self.device == "cuda" else -1,
-        )
-        print(f"  [{self.name}] Model loaded.")
-
-    def transcribe(self, wav_path: Path) -> dict:
-        result = self.pipe(
-            str(wav_path),
-            chunk_length_s=20,
-            stride_length_s=2,
-        )
-
-        text = result.get("text", "")
-        chunks = result.get("chunks", [])
-
-        segments = []
-        for c in chunks:
-            ts = c.get("timestamp", (0, 0))
-            segments.append({
-                "start": ts[0] if ts[0] is not None else 0.0,
-                "end": ts[1] if ts[1] is not None else 0.0,
-                "text": c.get("text", ""),
-            })
-
-        if not segments and text:
-            segments = [{"start": 0.0, "end": 0.0, "text": text}]
-
-        return {"text": text, "segments": segments}
-
-    def cleanup(self):
-        del self.pipe
-        torch.cuda.empty_cache()
-
-
-# -------------------------------------------------------------
-# 6. Microsoft VibeVoice ASR
-# -------------------------------------------------------------
-
-class VibeVoiceTranscriber(BaseTranscriber):
-    """
-    VibeVoice-ASR: 60-min single-pass ASR + diarization + timestamps.
-    Requires: pip install git+https://github.com/microsoft/VibeVoice.git
-    """
-    name = "VibeVoice-ASR"
-    requires_gpu = True
-
-    def __init__(self, device="auto"):
-        super().__init__(device)
-        from transformers import AutoModelForCausalLM, AutoProcessor
-
-        model_id = "microsoft/VibeVoice-ASR"
-        print(f"  [{self.name}] Loading {model_id} ...")
-
-        self.processor = AutoProcessor.from_pretrained(
-            model_id,
-            trust_remote_code=True,
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            trust_remote_code=True,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-            device_map="auto" if self.device == "cuda" else None,
-        )
-        if self.device == "cpu":
-            self.model = self.model.to("cpu")
-
-        print(f"  [{self.name}] Model loaded.")
-
-    def transcribe(self, wav_path: Path) -> dict:
-        import torchaudio
-
-        waveform, sample_rate = torchaudio.load(str(wav_path))
-
-        # Resample to 16 kHz if needed
-        if sample_rate != 16000:
-            waveform = torchaudio.functional.resample(waveform, sample_rate, 16000)
-            sample_rate = 16000
-
-        # Prepare inputs
-        inputs = self.processor(
-            waveform.squeeze(0).numpy(),
-            sampling_rate=sample_rate,
-            return_tensors="pt",
-        )
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
-
-        with torch.no_grad():
-            outputs = self.model.generate(**inputs, max_new_tokens=8192)
-
-        text = self.processor.batch_decode(outputs, skip_special_tokens=True)[0]
-
-        # VibeVoice outputs structured text with speaker/timestamp markers
-        segments = self._parse_vibevoice_output(text)
-
-        return {
-            "text": text.strip(),
-            "segments": segments,
-        }
-
-    def _parse_vibevoice_output(self, text: str) -> list:
-        """
-        Parse VibeVoice's structured output into segments.
-        VibeVoice outputs lines like: [Speaker_0] <0.0s - 5.2s> Hello world
-        """
-        import re
-        segments = []
-        # Try to parse structured output
-        pattern = r'\[([^\]]+)\]\s*<([\d.]+)s?\s*-\s*([\d.]+)s?>\s*(.*?)(?=\[|$)'
-        matches = re.finditer(pattern, text, re.DOTALL)
-
-        for m in matches:
-            speaker = m.group(1)
-            start = float(m.group(2))
-            end = float(m.group(3))
-            seg_text = m.group(4).strip()
-            segments.append({
-                "start": start,
-                "end": end,
-                "text": seg_text,
-                "speaker": speaker,
-            })
-
-        # Fallback: if no structured output was parsed, treat whole text as one segment
-        if not segments:
-            segments = [{"start": 0.0, "end": 0.0, "text": text.strip()}]
-
-        return segments
-
-    def cleanup(self):
-        del self.model
-        del self.processor
-        torch.cuda.empty_cache()
-
-
-# -------------------------------------------------------------
 # Model Factory
 # -------------------------------------------------------------
 
 def create_transcriber(model_name: str, device: str = "auto", **kwargs):
     """Instantiate a transcriber by name. Returns None if unavailable."""
     constructors = {
-        "vosk":       (VoskTranscriber, ["vosk"]),
-        "speecht5":   (SpeechT5Transcriber, ["transformers"]),
-        "voxtral":    (VoxtralTranscriber, ["transformers", "mistral_common"]),
-        "pyannote":   (PyannoteTranscriber, ["pyannote.audio"]),
-        "medasr":     (MedASRTranscriber, ["transformers"]),
-        "vibevoice":  (VibeVoiceTranscriber, ["transformers"]),
-    }
-
+    "vosk":      (VoskTranscriber, ["vosk"]),
+    "speecht5":  (SpeechT5Transcriber, ["transformers"]),
+    "voxtral":   (VoxtralTranscriber, ["transformers"]),
+    "pyannote":  (PyannoteTranscriber, ["pyannote.audio"]),
+    "medasr":    (MedASRTranscriber, ["transformers"]),
+    "vibevoice": (VibeVoiceTranscriber, ["transformers"]),
+}
     if model_name not in constructors:
         print(f"✗ Unknown model: {model_name}")
         return None
 
-    cls, required_pkgs = constructors[model_name]
+    cls, required_pkgs, *extra = constructors[model_name]
+    default_kwargs = extra[0] if extra else {}
+    final_kwargs = {**default_kwargs, **kwargs}
 
     # Check dependencies
     for pkg in required_pkgs:
@@ -576,7 +480,7 @@ def create_transcriber(model_name: str, device: str = "auto", **kwargs):
             return None
 
     try:
-        return cls(device=device, **kwargs)
+        return cls(device=device, **final_kwargs)
     except Exception as e:
         print(f"✗ [{model_name}] Failed to initialize: {e}")
         traceback.print_exc()
@@ -729,8 +633,13 @@ def run_benchmark(
 
                 # Run transcription
                 start_time = time.time()
-                result = transcriber.transcribe(wav_path)
-                elapsed = time.time() - start_time
+                try:
+                    result = transcriber.transcribe(wav_path)
+                    elapsed = time.time() - start_time
+                except Exception as e:
+                    elapsed = time.time() - start_time
+                    print(f"    ✗ Failed: {e}")
+                    traceback.print_exc()
 
                 print(f"    ⏱ {elapsed:.2f}s | {len(result.get('text', ''))} chars | {len(result.get('segments', []))} segments")
 
@@ -748,7 +657,7 @@ def run_benchmark(
                 })
 
             except Exception as e:
-                elapsed = time.time() - start_time if 'start_time' in dir() else 0
+                # elapsed = time.time() - start_time if 'start_time' in dir() else 0
                 print(f"    ✗ Failed: {e}")
                 traceback.print_exc()
 
@@ -837,7 +746,7 @@ Available models:
 
 Examples:
   python benchmark_transcriber.py
-  python benchmark_transcriber.py --models vosk speecht5
+  python benchmark_transcriber.py --models vosk speecht5 voxtral pyannote medasr vibevoice
   python benchmark_transcriber.py --videos-dir videos/ --device cuda
   python benchmark_transcriber.py --models voxtral vibevoice --device cuda
 """,
