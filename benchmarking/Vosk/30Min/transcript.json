@@ -1,0 +1,774 @@
+{
+  "text": "four hundred and twenty seven days and what should have been a thirty day mission and it's turned into a nightmare on the surface of mars two hundred and ninety seven million kilometers away his ingenuity a tiny six hundred eighty gram helicopter it's made from off the shelf parts you'd find at home it's got bits from an android smartphone batteries from a call let's drill and to everyone's surprise it's been performing well so far but something is wrong as the the martian winter is coming at night temperatures plummet to a frigid negative eighty five degrees celsius as mars gets further away from the sun the temperature keeps dropping and it kicks up more and more violent dust the sun is blotted from the sky on her four hundred and twenty seventh day on mars they try to reach her just like the day before but they get no response they try again nothing back on earth the team gathers at the jet propulsion laboratory in southern california all the signs point to ingenuity being dead but there is still one thing one by an old trick they can try to reestablish a connection the first drone that's going to fly on another planet six years ago i visited gpl and saw ingenuity before she left for mars at the time nasa didn't really believe much intermission as kenneth farley the project scientist of the mars twenty twenty perseverance mission said i've personally been opposed to it spending thirty days working on a technology demonstration does not further the goals directly from the science point of view in short they thought it was a waste of time most projects to mars get billions of dollars ingenuity got only eighty million which is less than the budget of the movie the martian but this scrappy team of scientists were working to prove a crazy concept and against the odds they made it to mars on february eighteenth twenty twenty one the perseverance rover survives entry and lands on the martian surface attached underneath his ingenuity this marks soul zero her first day on mars the sever the umbilical cord and ingenuity affectionately known as ginny by some on the team prepares herself permission is simple prove that flight on the red planet is possible but with an atmosphere just one percent that of earth flying is really difficult she must be ultra light and her blades must spend that over two thousand and four hundred rotations per minute to generate enough lift it's a design that no one is really sure about for two months they rigorously check her systems running up the engine testing navigation and her control computer then on sol fifty eight they finally think they're ready the blades spin up and she takes off only one hundred and twenty years after the wright brothers on earth humanity flies on another planet within days they fly again and then again and again in just one month they complete five flights so the mission has been accomplished we were tech demo right meaning a specified narrow thirty sole mission getting get out without right week go to a bar partying and that should be the end of it but with success comes new expectations nasa tells them to keep going ingenuities new mission is to assist perseverance in the search for evidence of ancient life on mars so she will scout ahead gathering data in areas too risky or costly for the rover to explore for the team this is great news but it's also a problem there was no no guarantee you know after by five we may be dead by flight so we may be dead by five ten kind of thrown into the deep below the pool we had no prophecies are no plans developed for such a thing until now every flight had been carefully planned they've all started from an area selected and analyzed by both satellites and the perseverance rover itself these plates were tested hundreds of times and gpl wind tunnel and tens of thousands of times and simulation but now that they have to keep up with the rover they're flying into the and known now flying the helicopter isn't easy and it's closest mars is fifty six million kilometers from earth which means there's at least a six minute round trip communications time delay which is way longer than ingenuities two minute maximum flight time so she has to fly at honestly so what happens is the pilot programs in our route and ginny does the rest but to start jpl first needs to know exactly where she's located you might think that they would use gps but for gps to work on earth you need at least twenty four satellites for full coverage and around mars there are only seven satellites total so ingenuity can't you use this method so instead what she does is far simpler we have two cameras of forward facing thirteen megapixel camera and an old one pointing down his lawn that we used to navigate the navigation camera takes thirty black and white images per second ingenuities computer analyzes the image and identifies features on the surface you can think of it sort of like an optical mouse like your optical nasa's on the mouse pad doesn't know we're on the mouse pad of years but when you move to the right he knows you move to the right because what it's doing is it's looking at features on the surface of the mouse pad and watching them move on under it's feel the pew the ingenuities essentially doing the same thing it's looking at the surface picking up features like rocks and other things and between camera images it's as all this rock moved this way this thing over here loop this way and from that you compute transform to say my helicopter was here and now it's here relative to this image now this sounds good but the method isn't one hundred percent reliable on flight six the first time she leaves her testing area ingenuity detects and error fifty four seconds into the flight she starts wobbling wildly tilting twenty degrees at a time her emergency alarms blair we had lacking way image black and white image black and white image and we had a color image come very closely to wear that black and white image occurred and time this color camera was added late and development leaving little time for testing and during this flight one of the images arrives at the exact same moment as a black and white image the a system doesn't know what to do so it drops the black and white image this makes every following image one step behind this means ingenuities cameras are giving her outdated information so even when she's in the right spot the computer thinks she's lagging behind and pushes her forward so she overshoots tilts too far and then has to over correct and the other direction this cycle repeats making her wobble worse in a positive feedback loop now that is a problem but it isn't fatal the d sinking issue was like one camera frame off if it had been more than that i think you can imagine that it it might have death spiral instead ginny detects the problem and is able to emergency land before it gets too ugly while safely on the ground gpl discovers the air and quickly corrected with a software patch it's a close call that they recover over the next dozen flights they keep up with a rubber and support the mission that is until flight nineteen we were about to fly that nineteen flight and i got a phone call the afternoon before basically saying there's a a dust storm brewing near just operator this away quickly cancel the flight and say well we were just going to hunker down and see what happens they brace for impact it last six days with winds gusting up to twenty meters per second that first dust storm in the middle of fall in the first martian year that we're on the surface get clobbered us but they make it through nervously they tried to make contact and she survived she hasn't died or toppled over but now they have a new problem dust dust on mars is no joke i mean for ginny there are two big problems first dust is covering her solar panels reducing power by eighteen percent and second it's clogging her mechanical components we went to go fly when we wait to wiggle the servers if they were actually stuck there kind of jammed from the dust so that aborted the first attempt at late ninety now gpl had anticipated both of these problems but they hadn't had the time or budget to fix them so for the first they just have to accept that they have reduced solar power and they adjust their flight durations accordingly for the second they find a workaround by repeatedly wiggling the service until the joints clear so she's able to keep flying albeit wounded and survival isn't getting any easier see every martian night the temperature dropped precipitously my friend alex from the channel astro describes it well with less atmosphere mass became far worse and retaining heat when the surface starts to cool there is no air to catch the escaping ones it is it the point where if you have to stand on the planet's equated during his warm as time of the day your feet might feel twenty three degrees celsius while at your head it would be zero degrees celsius means between day and night mars has some intense temperature swings temperatures that now range from highs around twenty seven degrees celsius down to a freezing minus one hundred and thirty three degrees celsius at night if you want to learn more about how this leads to entire planet covering dust storms astro has a whole video on the martian climate so these massive shifts and temperature are happening all the time but as jenny's mission progresses mars get farther away from the sun and enters the martian winter so it gets even colder at night which is a problem many of ingenuities key electrical components or hand sauntered and big temperature swings cause expansion and contraction of this metal and so that can eventually break these connections also inside the batteries a liquid electrolyte solution allows lithium ions to move between the cathode an anode during charging and discharging but if this solution freezes gpl fears that the whole thing will stop working entirely so what they do is keep all the components sensitive to the cold inside a warm box which has resistance heaters that run during the night my spends too holy fire thirty percent of your battery flying in the other il sixty to seventy five percent is all just staying warm at night the problem is the colder it gets the harder the heaters have to work and if they can't keep up and the batteries cool too much they become less efficient so they supply even less power to the heaters performance can contain new to degrade in a vicious death spiral on the morning of may third the team a gpl goes about a normal day they checked the data from the previous downlink nothing they try pinging ingenuity still nothing of they've finally lost her it we just lose our our seventy million dollar helicopter on mars that is this the end of the mission we thought this was that so let's just make sure before we close the door and ingenuity we thought of everything let's keep working through it they run through all the possible problems until the narrow it down to just one the way she was designed ginny has an alarm clock that makes her up it stays awake for fifteen minutes if it doesn't hear a thing after fifteen minutes goes back to sleep and it doesn't wake up until the next alarm their hypothesis is this if the lack of sunlight forced ginny to fully deplete her batteries then during the night her heaters would have stopped and she would have powered off completely when the sun rises as long as her essential components still function she may recharge enough to wake up only now her clock will have reset so they run the calculations if she's still alive based on when the sun comes up she should be waking up at eleven forty five am martian time that is not the time they had been trying so they change their search window and start calling out to ginny around when they expect her power up they send out paying after paying and until finally she's alive they checked to see whether everything is still working and despite the components in her born box only being raided to negative forty five degrees they survive being completely frozen rope all except for one the incline amateur is dead the inclan amateur is what let's ingenuity know her physical or the intention in three d space before flight and that is pretty essential for getting the right heading you could imagine if you're off and heading by ten degrees you could fly into a map without the inclan amateur there is no way for her to fly so at first the whole team is stumped but then they have an idea because ingenuity is made a phone parts literally parts from phones people carry around every day her processor is from a samsung galaxy as five and some of her sensors are from a google pixel three and these phones can do a lot of the things that didn't include amateur can do inside every smartphone or at least three little micro electro mechanical systems aligned perpendicular to each other x y z at their core is a small mass suspended by flexible arms they work like springs and follow hooks law f equals minus kayaks were force is proportional to displacement the mass also follows newton's second law f equals i may if you combine these equations you get a equals minus kayaks over am which links acceleration and displacement surrounding the mass are fixed arms when a voltage is applied to the mass and arms the former capacitor web epsilon and a stay constant but as the mass moves the distance between them changes with acts this alters the capacitance which becomes more noticeable with multiple plates hence why they have so many little arms by measuring cups students you can determine displacement and since displacement is proportional to acceleration changes in capacitance allow us to measure acceleration that's why these devices are called accelerometers and by integrating acceleration over time you can work out velocity and then position this is how motion tracking works for screen wrote a asian gaming controls and step county if you add gyroscopes you get an inertial measurement unit or i am you and ingenuity has the same i am you as the google pixel three so the team at jpl had an idea they can reprogram the computer to use the i am you to replace the include a homeowner the in kilometer is really just accelerometers still allows us to tell the initial attitude of the vehicle in and pitch and the i knew that also has actually were i'm a nurse so impersonal guess is an information so from the clutches of failure they get her running again we got lucky in that like the what instrument we could afford to lose was the one that died but the i am you isn't space grade in fact none of these off the shelf parts are which means they're vulnerable to cosmic rays on mars the thin atmosphere doesn't just make it harder to fly it also means cosmic rays reach this surface more easily and a single cosmic ray can strike a computer register and flip a bit inside the computer which can lead to some strange behavior it even happens here on earth it once added four thousand ninety six unaccounted votes to a candidate in a belgian election now on a martian helicopter flipping the wrong bit the wrong time could mean losing control and crashing so why doesn't that happen if you'd asked some a ten years ago can you fly just the latest cellphone processor they will not last like two days and you'll be day right turns out that cosmic ray bit flips are not as big a deal as nasa thought the off the shelf components pulled up way better than they expected and this is an important finding rather and going through all of the development cost of building up a processor from scratch to be rationed tolerate or finding is a lot better bang for your buck by just going in this buying batches of different processors and just calling that means throw the through radiation test campaign look at the failure rate's he on figuring out hey this guy we don't know why that for whatever verizon this process server here is great it holds up so apply that now using these surprisingly robust off the shelf parts they survive the rest of the winter but they are only barely able to stay within the communication range of the rover springtime came the herds where it's european allies are going to spring up them have the right ahead coming out of winter with the increase sunlight they can now fully recharge and returned to their scientific mission over the next forty one flights the image craters perseverance can't make it to they capture stunning images of the martian horizon from above they conduct daring aerodynamic tests and they begin to push the limits they want to fly faster but the faster they go there quicker features move across the cameras field of view and division navigation system just can't keep up with that so gpl comes up with a solution they fly higher then they can expand the field of view which means features will move more slowly through frank so from an initial goal of a ten meter altitude they go up to twenty four meters and as a result the able to go from flying it two meters per second all the way up to ten meters per second we set speed records distance records altitude records is everything we could think of to push that flight envelope on ingenuity really me make the most of this once in a lifetime opportunity of having helicopter on mars everything is going swimmingly ginny and perseverance have made it all the way to interrupt the house a river delta in general crater but on flight seventy one there's a new problem and it's worse than any of the ones that came before now ingenuities only scientific payload is a camera so she's taking hundreds of photos a day and sending them to jpl and she's not alone perseverance does the same including this self the with ingenuity honestly they're the most chronically online duo on mars we always know exactly where they are what they're up to and they're constantly sharing photos but really how different is that from us and we we spend most of our lives on line constantly sharing data except in our case that that it doesn't just sit in a nasa archive it gets bought sold and used in ways we're not always aware of that's why i've been using today sponsor in cogni i created my account a year ago and since then they filed over three hundred requests on my behalf the resulting in my data being removed from over one hundred marketing and spam databases fight tried to do that myself it would have taken around two hundred and thirty hours literally weeks of work at his time i can better spent making videos which i'm sure you appreciate try incognito visit incognito com slash very taxing of with that link down in the description or you can scan this qr code and when you do make sure to use code verge has seem to get sixty percent off your annual subscription so head over to incognito com slash very handsome and protect your online data today on i think in ca me for sponsoring this part of the video and now back to ingenuity so we just had this one final thing to do we needed to cross the sand dune and make it to bright angel that a rendezvous with the rover so and seventy one we basically went up we were flying and then after about ten seconds of flying with degraded navigation we went into an emergency landing mode and sort of came down hard they hail ginny and luckily she's still alive in the error code they discover the problem as she was flying over the dunes there just weren't enough rocks or landmarks for her camera to identify and without those references she quickly lost track of her position and had to make an emergency landing it's similar to the camera issue from flight six but this time there's no software effects they check for structural damage but surprisingly everything is still intact so they attempt another flight this time going straight up to scan the surroundings and then coming straight back down simple we popped up took pictures and then on the way back down we hit the same problems we did on seventy one only this time it's fatal perseverance drives over and captures this image of her crash site when we saw the plates broken or is our first image after flight seventy two those heart wrenching though it was like now there's there's no way this mission the continue that was very depressing so why because seventy one was also a crash landing for the same reason though is that the other as system was confused and drove us and the ground but we came out of that apparently unscathed and yeah seventy two we self destructed the first air crash investigation on another planet right yeah that's first aircraft on another planet and then the first air crash investigation have the i kind of go hand in hand at the crash site they find ingenuities blades scattered but not in the way they expect we notice something interesting which is there was no blades strike spot blade spinning this fast when they hit the ground right they're going to create of a spray there's going to be a pattern probably even visible from orbit and we didn't see anything like that so if the blades didn't strike the ground then what happened so this is an actual prototype bleed from the development phase so this is essentially identical to the blades on engineer me it's a carbon fiber composite with foam core it's incredibly light if you want to feel it yeah whoa that's actually curry that's like at least a quarter of what i expected just looking at it it doesn't feel physical so why did they break well as the bleed spin the tips of the blades trace out a circle which you can think of like a hula hoop if there's a force up on the near side you might expect the rotor to tilt immediately in this direction but that is not actually what happens as eat the blade isn't stationary it's moving really fast so when you apply this force it actually only moves after that point so the maximum displacement occurs ninety degrees later so even though we push up on the near side the bleeds tilt up on the raid and down on the left this effect is called procession and it's the same principle that explains this spinning bike will demonstration now ingenuity has a second set of blades that are moving in the opposite direction which means that when a force is applied each set of blades experiences procession in the opposite direction for the helicopter over all these talks cancel out but each individual blade still flexes because of that procession torque that results in a stress concentration right about here where that final reinforcement tapers off and so if you had a procession based failure you'd expect it to fail right here and sure enough that's exactly where you see it in the pictures you can see sort of is jackie place where the blade tip just got ripped off so that is what happened on flight seventy two as ginny came down hard she hit a dune an angle the force was transmitted up through the body of the helicopter and this created a procession torque that meant the rotors and they snapped right where the reinforcement tapers down this thing came out hard it didn't didn't destroy the landing gear it didn't break the idiotic they didn't kill the servers swash plates are all they're all intact it's the rotors that's that we click so that is the first thing they're changing on the next generation of mars helicopter which is called chopper you had a chance to hold the ingenuity blame this is than it is the next year and baby it looks fairly similar with a couple a key differences the reinforce the blades to withstand the torque caused by hard landings now they also have six rotors instead of to which means chopper can hold a lot even carrying a scientific payload of it's own we've developed now a very lightweight radio that can communicate directly toward well so were a free bird as he owns the exploring that's in canada now you are sort of trying to trail perseverance right and now you can go anywhere you up or our own spacecraft in this blue box you can shove about five kilograms of science payload and bring it anywhere on the planet mars you can fly three kilometers per soul and a matter of minutes that that's really generate a lot of excited in the science community so this is a fifth scale model of chopper it's really to system so this is our chopper platform right this is what's going to go on and explore the the entire surface of mars one day that's the point of the concept but underneath his mid air helicopter delivery platform seat mars rovers all need complex sky cranes to land but a helicopter is different it just needs a platform to take off from so the idea we come down through the atmosphere we have this jetpack that we need to slow us down to get us down to a regime that is controllable so that we can take off from that platform mid air and land under our own power for this it needs rockets two lot awesome ah your envisioning like a future of aviation all over mars as a primary exploitive capacity in my mind it's absolutely and as a matter of time there there will be fleets flying throughout mars there will be airports on mars one day and will have aircraft the size of chopper more aircraft and size of ingenuity even bigger than shopper nasa is thinking big thanks to ingenuity a project they once doubt it because ginny showed what is possible in eighteen ninety he said i'm going to fly like okay that kooky guy in his garage you thinks he can fly is going to he's going to kill himself right after the wright brothers it's like oh okay yeah this is a thing that we're going to do and so that's the change in mentality that occurred because of ingenuity that's why still sitting there on the surface of mars attached to the underside of ingenuity is a tiny scrap one square centimeter of muslim fabric it was taken from the lower left wing of the first airplane the right flyer from the first flight on earth to the first flight on another planet from ingenuities grave on mars her spirit lives on except she isn't quite dead yet she's acting as a weather station now capturing photos everyday captain temperature measurements everyday something no one would have ever predicted before a flight seventy two that if things don't go well would you still have a functioning spacecraft so she's a tank the team can be more proud of what you've accomplished",
+  "segments": [
+    {
+      "start": 0.54,
+      "end": 20.16,
+      "text": "four hundred and twenty seven days and what should have been a thirty day mission and it's turned into a nightmare on the surface of mars two hundred and ninety seven million kilometers away his ingenuity a tiny six hundred eighty gram helicopter it's made from off the shelf parts you'd find at home it's got bits from an android smartphone batteries from a call"
+    },
+    {
+      "start": 20.25,
+      "end": 24.57,
+      "text": "let's drill and to everyone's surprise it's been performing well so far"
+    },
+    {
+      "start": 25.44,
+      "end": 44.25,
+      "text": "but something is wrong as the the martian winter is coming at night temperatures plummet to a frigid negative eighty five degrees celsius as mars gets further away from the sun the temperature keeps dropping and it kicks up more and more violent dust the sun is blotted from the sky"
+    },
+    {
+      "start": 45.12,
+      "end": 53.25,
+      "text": "on her four hundred and twenty seventh day on mars they try to reach her just like the day before but they get no response they try again"
+    },
+    {
+      "start": 54.24,
+      "end": 59.46,
+      "text": "nothing back on earth the team gathers at the jet propulsion laboratory in southern california"
+    },
+    {
+      "start": 60.27,
+      "end": 69.09,
+      "text": "all the signs point to ingenuity being dead but there is still one thing one by an old trick they can try to reestablish a connection"
+    },
+    {
+      "start": 70.14,
+      "end": 78.18,
+      "text": "the first drone that's going to fly on another planet six years ago i visited gpl and saw ingenuity before she left for mars"
+    },
+    {
+      "start": 78.72,
+      "end": 95.22,
+      "text": "at the time nasa didn't really believe much intermission as kenneth farley the project scientist of the mars twenty twenty perseverance mission said i've personally been opposed to it spending thirty days working on a technology demonstration does not further the goals directly from the science point of view"
+    },
+    {
+      "start": 95.82,
+      "end": 108.09,
+      "text": "in short they thought it was a waste of time most projects to mars get billions of dollars ingenuity got only eighty million which is less than the budget of the movie the martian"
+    },
+    {
+      "start": 109.05,
+      "end": 115.08,
+      "text": "but this scrappy team of scientists were working to prove a crazy concept and against the odds"
+    },
+    {
+      "start": 117.57,
+      "end": 118.98,
+      "text": "they made it to mars"
+    },
+    {
+      "start": 120.12,
+      "end": 128.85,
+      "text": "on february eighteenth twenty twenty one the perseverance rover survives entry and lands on the martian surface attached underneath his ingenuity"
+    },
+    {
+      "start": 129.39,
+      "end": 132.63,
+      "text": "this marks soul zero her first day on mars"
+    },
+    {
+      "start": 133.65,
+      "end": 140.4,
+      "text": "the sever the umbilical cord and ingenuity affectionately known as ginny by some on the team prepares herself"
+    },
+    {
+      "start": 141.66,
+      "end": 158.61,
+      "text": "permission is simple prove that flight on the red planet is possible but with an atmosphere just one percent that of earth flying is really difficult she must be ultra light and her blades must spend that over two thousand and four hundred rotations per minute to generate enough lift"
+    },
+    {
+      "start": 159.75,
+      "end": 169.53,
+      "text": "it's a design that no one is really sure about for two months they rigorously check her systems running up the engine testing navigation and her control computer"
+    },
+    {
+      "start": 170.52,
+      "end": 174.21,
+      "text": "then on sol fifty eight they finally think they're ready"
+    },
+    {
+      "start": 175.38,
+      "end": 177.66,
+      "text": "the blades spin up and"
+    },
+    {
+      "start": 178.62,
+      "end": 179.67,
+      "text": "she takes off"
+    },
+    {
+      "start": 180.6,
+      "end": 184.17,
+      "text": "only one hundred and twenty years after the wright brothers on earth"
+    },
+    {
+      "start": 185.1,
+      "end": 187.59,
+      "text": "humanity flies on another planet"
+    },
+    {
+      "start": 189.93,
+      "end": 191.91,
+      "text": "within days they fly again"
+    },
+    {
+      "start": 192.48,
+      "end": 193.2,
+      "text": "and then again"
+    },
+    {
+      "start": 194.19,
+      "end": 194.85,
+      "text": "and again"
+    },
+    {
+      "start": 195.78,
+      "end": 198.42,
+      "text": "in just one month they complete five flights"
+    },
+    {
+      "start": 199.32,
+      "end": 200.13,
+      "text": "so the mission"
+    },
+    {
+      "start": 200.88,
+      "end": 203.07,
+      "text": "has been accomplished"
+    },
+    {
+      "start": 204.09,
+      "end": 209.19,
+      "text": "we were tech demo right meaning a specified narrow thirty sole mission"
+    },
+    {
+      "start": 210.0,
+      "end": 217.65,
+      "text": "getting get out without right week go to a bar partying and that should be the end of it but with success comes new expectations"
+    },
+    {
+      "start": 218.16,
+      "end": 238.32,
+      "text": "nasa tells them to keep going ingenuities new mission is to assist perseverance in the search for evidence of ancient life on mars so she will scout ahead gathering data in areas too risky or costly for the rover to explore for the team this is great news but it's also a problem there was no"
+    },
+    {
+      "start": 238.32,
+      "end": 240.93,
+      "text": "no guarantee you know after by five"
+    },
+    {
+      "start": 241.8,
+      "end": 252.21,
+      "text": "we may be dead by flight so we may be dead by five ten kind of thrown into the deep below the pool we had no prophecies are no plans developed for such a thing"
+    },
+    {
+      "start": 253.08,
+      "end": 272.88,
+      "text": "until now every flight had been carefully planned they've all started from an area selected and analyzed by both satellites and the perseverance rover itself these plates were tested hundreds of times and gpl wind tunnel and tens of thousands of times and simulation but now that they have to keep up with the rover they're flying into the and"
+    },
+    {
+      "start": 272.88,
+      "end": 273.39,
+      "text": "known"
+    },
+    {
+      "start": 275.16,
+      "end": 294.48,
+      "text": "now flying the helicopter isn't easy and it's closest mars is fifty six million kilometers from earth which means there's at least a six minute round trip communications time delay which is way longer than ingenuities two minute maximum flight time so she has to fly at honestly so what happens is"
+    },
+    {
+      "start": 294.51,
+      "end": 314.64,
+      "text": "the pilot programs in our route and ginny does the rest but to start jpl first needs to know exactly where she's located you might think that they would use gps but for gps to work on earth you need at least twenty four satellites for full coverage and around mars there are only seven satellites total so ingenuity can't you"
+    },
+    {
+      "start": 314.64,
+      "end": 318.36,
+      "text": "use this method so instead what she does is far simpler"
+    },
+    {
+      "start": 319.35,
+      "end": 339.36,
+      "text": "we have two cameras of forward facing thirteen megapixel camera and an old one pointing down his lawn that we used to navigate the navigation camera takes thirty black and white images per second ingenuities computer analyzes the image and identifies features on the surface you can think of it sort of like an optical mouse like your optical"
+    },
+    {
+      "start": 339.36,
+      "end": 351.06,
+      "text": "nasa's on the mouse pad doesn't know we're on the mouse pad of years but when you move to the right he knows you move to the right because what it's doing is it's looking at features on the surface of the mouse pad and watching them move on under it's feel the pew"
+    },
+    {
+      "start": 351.84,
+      "end": 372.0,
+      "text": "the ingenuities essentially doing the same thing it's looking at the surface picking up features like rocks and other things and between camera images it's as all this rock moved this way this thing over here loop this way and from that you compute transform to say my helicopter was here and now it's here relative to this image now this sounds good but the method isn't"
+    },
+    {
+      "start": 372.06,
+      "end": 373.35,
+      "text": "one hundred percent reliable"
+    },
+    {
+      "start": 376.26,
+      "end": 389.34,
+      "text": "on flight six the first time she leaves her testing area ingenuity detects and error fifty four seconds into the flight she starts wobbling wildly tilting twenty degrees at a time her emergency alarms blair"
+    },
+    {
+      "start": 391.23,
+      "end": 410.4,
+      "text": "we had lacking way image black and white image black and white image and we had a color image come very closely to wear that black and white image occurred and time this color camera was added late and development leaving little time for testing and during this flight one of the images arrives at the exact same moment as a black and white image the"
+    },
+    {
+      "start": 410.4,
+      "end": 430.53,
+      "text": "a system doesn't know what to do so it drops the black and white image this makes every following image one step behind this means ingenuities cameras are giving her outdated information so even when she's in the right spot the computer thinks she's lagging behind and pushes her forward so she overshoots tilts too far"
+    },
+    {
+      "start": 430.56,
+      "end": 437.85,
+      "text": "and then has to over correct and the other direction this cycle repeats making her wobble worse in a positive feedback loop"
+    },
+    {
+      "start": 438.57,
+      "end": 458.64,
+      "text": "now that is a problem but it isn't fatal the d sinking issue was like one camera frame off if it had been more than that i think you can imagine that it it might have death spiral instead ginny detects the problem and is able to emergency land before it gets too ugly while safely on the ground gpl discovers the air"
+    },
+    {
+      "start": 458.7,
+      "end": 470.31,
+      "text": "and quickly corrected with a software patch it's a close call that they recover over the next dozen flights they keep up with a rubber and support the mission that is until flight nineteen"
+    },
+    {
+      "start": 474.33,
+      "end": 478.41,
+      "text": "we were about to fly that nineteen flight and i got a phone call"
+    },
+    {
+      "start": 479.04,
+      "end": 483.78,
+      "text": "the afternoon before basically saying there's a a dust storm brewing"
+    },
+    {
+      "start": 485.07,
+      "end": 486.18,
+      "text": "near just operator"
+    },
+    {
+      "start": 488.19,
+      "end": 493.41,
+      "text": "this away quickly cancel the flight and say well we were just going to hunker down and see what happens"
+    },
+    {
+      "start": 494.79,
+      "end": 496.26,
+      "text": "they brace for impact"
+    },
+    {
+      "start": 502.26,
+      "end": 512.52,
+      "text": "it last six days with winds gusting up to twenty meters per second that first dust storm in the middle of fall in the first martian year that we're on the surface get clobbered us"
+    },
+    {
+      "start": 514.5,
+      "end": 515.01,
+      "text": "but"
+    },
+    {
+      "start": 516.09,
+      "end": 517.14,
+      "text": "they make it through"
+    },
+    {
+      "start": 518.34,
+      "end": 527.94,
+      "text": "nervously they tried to make contact and she survived she hasn't died or toppled over but now they have a new problem"
+    },
+    {
+      "start": 528.78,
+      "end": 529.32,
+      "text": "dust"
+    },
+    {
+      "start": 530.76,
+      "end": 550.32,
+      "text": "dust on mars is no joke i mean for ginny there are two big problems first dust is covering her solar panels reducing power by eighteen percent and second it's clogging her mechanical components we went to go fly when we wait to wiggle the servers if they were actually stuck there kind of jammed from the dust"
+    },
+    {
+      "start": 550.56,
+      "end": 553.77,
+      "text": "so that aborted the first attempt at late ninety"
+    },
+    {
+      "start": 554.97,
+      "end": 567.57,
+      "text": "now gpl had anticipated both of these problems but they hadn't had the time or budget to fix them so for the first they just have to accept that they have reduced solar power and they adjust their flight durations accordingly"
+    },
+    {
+      "start": 568.11,
+      "end": 588.24,
+      "text": "for the second they find a workaround by repeatedly wiggling the service until the joints clear so she's able to keep flying albeit wounded and survival isn't getting any easier see every martian night the temperature dropped precipitously my friend alex from the channel astro describes it"
+    },
+    {
+      "start": 588.27,
+      "end": 588.66,
+      "text": "well"
+    },
+    {
+      "start": 589.92,
+      "end": 599.01,
+      "text": "with less atmosphere mass became far worse and retaining heat when the surface starts to cool there is no air to catch the escaping ones"
+    },
+    {
+      "start": 599.79,
+      "end": 611.79,
+      "text": "it is it the point where if you have to stand on the planet's equated during his warm as time of the day your feet might feel twenty three degrees celsius while at your head it would be zero degrees celsius"
+    },
+    {
+      "start": 612.78,
+      "end": 627.15,
+      "text": "means between day and night mars has some intense temperature swings temperatures that now range from highs around twenty seven degrees celsius down to a freezing minus one hundred and thirty three degrees celsius at night"
+    },
+    {
+      "start": 628.41,
+      "end": 636.12,
+      "text": "if you want to learn more about how this leads to entire planet covering dust storms astro has a whole video on the martian climate"
+    },
+    {
+      "start": 637.35,
+      "end": 646.86,
+      "text": "so these massive shifts and temperature are happening all the time but as jenny's mission progresses mars get farther away from the sun and enters the martian winter"
+    },
+    {
+      "start": 647.7,
+      "end": 667.71,
+      "text": "so it gets even colder at night which is a problem many of ingenuities key electrical components or hand sauntered and big temperature swings cause expansion and contraction of this metal and so that can eventually break these connections also inside the batteries a liquid electrolyte solution allows"
+    },
+    {
+      "start": 667.71,
+      "end": 687.87,
+      "text": "lithium ions to move between the cathode an anode during charging and discharging but if this solution freezes gpl fears that the whole thing will stop working entirely so what they do is keep all the components sensitive to the cold inside a warm box which has resistance heaters that run during the night my spends too"
+    },
+    {
+      "start": 687.87,
+      "end": 708.03,
+      "text": "holy fire thirty percent of your battery flying in the other il sixty to seventy five percent is all just staying warm at night the problem is the colder it gets the harder the heaters have to work and if they can't keep up and the batteries cool too much they become less efficient so they supply even less power to the heaters performance can contain"
+    },
+    {
+      "start": 708.03,
+      "end": 711.09,
+      "text": "new to degrade in a vicious death spiral"
+    },
+    {
+      "start": 714.03,
+      "end": 723.63,
+      "text": "on the morning of may third the team a gpl goes about a normal day they checked the data from the previous downlink nothing they try pinging ingenuity"
+    },
+    {
+      "start": 725.04,
+      "end": 734.22,
+      "text": "still nothing of they've finally lost her it we just lose our our seventy million dollar helicopter on mars that is this the end of the mission"
+    },
+    {
+      "start": 735.81,
+      "end": 740.76,
+      "text": "we thought this was that so let's just make sure before we close the door and ingenuity we thought of everything"
+    },
+    {
+      "start": 743.55,
+      "end": 744.51,
+      "text": "let's keep working through it"
+    },
+    {
+      "start": 745.23,
+      "end": 765.39,
+      "text": "they run through all the possible problems until the narrow it down to just one the way she was designed ginny has an alarm clock that makes her up it stays awake for fifteen minutes if it doesn't hear a thing after fifteen minutes goes back to sleep and it doesn't wake up until the next alarm their hypothesis is this if the lack of sunlight forced ginny to"
+    },
+    {
+      "start": 765.45,
+      "end": 781.02,
+      "text": "fully deplete her batteries then during the night her heaters would have stopped and she would have powered off completely when the sun rises as long as her essential components still function she may recharge enough to wake up only now her clock will have reset"
+    },
+    {
+      "start": 781.98,
+      "end": 802.11,
+      "text": "so they run the calculations if she's still alive based on when the sun comes up she should be waking up at eleven forty five am martian time that is not the time they had been trying so they change their search window and start calling out to ginny around when they expect her power up they send out paying after paying"
+    },
+    {
+      "start": 802.11,
+      "end": 803.79,
+      "text": "and until finally"
+    },
+    {
+      "start": 805.77,
+      "end": 806.73,
+      "text": "she's alive"
+    },
+    {
+      "start": 809.4,
+      "end": 827.55,
+      "text": "they checked to see whether everything is still working and despite the components in her born box only being raided to negative forty five degrees they survive being completely frozen rope all except for one the incline amateur is dead the inclan amateur is what let's ingenuity know her physical or"
+    },
+    {
+      "start": 827.55,
+      "end": 836.76,
+      "text": "the intention in three d space before flight and that is pretty essential for getting the right heading you could imagine if you're off and heading by ten degrees you could fly into a map"
+    },
+    {
+      "start": 837.72,
+      "end": 857.67,
+      "text": "without the inclan amateur there is no way for her to fly so at first the whole team is stumped but then they have an idea because ingenuity is made a phone parts literally parts from phones people carry around every day her processor is from a samsung galaxy as five and some of her sensors are from a google pixel three"
+    },
+    {
+      "start": 858.09,
+      "end": 861.45,
+      "text": "and these phones can do a lot of the things that didn't include amateur can do"
+    },
+    {
+      "start": 863.04,
+      "end": 870.66,
+      "text": "inside every smartphone or at least three little micro electro mechanical systems aligned perpendicular to each other x y z"
+    },
+    {
+      "start": 871.53,
+      "end": 891.63,
+      "text": "at their core is a small mass suspended by flexible arms they work like springs and follow hooks law f equals minus kayaks were force is proportional to displacement the mass also follows newton's second law f equals i may if you combine these equations you get a equals minus kayaks over am which"
+    },
+    {
+      "start": 891.78,
+      "end": 896.31,
+      "text": "links acceleration and displacement surrounding the mass are fixed arms"
+    },
+    {
+      "start": 897.15,
+      "end": 917.31,
+      "text": "when a voltage is applied to the mass and arms the former capacitor web epsilon and a stay constant but as the mass moves the distance between them changes with acts this alters the capacitance which becomes more noticeable with multiple plates hence why they have so many little arms by measuring cups"
+    },
+    {
+      "start": 917.31,
+      "end": 937.47,
+      "text": "students you can determine displacement and since displacement is proportional to acceleration changes in capacitance allow us to measure acceleration that's why these devices are called accelerometers and by integrating acceleration over time you can work out velocity and then position this is how motion tracking works for screen wrote a"
+    },
+    {
+      "start": 937.47,
+      "end": 948.24,
+      "text": "asian gaming controls and step county if you add gyroscopes you get an inertial measurement unit or i am you and ingenuity has the same i am you as the google pixel three"
+    },
+    {
+      "start": 950.58,
+      "end": 969.15,
+      "text": "so the team at jpl had an idea they can reprogram the computer to use the i am you to replace the include a homeowner the in kilometer is really just accelerometers still allows us to tell the initial attitude of the vehicle in and pitch and the i knew that also has actually were"
+    },
+    {
+      "start": 969.15,
+      "end": 975.84,
+      "text": "i'm a nurse so impersonal guess is an information so from the clutches of failure they get her running again"
+    },
+    {
+      "start": 977.28,
+      "end": 996.75,
+      "text": "we got lucky in that like the what instrument we could afford to lose was the one that died but the i am you isn't space grade in fact none of these off the shelf parts are which means they're vulnerable to cosmic rays on mars the thin atmosphere doesn't just make it harder to fly it also means cosmic rays reach this"
+    },
+    {
+      "start": 996.75,
+      "end": 1016.91,
+      "text": "surface more easily and a single cosmic ray can strike a computer register and flip a bit inside the computer which can lead to some strange behavior it even happens here on earth it once added four thousand ninety six unaccounted votes to a candidate in a belgian election now on a martian helicopter flipping the wrong bit"
+    },
+    {
+      "start": 1017.01251,
+      "end": 1022.88,
+      "text": "the wrong time could mean losing control and crashing so why doesn't that happen"
+    },
+    {
+      "start": 1024.23,
+      "end": 1043.55,
+      "text": "if you'd asked some a ten years ago can you fly just the latest cellphone processor they will not last like two days and you'll be day right turns out that cosmic ray bit flips are not as big a deal as nasa thought the off the shelf components pulled up way better than they expected and this is an important finding rather"
+    },
+    {
+      "start": 1043.61,
+      "end": 1063.71,
+      "text": "and going through all of the development cost of building up a processor from scratch to be rationed tolerate or finding is a lot better bang for your buck by just going in this buying batches of different processors and just calling that means throw the through radiation test campaign look at the failure rate's he on figuring out hey this guy we don't know why that for whatever"
+    },
+    {
+      "start": 1063.71,
+      "end": 1066.29,
+      "text": "verizon this process server here is great"
+    },
+    {
+      "start": 1067.01,
+      "end": 1086.99,
+      "text": "it holds up so apply that now using these surprisingly robust off the shelf parts they survive the rest of the winter but they are only barely able to stay within the communication range of the rover springtime came the herds where it's european allies are going to spring up them have the right ahead coming out of winter with the increase sunlight they can now"
+    },
+    {
+      "start": 1087.02,
+      "end": 1098.12,
+      "text": "fully recharge and returned to their scientific mission over the next forty one flights the image craters perseverance can't make it to they capture stunning images of the martian horizon from above"
+    },
+    {
+      "start": 1100.1,
+      "end": 1118.85,
+      "text": "they conduct daring aerodynamic tests and they begin to push the limits they want to fly faster but the faster they go there quicker features move across the cameras field of view and division navigation system just can't keep up with that so gpl comes up with a solution they fly"
+    },
+    {
+      "start": 1118.94,
+      "end": 1125.09,
+      "text": "higher then they can expand the field of view which means features will move more slowly through frank"
+    },
+    {
+      "start": 1126.14,
+      "end": 1145.79,
+      "text": "so from an initial goal of a ten meter altitude they go up to twenty four meters and as a result the able to go from flying it two meters per second all the way up to ten meters per second we set speed records distance records altitude records is everything we could think of to push that flight envelope on ingenuity really me"
+    },
+    {
+      "start": 1145.79,
+      "end": 1150.08,
+      "text": "make the most of this once in a lifetime opportunity of having helicopter on mars"
+    },
+    {
+      "start": 1150.74,
+      "end": 1170.75,
+      "text": "everything is going swimmingly ginny and perseverance have made it all the way to interrupt the house a river delta in general crater but on flight seventy one there's a new problem and it's worse than any of the ones that came before now ingenuities only scientific payload is a camera so she's taking hundreds of photos a day"
+    },
+    {
+      "start": 1170.855234,
+      "end": 1190.91,
+      "text": "and sending them to jpl and she's not alone perseverance does the same including this self the with ingenuity honestly they're the most chronically online duo on mars we always know exactly where they are what they're up to and they're constantly sharing photos but really how different is that from us and we we spend most of our lives on"
+    },
+    {
+      "start": 1190.91,
+      "end": 1211.07,
+      "text": "line constantly sharing data except in our case that that it doesn't just sit in a nasa archive it gets bought sold and used in ways we're not always aware of that's why i've been using today sponsor in cogni i created my account a year ago and since then they filed over three hundred requests on my behalf"
+    },
+    {
+      "start": 1211.07,
+      "end": 1226.49,
+      "text": "the resulting in my data being removed from over one hundred marketing and spam databases fight tried to do that myself it would have taken around two hundred and thirty hours literally weeks of work at his time i can better spent making videos which i'm sure you appreciate"
+    },
+    {
+      "start": 1227.78,
+      "end": 1247.91,
+      "text": "try incognito visit incognito com slash very taxing of with that link down in the description or you can scan this qr code and when you do make sure to use code verge has seem to get sixty percent off your annual subscription so head over to incognito com slash very handsome and protect your online data today on i think in ca"
+    },
+    {
+      "start": 1248.014163,
+      "end": 1251.48,
+      "text": "me for sponsoring this part of the video and now back to ingenuity"
+    },
+    {
+      "start": 1253.97,
+      "end": 1271.7,
+      "text": "so we just had this one final thing to do we needed to cross the sand dune and make it to bright angel that a rendezvous with the rover so and seventy one we basically went up we were flying and then after about ten seconds of flying with degraded navigation we went into an emergency landing mode and sort of came down"
+    },
+    {
+      "start": 1272.15,
+      "end": 1292.28,
+      "text": "hard they hail ginny and luckily she's still alive in the error code they discover the problem as she was flying over the dunes there just weren't enough rocks or landmarks for her camera to identify and without those references she quickly lost track of her position and had to make an emergency"
+    },
+    {
+      "start": 1292.31,
+      "end": 1292.73,
+      "text": "landing"
+    },
+    {
+      "start": 1294.5,
+      "end": 1305.24,
+      "text": "it's similar to the camera issue from flight six but this time there's no software effects they check for structural damage but surprisingly everything is still intact"
+    },
+    {
+      "start": 1306.62,
+      "end": 1322.22,
+      "text": "so they attempt another flight this time going straight up to scan the surroundings and then coming straight back down simple we popped up took pictures and then on the way back down we hit the same problems we did on seventy one only this time it's fatal"
+    },
+    {
+      "start": 1324.35,
+      "end": 1328.25,
+      "text": "perseverance drives over and captures this image of her crash site"
+    },
+    {
+      "start": 1329.93,
+      "end": 1331.01,
+      "text": "when we saw the plates"
+    },
+    {
+      "start": 1331.73,
+      "end": 1341.93,
+      "text": "broken or is our first image after flight seventy two those heart wrenching though it was like now there's there's no way this mission the continue that was very depressing"
+    },
+    {
+      "start": 1343.88,
+      "end": 1344.45,
+      "text": "so why"
+    },
+    {
+      "start": 1345.74,
+      "end": 1354.92,
+      "text": "because seventy one was also a crash landing for the same reason though is that the other as system was confused and drove us and the ground but we came out of that apparently unscathed and yeah"
+    },
+    {
+      "start": 1355.7,
+      "end": 1368.63,
+      "text": "seventy two we self destructed the first air crash investigation on another planet right yeah that's first aircraft on another planet and then the first air crash investigation have the i kind of go hand in hand"
+    },
+    {
+      "start": 1369.92,
+      "end": 1378.89,
+      "text": "at the crash site they find ingenuities blades scattered but not in the way they expect we notice something interesting which is there was no blades strike spot"
+    },
+    {
+      "start": 1379.49,
+      "end": 1387.8,
+      "text": "blade spinning this fast when they hit the ground right they're going to create of a spray there's going to be a pattern probably even visible from orbit and we didn't see anything like that"
+    },
+    {
+      "start": 1388.4,
+      "end": 1391.61,
+      "text": "so if the blades didn't strike the ground then what happened"
+    },
+    {
+      "start": 1392.33,
+      "end": 1405.62,
+      "text": "so this is an actual prototype bleed from the development phase so this is essentially identical to the blades on engineer me it's a carbon fiber composite with foam core it's incredibly light if you want to feel it yeah"
+    },
+    {
+      "start": 1406.25,
+      "end": 1413.99,
+      "text": "whoa that's actually curry that's like at least a quarter of what i expected just looking at it it doesn't feel physical"
+    },
+    {
+      "start": 1415.13,
+      "end": 1422.48,
+      "text": "so why did they break well as the bleed spin the tips of the blades trace out a circle which you can think of like a hula hoop"
+    },
+    {
+      "start": 1423.14,
+      "end": 1443.12,
+      "text": "if there's a force up on the near side you might expect the rotor to tilt immediately in this direction but that is not actually what happens as eat the blade isn't stationary it's moving really fast so when you apply this force it actually only moves after that point so the maximum displacement occurs ninety degrees later"
+    },
+    {
+      "start": 1443.63,
+      "end": 1455.54,
+      "text": "so even though we push up on the near side the bleeds tilt up on the raid and down on the left this effect is called procession and it's the same principle that explains this spinning bike will demonstration"
+    },
+    {
+      "start": 1456.83,
+      "end": 1476.48,
+      "text": "now ingenuity has a second set of blades that are moving in the opposite direction which means that when a force is applied each set of blades experiences procession in the opposite direction for the helicopter over all these talks cancel out but each individual blade still flexes because of that procession torque"
+    },
+    {
+      "start": 1477.2,
+      "end": 1493.31,
+      "text": "that results in a stress concentration right about here where that final reinforcement tapers off and so if you had a procession based failure you'd expect it to fail right here and sure enough that's exactly where you see it in the pictures you can see sort of is jackie place where the blade tip just got ripped off"
+    },
+    {
+      "start": 1495.02,
+      "end": 1511.88,
+      "text": "so that is what happened on flight seventy two as ginny came down hard she hit a dune an angle the force was transmitted up through the body of the helicopter and this created a procession torque that meant the rotors and they snapped right where the reinforcement tapers down"
+    },
+    {
+      "start": 1512.72,
+      "end": 1520.97,
+      "text": "this thing came out hard it didn't didn't destroy the landing gear it didn't break the idiotic they didn't kill the servers swash plates are all they're all intact"
+    },
+    {
+      "start": 1521.75,
+      "end": 1524.0,
+      "text": "it's the rotors that's that we click"
+    },
+    {
+      "start": 1526.4,
+      "end": 1537.14,
+      "text": "so that is the first thing they're changing on the next generation of mars helicopter which is called chopper you had a chance to hold the ingenuity blame this is than it is the next year and baby"
+    },
+    {
+      "start": 1537.86,
+      "end": 1557.99,
+      "text": "it looks fairly similar with a couple a key differences the reinforce the blades to withstand the torque caused by hard landings now they also have six rotors instead of to which means chopper can hold a lot even carrying a scientific payload of it's own we've developed now a very lightweight radio that can communicate directly toward"
+    },
+    {
+      "start": 1558.23,
+      "end": 1578.15,
+      "text": "well so were a free bird as he owns the exploring that's in canada now you are sort of trying to trail perseverance right and now you can go anywhere you up or our own spacecraft in this blue box you can shove about five kilograms of science payload and bring it anywhere on the planet mars you can fly three kilometers per soul and a matter of minutes that"
+    },
+    {
+      "start": 1578.15,
+      "end": 1580.7,
+      "text": "that's really generate a lot of excited in the science community"
+    },
+    {
+      "start": 1582.14,
+      "end": 1592.31,
+      "text": "so this is a fifth scale model of chopper it's really to system so this is our chopper platform right this is what's going to go on and explore the the entire surface of mars one day"
+    },
+    {
+      "start": 1593.06,
+      "end": 1610.91,
+      "text": "that's the point of the concept but underneath his mid air helicopter delivery platform seat mars rovers all need complex sky cranes to land but a helicopter is different it just needs a platform to take off from so the idea we come down through the atmosphere"
+    },
+    {
+      "start": 1611.54,
+      "end": 1624.29,
+      "text": "we have this jetpack that we need to slow us down to get us down to a regime that is controllable so that we can take off from that platform mid air and land under our own power for this it needs rockets"
+    },
+    {
+      "start": 1625.55,
+      "end": 1626.75,
+      "text": "two lot"
+    },
+    {
+      "start": 1633.8,
+      "end": 1634.49,
+      "text": "awesome"
+    },
+    {
+      "start": 1635.78,
+      "end": 1654.77,
+      "text": "ah your envisioning like a future of aviation all over mars as a primary exploitive capacity in my mind it's absolutely and as a matter of time there there will be fleets flying throughout mars there will be airports on mars one day and will have aircraft the size of chopper more aircraft and size of ingenuity"
+    },
+    {
+      "start": 1655.49,
+      "end": 1662.21,
+      "text": "even bigger than shopper nasa is thinking big thanks to ingenuity a project they once doubt it"
+    },
+    {
+      "start": 1663.65,
+      "end": 1666.47,
+      "text": "because ginny showed what is possible"
+    },
+    {
+      "start": 1667.46,
+      "end": 1687.56,
+      "text": "in eighteen ninety he said i'm going to fly like okay that kooky guy in his garage you thinks he can fly is going to he's going to kill himself right after the wright brothers it's like oh okay yeah this is a thing that we're going to do and so that's the change in mentality that occurred because of ingenuity that's why still sitting there on the surface of mars attached to the underside of ingenuity is a"
+    },
+    {
+      "start": 1687.62,
+      "end": 1697.31,
+      "text": "tiny scrap one square centimeter of muslim fabric it was taken from the lower left wing of the first airplane the right flyer"
+    },
+    {
+      "start": 1698.24,
+      "end": 1702.32,
+      "text": "from the first flight on earth to the first flight on another planet"
+    },
+    {
+      "start": 1702.98,
+      "end": 1706.82,
+      "text": "from ingenuities grave on mars her spirit lives on"
+    },
+    {
+      "start": 1709.79,
+      "end": 1713.12,
+      "text": "except she isn't quite dead yet"
+    },
+    {
+      "start": 1714.53,
+      "end": 1727.4,
+      "text": "she's acting as a weather station now capturing photos everyday captain temperature measurements everyday something no one would have ever predicted before a flight seventy two that if things don't go well would you still have a functioning spacecraft so she's a tank"
+    },
+    {
+      "start": 1727.91,
+      "end": 1730.7,
+      "text": "the team can be more proud of what you've accomplished"
+    }
+  ],
+  "model": "Vosk",
+  "source_file": "30Min.mp4",
+  "processing_time_seconds": 196.57,
+  "num_segments": 153
+}

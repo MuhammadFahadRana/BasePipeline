@@ -1,0 +1,10 @@
+Model: Vosk
+Source: audio only.wav
+Processing Time: 3.77s
+============================================================
+
+[0:00:01 → 0:00:17] the stale smell of old beer lingers it takes heat to bring out the odor a cold dip restores health and zest a salt pickled tastes fine with ham tacos al pastor are my favorite a zestful food is the hot cross buns
+
+============================================================
+FULL TEXT:
+the stale smell of old beer lingers it takes heat to bring out the odor a cold dip restores health and zest a salt pickled tastes fine with ham tacos al pastor are my favorite a zestful food is the hot cross buns

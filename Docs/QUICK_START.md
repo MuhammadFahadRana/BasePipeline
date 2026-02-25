@@ -59,12 +59,20 @@ python -c "from database.config import init_db; init_db()"
 # List all tables in the database
 docker exec video_search_db psql -U postgres -d video_semantic_search -c "\dt"
 
-# Expected output: 5 tables
-# - embeddings
-# - scenes  
-# - search_queries
-# - transcript_segments
-# - videos
+# Expected output:
+
+# Schema |        Name         | Type  |  Owner   
+# --------+---------------------+-------+----------
+#  public | embeddings          | table | postgres
+#  public | query_cache         | table | postgres
+#  public | scenes              | table | postgres
+#  public | search_image_cache  | table | postgres
+#  public | search_queries      | table | postgres
+#  public | transcript_segments | table | postgres
+#  public | videos              | table | postgres
+#  public | visual_embeddings   | table | postgres
+# (8 rows)
+
 ```
 
 ### Step 3: Process Videos (Optional - if you have new videos)

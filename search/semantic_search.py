@@ -58,6 +58,7 @@ class SearchResult:
     text: str
     score: float
     match_type: str  # "exact", "fuzzy", "semantic"
+    result_id: Optional[int] = None # Optional ID from DB (transcript ID or negative scene ID)
     keyframe_path: str = ""  # Path to keyframe image for thumbnails
 
     def to_dict(self) -> Dict:
@@ -73,6 +74,7 @@ class SearchResult:
             "text": self.text,
             "score": round(self.score, 4),
             "match_type": self.match_type,
+            "result_id": self.result_id,
             "keyframe_path": self.keyframe_path,
         }
 
@@ -621,7 +623,7 @@ class SemanticSearchEngine:
                     ts.start_time,
                     ts.end_time,
                     ts.text AS result_text,
-                    ts_rank(to_tsvector('english', ts.text), plainto_tsquery('english', :query)) AS rank,
+                    ts_rank(to_tsvector('english', ts.text), websearch_to_tsquery('english', :query)) AS rank,
                     NULL AS ocr_text,
                     ve.keyframe_path,
                     'transcript' AS match_source
@@ -629,32 +631,60 @@ class SemanticSearchEngine:
                 JOIN videos v ON ts.video_id = v.id
                 LEFT JOIN scenes s ON ts.scene_id = s.id
                 LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
-                WHERE to_tsvector('english', ts.text) @@ plainto_tsquery('english', :query)
+                WHERE to_tsvector('english', ts.text) @@ websearch_to_tsquery('english', :query)
                 {query_filter_ts}
 
                 UNION ALL
 
+                -- Branch 2: Direct OCR scene matches (searches scenes.ocr_text directly)
+                SELECT 
+                    -(s.id) AS result_id,
+                    s.video_id,
+                    v.filename,
+                    v.file_path,
+                    s.start_time,
+                    s.end_time,
+                    '[OCR] ' || s.ocr_text AS result_text,
+                    ts_rank(to_tsvector('english', s.ocr_text), websearch_to_tsquery('english', :query)) AS rank,
+                    s.ocr_text,
+                    COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
+                    'ocr' AS match_source
+                FROM scenes s
+                JOIN videos v ON s.video_id = v.id
+                LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
+                WHERE s.ocr_text IS NOT NULL
+                  AND to_tsvector('english', s.ocr_text) @@ websearch_to_tsquery('english', :query)
+                {query_filter_ocr}
+
                 UNION ALL
 
-                -- Branch 3: Visual Semantic matches (Qwen2-VL captions and labels)
-                SELECT 
-                    -(s.id + 1000000) AS result_id, -- Avoid ID collision with OCR branch
+                -- Branch 3: Visual caption + object-label matches (Qwen2-VL enrichment)
+                -- Uses negative offset -2000000 to avoid ID collision with OCR branch
+                SELECT
+                    -(s.id + 2000000) AS result_id,
                     s.video_id,
                     v.filename,
                     v.file_path,
                     s.start_time,
                     s.end_time,
                     '[Visual] ' || s.caption AS result_text,
-                    -- Boost Visual rank 8x
-                    ts_rank(to_tsvector('english', s.caption || ' ' || s.object_labels::text), plainto_tsquery('english', :query)) * 8.0 AS rank,
+                    -- Boost Visual rank 6x so richer descriptions surface clearly
+                    ts_rank(
+                        to_tsvector('english',
+                            s.caption || ' ' || COALESCE(s.object_labels::text, '[]')
+                        ),
+                        websearch_to_tsquery('english', :query)
+                    ) * 6.0 AS rank,
                     NULL AS ocr_text,
                     COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
                     'visual' AS match_source
                 FROM scenes s
                 JOIN videos v ON s.video_id = v.id
                 LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
-                WHERE (s.caption IS NOT NULL OR (s.object_labels IS NOT NULL AND jsonb_array_length(s.object_labels) > 0))
-                  AND to_tsvector('english', s.caption || ' ' || s.object_labels::text) @@ plainto_tsquery('english', :query)
+                WHERE s.caption IS NOT NULL
+                  AND to_tsvector('english',
+                        s.caption || ' ' || COALESCE(s.object_labels::text, '[]')
+                      ) @@ websearch_to_tsquery('english', :query)
                 {query_filter_ocr}
             )
             SELECT * FROM combined
@@ -774,7 +804,14 @@ class SemanticSearchEngine:
             # since exact text matches from keyframes are inherently high quality
             is_ocr_only = isinstance(key, str) and key.startswith('ocr_')
             if is_ocr_only and semantic_score == 0 and fuzzy_score_norm > 0:
-                combined_score = max(combined_score, 0.45 * fuzzy_score_norm)
+                combined_score = max(combined_score, 0.60 * fuzzy_score_norm)
+
+            # Visual-caption matches also get a floor — Qwen2-VL captions are
+            # rich descriptions and deserve to surface even when no semantic
+            # embedding exists for the scene yet.
+            is_visual_only = isinstance(key, str) and key.startswith('visual_')
+            if is_visual_only and semantic_score == 0 and fuzzy_score_norm > 0:
+                combined_score = max(combined_score, 0.60 * fuzzy_score_norm)
 
             # Determine match type
             if semantic_score > 0.7:
@@ -794,7 +831,8 @@ class SemanticSearchEngine:
                 text=segment.text,
                 score=combined_score,
                 match_type=match_type,
-                keyframe_path=keyframe_path or ""
+                keyframe_path=keyframe_path or "",
+                result_id=key # Pass the unique key as result_id
             )
 
             combined.append(result)

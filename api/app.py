@@ -24,6 +24,7 @@ from datetime import datetime
 
 # Lazy-loaded components
 _video_qa = None
+_search_engine = None
 
 
 # Pydantic models for API
@@ -138,8 +139,13 @@ def get_video_qa(db: Session = Depends(get_db)):
     return _video_qa
 
 
-
-
+def get_search_engine(db: Session = Depends(get_db)):
+    """Lazy loader for SemanticSearchEngine."""
+    global _search_engine
+    if _search_engine is None:
+        print("Initializing Semantic Search Engine (this may take a moment)...")
+        _search_engine = SemanticSearchEngine(db)
+    return _search_engine
 
 
 @app.get("/health")
@@ -163,8 +169,19 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Video not found")
     
     video_path = video.file_path
+    
+    # Path Mapping (FIX): If DB contains Linux absolute paths but we are on Windows,
+    # resolve the filename to the local 'videos' directory.
     if not os.path.exists(video_path):
-        raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
+        local_filename = os.path.basename(video_path)
+        # Check local 'videos' folder relative to project root
+        project_root = Path(__file__).parent.parent
+        resolved_path = project_root / "videos" / local_filename
+        
+        if resolved_path.exists():
+            video_path = str(resolved_path)
+        else:
+            raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
     
     file_size = os.path.getsize(video_path)
     
@@ -176,6 +193,8 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
         ".mkv": "video/x-matroska",
         ".avi": "video/x-msvideo",
         ".mov": "video/quicktime",
+        ".ts": "video/mp2t",
+        ".mp2t": "video/mp2t",
     }
     content_type = content_types.get(ext, "video/mp4")
     
@@ -283,25 +302,13 @@ async def ask_video_question(request: QARequest, qa_system=Depends(get_video_qa)
     
     
 @app.post("/search", response_model=SearchResponse)
-async def search(request: SearchRequest, db: Session = Depends(get_db)):
+async def search(request: SearchRequest, search_engine: SemanticSearchEngine = Depends(get_search_engine)):
     """
     Semantic search endpoint.
 
     Search video transcripts using hybrid semantic + fuzzy text matching.
-
-    **Example queries:**
-    - "where Omega Alpha well is discussed"
-    - "drilling ultra-long reservoir sections"
-    - "geostering techniques"
-
-    **Typo tolerance:**
-    - "Umega Alfa" → automatically corrected to "Omega Alpha"
-
-    **Returns:**
-    Video filename, timestamp, matching text segment, and search time.
     """
     start_time = time.time()
-    search_engine = SemanticSearchEngine(db)
 
     try:
         results = search_engine.search(
@@ -332,7 +339,7 @@ async def quick_search(
     q: str = Query(..., description="Search query", min_length=1),
     limit: int = Query(10, description="Number of results", ge=1, le=50),
     video: Optional[str] = Query(None, description="Filter by video filename"),
-    db: Session = Depends(get_db),
+    search_engine: SemanticSearchEngine = Depends(get_search_engine),
 ):
     """
     Quick search endpoint (GET request for easy testing).
@@ -341,7 +348,6 @@ async def quick_search(
     ```
     """
     start_time = time.time()
-    search_engine = SemanticSearchEngine(db)
 
     try:
         fallback_data = search_engine.search_with_fallback(
@@ -370,18 +376,12 @@ async def quick_search(
 async def exact_search(
     phrase: str = Query(..., description="Exact phrase to search", min_length=1),
     video: Optional[str] = Query(None, description="Filter by video filename"),
-    db: Session = Depends(get_db),
+    search_engine: SemanticSearchEngine = Depends(get_search_engine),
 ):
     """
     Exact phrase search (case-insensitive).
-
-    **Example:**
-    ```
-    GET /search/exact?phrase=Omega+Alpha+well
-    ```
     """
     start_time = time.time()
-    search_engine = SemanticSearchEngine(db)
 
     try:
         results = search_engine.search_exact_phrase(phrase=phrase, video_filter=video)
@@ -971,6 +971,5 @@ app.mount("/", StaticFiles(directory="frontend"), name="frontend")
 if __name__ == "__main__":
     import uvicorn
 
-    # uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
-
-    uvicorn.run("api.app:app", host="localhost", port=8000, reload=True)
+    # Pass the app object directly when reload=False for better reliability
+    uvicorn.run(app, host="localhost", port=8000)

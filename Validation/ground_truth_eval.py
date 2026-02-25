@@ -189,7 +189,7 @@ class GroundTruthEvaluator:
             "video": video_name,
             "wer": round(wer * 100, 2),
             "cer": round(cer * 100, 2),
-            "accuracy": round((1 - wer) * 100, 2),
+            "accuracy": max(0.0, round((1 - wer) * 100, 2)),
             "wer_details": wer_details,
             "hypothesis_text": hypothesis,
         }

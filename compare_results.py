@@ -25,14 +25,20 @@ def find_json_result(base_dir: Path, video_name: str) -> Optional[Path]:
     Search for transcript.json in either:
     - base_dir / video_name / transcript.json
     - base_dir / video_name / transcripts / transcript.json
+    Also tries normalized versions (spaces replaced with underscores).
     """
-    options = [
-        base_dir / video_name / "transcript.json",
-        base_dir / video_name / "transcripts" / "transcript.json"
-    ]
-    for opt in options:
-        if opt.exists():
-            return opt
+    names_to_try = [video_name, video_name.replace(" ", "_")]
+    # Remove duplicates if video_name had no spaces
+    names_to_try = list(dict.fromkeys(names_to_try))
+
+    for name in names_to_try:
+        options = [
+            base_dir / name / "transcript.json",
+            base_dir / name / "transcripts" / "transcript.json"
+        ]
+        for opt in options:
+            if opt.exists():
+                return opt
     return None
 
 def main():
@@ -66,7 +72,10 @@ def main():
     # Add specific models from processed/transcripts
     extra_models = [
         "Qwen-qwen2-audio",
-        "Wav2Vec"
+        "Wav2Vec",
+        "SpeechT5-ASR",
+        "Voxtral-Mini-4B",
+        "Vosk-En"
     ]
     transcripts_base = ref_dir.parent # This is "processed/transcripts"
     
@@ -75,7 +84,8 @@ def main():
         if model_path.exists():
             models[model_name] = model_path
         else:
-            print(f"Warning: Could not find extra model output: {model_path}")
+            # Try without dashes if needed or skip
+            pass
 
     if not models:
         print(f"No models found to compare in {bench_dir} or extra paths.")
@@ -143,7 +153,7 @@ def main():
                 })
 
             except Exception as e:
-                print(f"Error processing {model}/{video}: {e}")
+                print(f"Error processing {model_name}/{video}: {e}")
 
     # 3. Final Summary Table
     print("\n\n" + "=" * 60)

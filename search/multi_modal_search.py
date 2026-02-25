@@ -106,6 +106,7 @@ class MultiModalSearchEngine:
             return [
                 MultiModalSearchResult(
                     **result.__dict__,
+                    text_score=result.score,
                     vision_score=0.0,
                     combined_score=result.score
                 )
@@ -230,6 +231,7 @@ class MultiModalSearchEngine:
             mm_results = [
                 MultiModalSearchResult(
                     **r.__dict__,
+                    text_score=r.score,
                     vision_score=0.0,
                     combined_score=r.score
                 )
@@ -260,6 +262,7 @@ class MultiModalSearchEngine:
             mm_results = [
                 MultiModalSearchResult(
                     **r.__dict__,
+                    text_score=r.score,
                     vision_score=0.0,
                     combined_score=r.score
                 )
@@ -296,8 +299,44 @@ class MultiModalSearchEngine:
             current_v_score = v_score
             current_keyframe = base_result.keyframe_path
             
-            if current_v_score == 0.0 and hasattr(base_result, 'segment_id') and base_result.segment_id:
-                vision_data = self._get_vision_embedding_for_segment(base_result.segment_id)
+            # If we don't have a score yet, try to fetch embedding for segment or scene
+            if current_v_score == 0.0:
+                vision_data = None
+                
+                # Extract scene_id or segment_id from key
+                target_scene_id = None
+                target_segment_id = None
+                
+                if isinstance(key, str):
+                    if key.startswith('visual_'):
+                        target_scene_id = int(key.replace('visual_', ''))
+                    elif key.startswith('ocr_'):
+                        target_scene_id = int(key.replace('ocr_', ''))
+                    elif key.startswith('seg_'):
+                        target_segment_id = int(key.replace('seg_', ''))
+                    elif key.startswith('scene_'):
+                        # format scene_VIDEOID_STARTTIME
+                        # we might not have scene_id here directly, but search_with_fallback 
+                        # results usually have result_id which is negative scene_id
+                        pass
+                
+                # Fallback to result_id logic for scene_id
+                if not target_scene_id and not target_segment_id and hasattr(base_result, 'result_id') and base_result.result_id:
+                    rid = base_result.result_id
+                    if isinstance(rid, int):
+                        if rid < -2000000:
+                            target_scene_id = abs(rid) - 2000000
+                        elif rid < 0:
+                            target_scene_id = abs(rid)
+                        else:
+                            target_segment_id = rid
+
+                # Now fetch vision data
+                if target_segment_id:
+                    vision_data = self._get_vision_embedding_for_segment(target_segment_id)
+                elif target_scene_id:
+                    vision_data = self._get_vision_embedding_for_scene(target_scene_id)
+                
                 if vision_data:
                     emb, path = vision_data
                     current_v_score = float(np.dot(query_vision_embedding, emb))
@@ -374,6 +413,41 @@ class MultiModalSearchEngine:
                 embedding = np.array(raw_embedding, dtype=np.float32)
                 
             # Normalize if not already (safeguard)
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+            return embedding, row[1]
+        
+        return None
+    
+    def _get_vision_embedding_for_scene(self, scene_id: int) -> Optional[tuple]:
+        """
+        Get vision embedding for a scene directly.
+        
+        Returns:
+            Tuple of (embedding_array, keyframe_path) or None
+        """
+        result = self.db.execute(text("""
+            SELECT ve.embedding, ve.keyframe_path
+            FROM visual_embeddings ve
+            WHERE ve.scene_id = :scene_id
+            AND ve.embedding_model = :model_name
+            LIMIT 1
+        """), {"scene_id": scene_id, "model_name": self.vision_model_name})
+        
+        row = result.fetchone()
+        if row:
+            raw_embedding = row[0]
+            if isinstance(raw_embedding, str):
+                import json
+                try:
+                    embedding = np.array(json.loads(raw_embedding), dtype=np.float32)
+                except Exception:
+                    cleaned = raw_embedding.replace('[', '').replace(']', '').split(',')
+                    embedding = np.array([float(x.strip()) for x in cleaned if x.strip()], dtype=np.float32)
+            else:
+                embedding = np.array(raw_embedding, dtype=np.float32)
+                
             norm = np.linalg.norm(embedding)
             if norm > 0:
                 embedding = embedding / norm

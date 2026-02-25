@@ -162,45 +162,94 @@ class VisualFeatureExtractor:
 
     def _parse_output(self, text: str) -> Dict[str, any]:
         """
-        Simple heuristic parser for the model's output.
-        Expected format:
-        1. Caption...
-        2. Tags: ...
-        3. OCR: ...
+        Regex-anchored parser for the model's numbered-list output.
+
+        Expected model format:
+            1. <scene description>
+            2. <comma-separated object tags>
+            3. <OCR text, or "None">
+
+        Using re.match anchored to line-start prevents false triggers on
+        content that happens to contain "2." (e.g. "25th year stand-up").
         """
-        lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
-        
+        import re
+
+        # Pattern: line starts with a digit 1-3, then '.' or ')', optional space
+        SECTION_RE = re.compile(r'^([1-3])[.)]\s*(.*)', re.IGNORECASE)
+        # Named keyword markers that also switch sections
+        KEYWORD_MAP = {
+            "description": "caption", "caption": "caption",
+            "tags": "labels", "objects": "labels", "object labels": "labels",
+            "ocr": "ocr", "text": "ocr", "visible text": "ocr",
+        }
+        NONE_VALS = {"none", "none.", "n/a", "no text", "no visible text", ""}
+
         caption = ""
-        object_labels = []
-        ocr_text = ""
-        
-        current_section = None
-        
+        object_labels: list = []
+        ocr_parts: list = []
+        current_section: str | None = None
+
+        lines = [ln.strip() for ln in text.strip().split("\n") if ln.strip()]
+
         for line in lines:
-            lower_line = line.lower()
-            
-            # Detect sections
-            if "1." in lower_line or "description:" in lower_line or "caption:" in lower_line:
-                current_section = "caption"
-                content = line.split(":", 1)[1] if ":" in line else line.replace("1.", "").strip()
-                caption = content.strip()
-            elif "2." in lower_line or "tags:" in lower_line or "objects:" in lower_line:
-                current_section = "labels"
-                content = line.split(":", 1)[1] if ":" in line else line.replace("2.", "").strip()
-                object_labels = [tag.strip() for tag in content.split(',') if tag.strip()]
-            elif "3." in lower_line or "ocr:" in lower_line or "text:" in lower_line:
-                current_section = "ocr"
-                content = line.split(":", 1)[1] if ":" in line else line.replace("3.", "").strip()
-                if content.lower() != "none" and content.lower() != "none.":
-                    ocr_text = content.strip()
-            elif current_section == "ocr":
-                # Multi-line OCR output
-                ocr_text += " " + line
-                
+            lower = line.lower()
+
+            # Try numbered-list anchor first
+            m = SECTION_RE.match(line)
+            if m:
+                num, content = int(m.group(1)), m.group(2).strip()
+                # Strip a leading "keyword:" if present
+                if ":" in content:
+                    key, _, content = content.partition(":")
+                    content = content.strip()
+                if num == 1:
+                    current_section = "caption"
+                    caption = content
+                elif num == 2:
+                    current_section = "labels"
+                    object_labels = [t.strip() for t in content.split(",") if t.strip()]
+                elif num == 3:
+                    current_section = "ocr"
+                    if content.lower() not in NONE_VALS:
+                        ocr_parts = [content]
+                continue
+
+            # Try keyword marker (e.g. "Caption: …", "Tags: …", "OCR: …")
+            hit_keyword = False
+            for kw, section in KEYWORD_MAP.items():
+                if lower.startswith(kw + ":") or lower.startswith("**" + kw):
+                    current_section = section
+                    content = line.split(":", 1)[1].strip() if ":" in line else ""
+                    if section == "caption":
+                        caption = content
+                    elif section == "labels":
+                        object_labels = [t.strip() for t in content.split(",") if t.strip()]
+                    elif section == "ocr":
+                        if content.lower() not in NONE_VALS:
+                            ocr_parts = [content]
+                    hit_keyword = True
+                    break
+            if hit_keyword:
+                continue
+
+            # Continuation of OCR section (multi-line OCR text)
+            if current_section == "ocr":
+                # Stop appending if we hit what looks like a new numbered item
+                if re.match(r'^\d+[.)]\s', line):
+                    continue
+                if lower not in NONE_VALS:
+                    ocr_parts.append(line)
+
+        # Final cleanup
+        caption = caption.strip()
+        ocr_text = " ".join(ocr_parts).strip()
+        if ocr_text.lower() in NONE_VALS:
+            ocr_text = ""
+
         return {
-            "caption": caption,
+            "caption":       caption or None,
             "object_labels": object_labels,
-            "ocr_text": ocr_text
+            "ocr_text":      ocr_text or None,
         }
 
 if __name__ == "__main__":

@@ -1,0 +1,202 @@
+Model: Vosk
+Source: Rick Warren- A life of purpose - TED Talk.ts
+Processing Time: 128.04s
+============================================================
+
+[0:00:04 → 0:00:05] i'm often asked
+[0:00:07 → 0:00:11] you know what what surprised you about the book and i said that i get the right it
+[0:00:12 → 0:00:14] i would have never imagined that
+[0:00:15 → 0:00:19] not in my wildest dreams did i think i don't even consider myself to be an author
+[0:00:20 → 0:00:28] and i'm often asked why do you think so many people have read this is think songs let still about a million copies a month
+[0:00:30 → 0:00:34] and i think it's because spiritual emptiness
+[0:00:35 → 0:00:36] his
+[0:00:37 → 0:00:43] a universal disease i think inside that some point we put our heads down on the pillow me go there's gotta be the more to life than this
+[0:00:44 → 0:00:52] get up in the morning go to work come home watch tv go to bed get up in the morning go to work come on watch tv go to bed go to parties on weekends
+[0:00:53 → 0:00:56] lobbyists and live and nine i live in that just existing
+[0:00:58 → 0:00:59] just existing
+[0:01:00 → 0:01:03] i really think that there's in this inner desire
+[0:01:03 → 0:01:07] i do believe what that chris said i believe that you're not an accident
+[0:01:09 → 0:01:11] your parents may not have planned you but i believe god did
+[0:01:12 → 0:01:15] i think they're accidental parents has no doubt about that
+[0:01:16 → 0:01:17] i don't think they're accidental kids
+[0:01:19 → 0:01:20] and i think you matter
+[0:01:22 → 0:01:26] i think you matter to god i think you matter to history i think you matter to this universe
+[0:01:28 → 0:01:31] and i think that the difference between
+[0:01:32 → 0:01:39] what i call their survival level of living the success level of living in the significance level living is do you figure out what on earth the my here for
+[0:01:41 → 0:01:46] i meet a lot of people who are very smart say but why can't i figure out my problems
+[0:01:47 → 0:01:52] and i mean a lot of people who are very successful who say why don't i feel more fulfilled
+[0:01:52 → 0:01:54] why do i feel like a fake
+[0:01:55 → 0:01:57] why do i feel like
+[0:01:57 → 0:02:00] i've got a pretend that i'm more than i really am
+[0:02:02 → 0:02:05] i think that comes down to this issue of meaning of significance of purpose
+[0:02:06 → 0:02:14] i think comes down to this issue of why am i hear what am i here for where am i going these are not religious issues
+[0:02:15 → 0:02:17] they're they're human issues
+[0:02:18 → 0:02:29] i wanted to tell michael before he spoke that i really appreciate what he does because it makes my life work a whole lot easier as as a pastor i do see a lot of kooks
+[0:02:30 → 0:02:33] and i have learned that their kooks in every area of life
+[0:02:34 → 0:02:39] religion doesn't have a a monopoly on that but there are plenty of religious kooks
+[0:02:40 → 0:02:58] are secular kooks they're smart kooks dumb kooks their people lady came at me the other day and she had a a white piece of paper michael you like this and and she said what do you see in and i looked in and i said one of the anything she goes well i see jesus and started crying and left i'm going okay
+[0:02:59 → 0:02:59] you know fine
+[0:03:04 → 0:03:04] good for you
+[0:03:08 → 0:03:11] when the book became the best selling book in the world for the last three years
+[0:03:12 → 0:03:13] i kind of had my little crisis
+[0:03:14 → 0:03:17] and that was what is the purpose of this
+[0:03:19 → 0:03:26] because it brought in enormous amounts of money when you are the best selling book in the world it's tons and tons of money
+[0:03:27 → 0:03:33] and it brought in a lot of attention neither of which i wanted when i started saddleback church i was twenty five years old
+[0:03:34 → 0:03:38] we started it with one other family and in nineteen eighty
+[0:03:39 → 0:03:46] and i decided that i was never going to go on tv because i didn't want to be a celebrity i didn't want to be a quote evangelists televangelist
+[0:03:47 → 0:03:48] not my my thing
+[0:03:49 → 0:03:50] and
+[0:03:51 → 0:03:58] all of the sudden it brought a lot of money in a lot of attention i don't think now this is a worldview and i will tell you everybody's got a worldview
+[0:03:59 → 0:04:06] everybody's bet in their life on something you're betting your life on something you just better know why you're betting what you're betting on
+[0:04:06 → 0:04:08] their bodies bet in their life on something
+[0:04:10 → 0:04:16] and when i i you know made a bad i happen to believe that jesus was who he said he was
+[0:04:17 → 0:04:21] but everybody's got and i believe in a pluralistic society or buys bettman something
+[0:04:24 → 0:04:30] and when i started the church you know i had no plans to do what it's doing now
+[0:04:31 → 0:04:35] and then when i wrote this book and all of sudden it just
+[0:04:36 → 0:04:36] took off
+[0:04:38 → 0:04:46] and i certainly they know what's the purpose of this because as a i was started to say i don't think you're given money or fame for your own ego ever
+[0:04:48 → 0:04:54] i just don't believe that and when you write a book that the first sentence of the book is it's not about you
+[0:04:55 → 0:05:00] then when all of sudden it becomes a best selling book in history you gotta figure well i guess it's not about me
+[0:05:02 → 0:05:03] that's kind of a no brainer
+[0:05:04 → 0:05:06] so what is it for
+[0:05:07 → 0:05:16] and i begin to think about what i call the stewardship of affluence and the stewardship of influence say i believe essentially leadership stewardship
+[0:05:17 → 0:05:26] that the if you are a leader in any area in business and politics and sports in art in academics in any area you don't own it
+[0:05:28 → 0:05:29] you are a steward of it
+[0:05:30 → 0:05:50] the for instance that's why i believe in protecting the environment the snap my planet it wasn't mine before i was born it's not going to be mine after i die i'm just here for eighty years and then that's it i i i was a debating the other day on a talk show and guy was challenging we go what's a pastor do and on protecting the environment
+[0:05:51 → 0:05:54] and ice i ask this guy said what do you believe
+[0:05:55 → 0:05:55] that
+[0:05:56 → 0:06:06] human beings are responsible to make the world a little bit better place for the next generation do you think we have a stewardship here to take the environment seriously
+[0:06:07 → 0:06:09] and he said no
+[0:06:09 → 0:06:16] i said no you don't let me make this clear get do you believe that as human beings i'm not talking about religion
+[0:06:17 → 0:06:27] do you believe that as human beings it is our responsibility to take care of this planet and make it just a little bit better for next generation and he said no not anymore than any other species
+[0:06:28 → 0:06:37] when he said the word species he was revealing his worldview and he was saying i'm no more responsible to take care of this environment than a duck is
+[0:06:39 → 0:06:43] well now i know lot of times we act like dogs but you're not a duck
+[0:06:44 → 0:06:45] you're not a deck
+[0:06:46 → 0:06:48] and you are responsible that's my worldview
+[0:06:49 → 0:07:00] and so you need to understand what you're world is that that worldview is the problem is most people never really think it through they never really they never really
+[0:07:02 → 0:07:12] codify it or qualify and or quantify it and say this is what i believe in this is why i believe what i believe i don't personally have enough faith to be an atheist
+[0:07:13 → 0:07:22] but you make you may your worldview though does determine everything else in your life because it determines your decisions
+[0:07:23 → 0:07:25] it determines your relationships
+[0:07:25 → 0:07:27] it determines your level of confidence
+[0:07:28 → 0:07:39] it determines really everything in your life what we believe obviously in know this would determines our behavior and our behavior determines what we become in life
+[0:07:42 → 0:07:47] so all of this money started pouring in and all of this fame start pouring in and
+[0:07:48 → 0:07:49] i'm going what i do this
+[0:07:52 → 0:07:55] my wife and i first made five decisions on what to do with the money
+[0:07:56 → 0:07:57] we said first
+[0:07:58 → 0:08:00] we're not going to use it on ourselves
+[0:08:01 → 0:08:03] i don't go out and buy a bigger house
+[0:08:03 → 0:08:08] it on on a guest house i still drive the same four year old for that i've driven
+[0:08:09 → 0:08:11] we did so we're only use it on us
+[0:08:12 → 0:08:13] the second thing was
+[0:08:14 → 0:08:24] i i stopped taking a salary from the church that i pastor third thing as i added up all at the church had paid me over the last twenty five years and i gave it back
+[0:08:25 → 0:08:29] and i gave it back because i didn't want anybody think them that i do what i do for money i don't
+[0:08:30 → 0:08:30] in fact
+[0:08:31 → 0:08:42] personally i've never met a priest or pastor or minister who does it for money i know that's a stereotype i've never met one of them believe me there's a whole lot easier ways to make money
+[0:08:44 → 0:08:56] pastors are like on twenty four hours a day call their like doctors i left late today i hope to be here yesterday because my father in law's and his last probably forty eight hours before he dies of cancer
+[0:08:56 → 0:09:01] and then watch in a guy who's lived his life is now in his mid eighties
+[0:09:01 → 0:09:12] and he's dying with piece you know the test of your worldview is not how you act and the good times the test of your worldview is how you act at the funeral
+[0:09:13 → 0:09:21] and having been through literally hundreds if not thousands of funerals it makes a difference it makes a difference what you believe
+[0:09:23 → 0:09:29] so i'm a we we gave it all back to the back and then we set up three foundations
+[0:09:29 → 0:09:33] working on some of the major problems with the world illiteracy poverty
+[0:09:34 → 0:09:37] the pandemic diseases particularly hiv aids
+[0:09:38 → 0:09:45] and set up these three foundations and and put the money into that the last thing we did is we became what i call reverse tigers
+[0:09:46 → 0:09:48] and that is when my wife and i got married
+[0:09:51 → 0:09:52] third thirty years ago
+[0:09:53 → 0:09:54] we
+[0:09:55 → 0:10:03] we started hiding now that's a principle in the bible says give ten percent of what you get back to charity give give it away to help other people
+[0:10:04 → 0:10:16] we start doing that and each year we would raise our tie the one percent so at first year marriage want eleven percent second year we went to twelve percent in the third year we went to to thirteen percent and on and on and on
+[0:10:17 → 0:10:23] why did i do that because every time i give it breaks the grip of materialism and my life
+[0:10:24 → 0:10:31] materialism is all about getting get get get get all you can can all you get sit on the can spoil the rest
+[0:10:33 → 0:10:40] it's all about more having more and we think that the good life is actually looking good
+[0:10:41 → 0:10:43] at most important of all looking good
+[0:10:44 → 0:10:46] feeling good and having the goods
+[0:10:47 → 0:10:48] but that's not a good life
+[0:10:49 → 0:11:00] i meet people are time we have those and they're they're not necessarily happy if money actually made you happy that the wealthiest people in the world would be the happiest and that i know personally i know is not true
+[0:11:01 → 0:11:02] it's just not true
+[0:11:03 → 0:11:09] so the good life is not about looking good feeling good are having the goods it's about being good and doing good
+[0:11:10 → 0:11:12] given your life away
+[0:11:13 → 0:11:15] significance in life doesn't come from status
+[0:11:16 → 0:11:22] because you can always find somebody got more than you it doesn't come from sex it doesn't come from salary
+[0:11:23 → 0:11:30] it comes from serving it isn't giving our lives the way we find meaning we find significance
+[0:11:31 → 0:11:33] that's the way we were wired i believe by gun
+[0:11:35 → 0:11:44] and so we began to give away and now at after thirty years my wife and i are reversed tigers we giveaway ninety percent and live on ten
+[0:11:45 → 0:11:49] that actually was the easy part the hard part is what i do with all this attention
+[0:11:50 → 0:12:00] because i started getting all kinds of invitations i just came off of a nearly month long speaking to on three different continents and
+[0:12:01 → 0:12:09] that will go into that but it was an amazing thing and i'm going what do i do with this this this notoriety that the book is brought
+[0:12:11 → 0:12:14] and being a pastor i started reading the bible
+[0:12:15 → 0:12:35] there's a chapter in the bible called som seventy two and it it solomon's prayer for more influence when you read this prayer it sounds incredibly selfish self centered it sounds like he says god i want you to make me famous that's what a brace is that i want you to make me famous i want you to spread the fame of my name through
+[0:12:35 → 0:12:37] every land i want you to
+[0:12:38 → 0:12:47] give me power i want you to make me famous i want you to give me influence and it it just sounds like the most egotistical request you could make if you were going to pray
+[0:12:49 → 0:12:58] until you read the whole song the whole chapter and then he says so that the king he was the king of israel at that time at it's apex in power
+[0:12:59 → 0:13:00] so that the king may
+[0:13:01 → 0:13:15] care for the widow an orphan support depressed defend the defenseless care for the sick assist the poor speak up for the foreigner the that the that those in prison basically talking about all a marginalized and society
+[0:13:16 → 0:13:24] and eyes as i read that i i looked at it and i thought you know what this is saying is that the purpose of influence to speak up
+[0:13:25 → 0:13:27] for those who have no influence
+[0:13:29 → 0:13:31] the purpose of influence not to build your ego
+[0:13:34 → 0:13:42] or your net worth and by the way your net worth is not the same thing as yourself worth your value is not based on your valuables
+[0:13:44 → 0:13:46] it's based on a whole different set of things
+[0:13:47 → 0:13:58] and so the purpose of influences the speak up for those who have to influence and i had to admit i can't think of the last time i thought of widows and orphans they're not on my radar
+[0:13:59 → 0:14:07] i pastor a church and one of the most affluent areas of america the bunch of gated communities have a church full the ceos and scientist
+[0:14:09 → 0:14:18] and i i could go five years and never ever see a homeless person they're just not in my pathway now they're thirteen miles up the road and xanana
+[0:14:20 → 0:14:29] so i had to say okay i will use whatever affluence and whatever influence i've got to help those who don't have either of those
+[0:14:31 → 0:14:36] you know there's a story in the bible about moses whether you believe it's true or not really didn't matter me but
+[0:14:37 → 0:14:47] moses if you saw the movie the ten commandments moses goes out and there's this burning bush and god talks to them and god says moses what's in your hand
+[0:14:48 → 0:14:51] i think that's what i'm most important questions you'll ever be asked
+[0:14:52 → 0:14:53] what's in your hand
+[0:14:54 → 0:14:56] moses as it's a staff
+[0:14:57 → 0:15:05] so it's a shepherd step and god just throw it down and if you saw the movie you know he throws down and that it it becomes a snake
+[0:15:07 → 0:15:09] and moses and then got just pick it up
+[0:15:10 → 0:15:14] and he picks it back up again and it becomes a staff again
+[0:15:15 → 0:15:18] nine hundred and this thing and i'm going what is that all about
+[0:15:19 → 0:15:28] okay what's that all but while i do know a couple things number one god denver does a miracle to show off stage as well in that cool
+[0:15:28 → 0:15:31] and by the way my god that net to show up on cheese bread
+[0:15:32 → 0:15:36] if god's going to show up here now he's not going to show up on cheese bread
+[0:15:36 → 0:15:44] okay i just this is why i love what michael does because it's like okay if he's debunking it then i don't have to
+[0:15:45 → 0:15:48] what got my god didn't show up on sprinkler images
+[0:15:49 → 0:15:52] it it out a few more powerful ways on that to do whatever he wants to do
+[0:15:53 → 0:15:53] but
+[0:15:54 → 0:16:00] it didn't do miracles just schaaf second thing is if got ever ask you a question he already knows the answer
+[0:16:01 → 0:16:13] i obviously these god then that would mean that when it asks ask question it's for your benefit not here so it's going what's in your hand and what was in moses and well he was a shepherd staff of follow me on this
+[0:16:14 → 0:16:25] this staff represented three things about moses life first that representatives a identity he was a shepherd it's the symbol of his own occupation i am a shepherd
+[0:16:26 → 0:16:29] it's a symbol of his identity his career his job
+[0:16:29 → 0:16:30] second
+[0:16:31 → 0:16:36] it's a symbol of not only his identity it's a symbol of his income because all of his assets are tied up in cheap
+[0:16:37 → 0:16:51] in those days nobody had bank accounts or american express cards or hedge funds you your your assets are tied up in your flocks so it's a symbol of his identity and it's a symbol of his in common the third thing it's a symbol of his influence
+[0:16:51 → 0:16:52] what do you do with the
+[0:16:53 → 0:17:02] wow shepherdstown well you know you move sheep from point a to point b with it by hook or by crook you pull them are you poke them
+[0:17:03 → 0:17:03] one of the other
+[0:17:04 → 0:17:13] so he saying or even going to lay down your identity what's in your hand you've got identity that income you've got influence what's in your hand
+[0:17:15 → 0:17:27] they said if you lay it down all make it come alive i'll do some things you could never imagine possible and if you've watched that movie ten commandments all of those big miracles that happened in egypt are done through this staff
+[0:17:29 → 0:17:34] last year i was invited to speak at the in be a all stars game
+[0:17:35 → 0:17:38] and so i'm talking and due to the players and
+[0:17:38 → 0:17:45] because most of the and be a team's nfl teams and all the other teams have done this forty days of purpose based on the book
+[0:17:46 → 0:17:49] and i asked them i said what's in your hand
+[0:17:51 → 0:17:53] so what's in your hand i said it's a basketball
+[0:17:54 → 0:18:03] and that basketball represent your identity who you are you're in in be a player it represents your income you're making a lot of money off that little ball
+[0:18:04 → 0:18:18] and it represents your influence and even though you're only going to be in the in in be a for a few years you're going to be in in be a player the rest of your life and that goes with you enormous influence so what are you gonna do with what you've been given
+[0:18:20 → 0:18:24] and i guess that's the main reason i came up here today
+[0:18:24 → 0:18:29] to all of you very bright people ted is the say what's in your hand
+[0:18:31 → 0:18:35] what what do you have that you've been given
+[0:18:36 → 0:18:40] talent background education freedom
+[0:18:41 → 0:18:48] networks opportunities wealth ideas creativity what are you doing
+[0:18:50 → 0:18:58] with what you've been given that to me is the primary question about like that to me is what being purpose driven is all about
+[0:18:59 → 0:19:19] in the book i talk about how you're wired to do certain things your shaped was little crossed a spiritual gifts heart ability personality and experiences these thing shape you and if you want to know what you to be doing with your life you need to look at your shape what am i wired do why would god why are you to do something and then
+[0:19:19 → 0:19:30] have you do it if you're wired to be an anthropologist to be an anthropologist if you're wired to be an under she's explore you'd be an undersea explore if you're wired to make deals you make deals if you're wired to paint you paint
+[0:19:31 → 0:19:34] did you know that god smiles when you be you
+[0:19:36 → 0:19:44] when my little kids when my kids are little they're all grown now i have grandkids used to go and sit on the side of their bed and i used to watch my kids sleep
+[0:19:45 → 0:19:49] and i just watch their little bodies rise and lower
+[0:19:49 → 0:19:53] rise and low i would look at them of this is not an accident
+[0:19:54 → 0:19:55] rise and lower
+[0:19:56 → 0:20:00] and i got joy out of just watching them sleep
+[0:20:02 → 0:20:11] some people have the misguided idea that got only gets excited when you're doing quote spiritual things like the on the church or help the poor or
+[0:20:12 → 0:20:14] fasting are doing something like that
+[0:20:14 → 0:20:20] the bottom line is god gets pleasure watching you be you why he major
+[0:20:21 → 0:20:25] and when you do what you are made to do he does that's my boy
+[0:20:26 → 0:20:31] that's my girl your use on the talent and ability and i gave you
+[0:20:32 → 0:20:39] so my advice to you is look at what's in your hand your identity your influence your income
+[0:20:40 → 0:20:45] and say it's not about me it's about make them the world a better place
+[0:20:46 → 0:20:47] thank you
+
+============================================================
+FULL TEXT:
+i'm often asked you know what what surprised you about the book and i said that i get the right it i would have never imagined that not in my wildest dreams did i think i don't even consider myself to be an author and i'm often asked why do you think so many people have read this is think songs let still about a million copies a month and i think it's because spiritual emptiness his a universal disease i think inside that some point we put our heads down on the pillow me go there's gotta be the more to life than this get up in the morning go to work come home watch tv go to bed get up in the morning go to work come on watch tv go to bed go to parties on weekends lobbyists and live and nine i live in that just existing just existing i really think that there's in this inner desire i do believe what that chris said i believe that you're not an accident your parents may not have planned you but i believe god did i think they're accidental parents has no doubt about that i don't think they're accidental kids and i think you matter i think you matter to god i think you matter to history i think you matter to this universe and i think that the difference between what i call their survival level of living the success level of living in the significance level living is do you figure out what on earth the my here for i meet a lot of people who are very smart say but why can't i figure out my problems and i mean a lot of people who are very successful who say why don't i feel more fulfilled why do i feel like a fake why do i feel like i've got a pretend that i'm more than i really am i think that comes down to this issue of meaning of significance of purpose i think comes down to this issue of why am i hear what am i here for where am i going these are not religious issues they're they're human issues i wanted to tell michael before he spoke that i really appreciate what he does because it makes my life work a whole lot easier as as a pastor i do see a lot of kooks and i have learned that their kooks in every area of life religion doesn't have a a monopoly on that but there are plenty of religious kooks are secular kooks they're smart kooks dumb kooks their people lady came at me the other day and she had a a white piece of paper michael you like this and and she said what do you see in and i looked in and i said one of the anything she goes well i see jesus and started crying and left i'm going okay you know fine good for you when the book became the best selling book in the world for the last three years i kind of had my little crisis and that was what is the purpose of this because it brought in enormous amounts of money when you are the best selling book in the world it's tons and tons of money and it brought in a lot of attention neither of which i wanted when i started saddleback church i was twenty five years old we started it with one other family and in nineteen eighty and i decided that i was never going to go on tv because i didn't want to be a celebrity i didn't want to be a quote evangelists televangelist not my my thing and all of the sudden it brought a lot of money in a lot of attention i don't think now this is a worldview and i will tell you everybody's got a worldview everybody's bet in their life on something you're betting your life on something you just better know why you're betting what you're betting on their bodies bet in their life on something and when i i you know made a bad i happen to believe that jesus was who he said he was but everybody's got and i believe in a pluralistic society or buys bettman something and when i started the church you know i had no plans to do what it's doing now and then when i wrote this book and all of sudden it just took off and i certainly they know what's the purpose of this because as a i was started to say i don't think you're given money or fame for your own ego ever i just don't believe that and when you write a book that the first sentence of the book is it's not about you then when all of sudden it becomes a best selling book in history you gotta figure well i guess it's not about me that's kind of a no brainer so what is it for and i begin to think about what i call the stewardship of affluence and the stewardship of influence say i believe essentially leadership stewardship that the if you are a leader in any area in business and politics and sports in art in academics in any area you don't own it you are a steward of it the for instance that's why i believe in protecting the environment the snap my planet it wasn't mine before i was born it's not going to be mine after i die i'm just here for eighty years and then that's it i i i was a debating the other day on a talk show and guy was challenging we go what's a pastor do and on protecting the environment and ice i ask this guy said what do you believe that human beings are responsible to make the world a little bit better place for the next generation do you think we have a stewardship here to take the environment seriously and he said no i said no you don't let me make this clear get do you believe that as human beings i'm not talking about religion do you believe that as human beings it is our responsibility to take care of this planet and make it just a little bit better for next generation and he said no not anymore than any other species when he said the word species he was revealing his worldview and he was saying i'm no more responsible to take care of this environment than a duck is well now i know lot of times we act like dogs but you're not a duck you're not a deck and you are responsible that's my worldview and so you need to understand what you're world is that that worldview is the problem is most people never really think it through they never really they never really codify it or qualify and or quantify it and say this is what i believe in this is why i believe what i believe i don't personally have enough faith to be an atheist but you make you may your worldview though does determine everything else in your life because it determines your decisions it determines your relationships it determines your level of confidence it determines really everything in your life what we believe obviously in know this would determines our behavior and our behavior determines what we become in life so all of this money started pouring in and all of this fame start pouring in and i'm going what i do this my wife and i first made five decisions on what to do with the money we said first we're not going to use it on ourselves i don't go out and buy a bigger house it on on a guest house i still drive the same four year old for that i've driven we did so we're only use it on us the second thing was i i stopped taking a salary from the church that i pastor third thing as i added up all at the church had paid me over the last twenty five years and i gave it back and i gave it back because i didn't want anybody think them that i do what i do for money i don't in fact personally i've never met a priest or pastor or minister who does it for money i know that's a stereotype i've never met one of them believe me there's a whole lot easier ways to make money pastors are like on twenty four hours a day call their like doctors i left late today i hope to be here yesterday because my father in law's and his last probably forty eight hours before he dies of cancer and then watch in a guy who's lived his life is now in his mid eighties and he's dying with piece you know the test of your worldview is not how you act and the good times the test of your worldview is how you act at the funeral and having been through literally hundreds if not thousands of funerals it makes a difference it makes a difference what you believe so i'm a we we gave it all back to the back and then we set up three foundations working on some of the major problems with the world illiteracy poverty the pandemic diseases particularly hiv aids and set up these three foundations and and put the money into that the last thing we did is we became what i call reverse tigers and that is when my wife and i got married third thirty years ago we we started hiding now that's a principle in the bible says give ten percent of what you get back to charity give give it away to help other people we start doing that and each year we would raise our tie the one percent so at first year marriage want eleven percent second year we went to twelve percent in the third year we went to to thirteen percent and on and on and on why did i do that because every time i give it breaks the grip of materialism and my life materialism is all about getting get get get get all you can can all you get sit on the can spoil the rest it's all about more having more and we think that the good life is actually looking good at most important of all looking good feeling good and having the goods but that's not a good life i meet people are time we have those and they're they're not necessarily happy if money actually made you happy that the wealthiest people in the world would be the happiest and that i know personally i know is not true it's just not true so the good life is not about looking good feeling good are having the goods it's about being good and doing good given your life away significance in life doesn't come from status because you can always find somebody got more than you it doesn't come from sex it doesn't come from salary it comes from serving it isn't giving our lives the way we find meaning we find significance that's the way we were wired i believe by gun and so we began to give away and now at after thirty years my wife and i are reversed tigers we giveaway ninety percent and live on ten that actually was the easy part the hard part is what i do with all this attention because i started getting all kinds of invitations i just came off of a nearly month long speaking to on three different continents and that will go into that but it was an amazing thing and i'm going what do i do with this this this notoriety that the book is brought and being a pastor i started reading the bible there's a chapter in the bible called som seventy two and it it solomon's prayer for more influence when you read this prayer it sounds incredibly selfish self centered it sounds like he says god i want you to make me famous that's what a brace is that i want you to make me famous i want you to spread the fame of my name through every land i want you to give me power i want you to make me famous i want you to give me influence and it it just sounds like the most egotistical request you could make if you were going to pray until you read the whole song the whole chapter and then he says so that the king he was the king of israel at that time at it's apex in power so that the king may care for the widow an orphan support depressed defend the defenseless care for the sick assist the poor speak up for the foreigner the that the that those in prison basically talking about all a marginalized and society and eyes as i read that i i looked at it and i thought you know what this is saying is that the purpose of influence to speak up for those who have no influence the purpose of influence not to build your ego or your net worth and by the way your net worth is not the same thing as yourself worth your value is not based on your valuables it's based on a whole different set of things and so the purpose of influences the speak up for those who have to influence and i had to admit i can't think of the last time i thought of widows and orphans they're not on my radar i pastor a church and one of the most affluent areas of america the bunch of gated communities have a church full the ceos and scientist and i i could go five years and never ever see a homeless person they're just not in my pathway now they're thirteen miles up the road and xanana so i had to say okay i will use whatever affluence and whatever influence i've got to help those who don't have either of those you know there's a story in the bible about moses whether you believe it's true or not really didn't matter me but moses if you saw the movie the ten commandments moses goes out and there's this burning bush and god talks to them and god says moses what's in your hand i think that's what i'm most important questions you'll ever be asked what's in your hand moses as it's a staff so it's a shepherd step and god just throw it down and if you saw the movie you know he throws down and that it it becomes a snake and moses and then got just pick it up and he picks it back up again and it becomes a staff again nine hundred and this thing and i'm going what is that all about okay what's that all but while i do know a couple things number one god denver does a miracle to show off stage as well in that cool and by the way my god that net to show up on cheese bread if god's going to show up here now he's not going to show up on cheese bread okay i just this is why i love what michael does because it's like okay if he's debunking it then i don't have to what got my god didn't show up on sprinkler images it it out a few more powerful ways on that to do whatever he wants to do but it didn't do miracles just schaaf second thing is if got ever ask you a question he already knows the answer i obviously these god then that would mean that when it asks ask question it's for your benefit not here so it's going what's in your hand and what was in moses and well he was a shepherd staff of follow me on this this staff represented three things about moses life first that representatives a identity he was a shepherd it's the symbol of his own occupation i am a shepherd it's a symbol of his identity his career his job second it's a symbol of not only his identity it's a symbol of his income because all of his assets are tied up in cheap in those days nobody had bank accounts or american express cards or hedge funds you your your assets are tied up in your flocks so it's a symbol of his identity and it's a symbol of his in common the third thing it's a symbol of his influence what do you do with the wow shepherdstown well you know you move sheep from point a to point b with it by hook or by crook you pull them are you poke them one of the other so he saying or even going to lay down your identity what's in your hand you've got identity that income you've got influence what's in your hand they said if you lay it down all make it come alive i'll do some things you could never imagine possible and if you've watched that movie ten commandments all of those big miracles that happened in egypt are done through this staff last year i was invited to speak at the in be a all stars game and so i'm talking and due to the players and because most of the and be a team's nfl teams and all the other teams have done this forty days of purpose based on the book and i asked them i said what's in your hand so what's in your hand i said it's a basketball and that basketball represent your identity who you are you're in in be a player it represents your income you're making a lot of money off that little ball and it represents your influence and even though you're only going to be in the in in be a for a few years you're going to be in in be a player the rest of your life and that goes with you enormous influence so what are you gonna do with what you've been given and i guess that's the main reason i came up here today to all of you very bright people ted is the say what's in your hand what what do you have that you've been given talent background education freedom networks opportunities wealth ideas creativity what are you doing with what you've been given that to me is the primary question about like that to me is what being purpose driven is all about in the book i talk about how you're wired to do certain things your shaped was little crossed a spiritual gifts heart ability personality and experiences these thing shape you and if you want to know what you to be doing with your life you need to look at your shape what am i wired do why would god why are you to do something and then have you do it if you're wired to be an anthropologist to be an anthropologist if you're wired to be an under she's explore you'd be an undersea explore if you're wired to make deals you make deals if you're wired to paint you paint did you know that god smiles when you be you when my little kids when my kids are little they're all grown now i have grandkids used to go and sit on the side of their bed and i used to watch my kids sleep and i just watch their little bodies rise and lower rise and low i would look at them of this is not an accident rise and lower and i got joy out of just watching them sleep some people have the misguided idea that got only gets excited when you're doing quote spiritual things like the on the church or help the poor or fasting are doing something like that the bottom line is god gets pleasure watching you be you why he major and when you do what you are made to do he does that's my boy that's my girl your use on the talent and ability and i gave you so my advice to you is look at what's in your hand your identity your influence your income and say it's not about me it's about make them the world a better place thank you

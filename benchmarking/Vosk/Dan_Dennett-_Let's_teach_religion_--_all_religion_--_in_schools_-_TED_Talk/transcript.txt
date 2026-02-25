@@ -1,0 +1,222 @@
+Model: Vosk
+Source: Dan Dennett- Let's teach religion -- all religion -- in schools - TED Talk.ts
+Processing Time: 152.31s
+============================================================
+
+[0:00:05 → 0:00:05] it's
+[0:00:06 → 0:00:09] wonderful to be back i love this
+[0:00:10 → 0:00:15] wonderful gathering and you must be wondering what on earth and they put up the wrong slide no no
+[0:00:17 → 0:00:19] look at this magnificent beast
+[0:00:21 → 0:00:22] and ask the question
+[0:00:23 → 0:00:24] who designed it
+[0:00:26 → 0:00:35] this is ted this is technology entertainment design and there's a dairy cow it's quite wonderfully designed animal
+[0:00:36 → 0:00:40] and i was thinking how do i introduce this and i thought well maybe
+[0:00:41 → 0:00:48] that old doggerel by joyce kilmer you know or poems are made by fools like me but only god can make a tree
+[0:00:48 → 0:00:53] the you might say well god designed the car but of course god got a lot of help
+[0:00:55 → 0:00:59] this is the ancestor of catalysts is the orcs and
+[0:01:00 → 0:01:08] it was designed by natural selection the process of natural selection over many millions of years and then it became domesticated
+[0:01:08 → 0:01:10] thousands of years ago
+[0:01:10 → 0:01:12] and human beings
+[0:01:13 → 0:01:33] became it's stewards and without even knowing what they were doing they gradually redesigned and redesigned and redesigned it and then more recently they really began to do sort of reverse engineering on this beast and figure out just what the parts were how they worked and how they might be optimized how they might female better
+[0:01:35 → 0:01:38] now why am i talking about cows
+[0:01:39 → 0:01:43] because i want to say that much the same thing is true of religions
+[0:01:45 → 0:01:49] religions are natural phenomena they're just as natural as cows
+[0:01:50 → 0:01:53] they have evolved over millennia
+[0:01:55 → 0:01:58] they have a biological base just like the or rocks
+[0:01:59 → 0:02:06] they have become domesticated and human beings have and redesigning their religions for thousands of years
+[0:02:07 → 0:02:13] this is ted and i want to talk about design because what i've been doing for the last four years
+[0:02:14 → 0:02:27] really since the first time you saw me someone who saw me a ted when i was talking about religion and in the in the last four years i've been working just about non stop on this topic and you might say it's about the reverse engineering
+[0:02:28 → 0:02:28] of religions
+[0:02:30 → 0:02:30] now
+[0:02:31 → 0:02:33] that very idea i think
+[0:02:34 → 0:02:40] strikes terror and many people or or or anger or anxiety of one sort or another
+[0:02:41 → 0:02:57] and that is the spell that i want to break i want to say no religions are an important natural phenomenon we should study them with the same intensity that we study all the other important natural phenomena like global warming as we heard so eloquently last night from al gore
+[0:02:58 → 0:03:15] today's religions are brilliantly designed brilliantly designed they are immensely powerful social institutions and many of their features can be traced back to earlier features that we can really make sense of by reverse engineering
+[0:03:18 → 0:03:19] and as was the cow
+[0:03:20 → 0:03:27] there's a mixture of evolutionary design designed by natural selection itself and intelligent design
+[0:03:28 → 0:03:35] more or less intelligent design and redesigned by human beings who are trying to redesign their religions
+[0:03:36 → 0:03:36] so this is
+[0:03:37 → 0:03:42] you don't do book talks a ted but i will have under how does one slide about my book
+[0:03:43 → 0:03:44] because
+[0:03:45 → 0:03:52] there's one message and it which i think this group really needs to hear and i would be very interested to get your responses to this
+[0:03:53 → 0:03:57] it's the one policy proposal that i make in the book
+[0:03:58 → 0:04:05] at this time when i claim not to know enough about religion to know what other policy proposals to make and it's one that echoes
+[0:04:06 → 0:04:17] remarks that you've heard already today here's my proposal i'm going to just take a couple of minutes to explain it that education in world religions on world religions for all of our children
+[0:04:18 → 0:04:23] in primary school in high school in public schools in private schools and and home schooling
+[0:04:25 → 0:04:44] so what i'm proposing is just as we require reading writing arithmetic american history so we should have a curriculum on facts about all the religions of the world about their history about their creeds about their texts their me
+[0:04:44 → 0:04:49] music their symbolisms their prohibitions their requirements
+[0:04:50 → 0:04:52] and that this should be presented
+[0:04:53 → 0:05:00] factually straightforwardly with no particular spin to all of the children in the country
+[0:05:02 → 0:05:02] and
+[0:05:04 → 0:05:06] as long as it is them that you can teach him anything else to like
+[0:05:08 → 0:05:14] that i think is maximal tolerance for religious freedom as long as you
+[0:05:15 → 0:05:29] inform your children about other religions then you may and as early as you like it whatever you like teach them whatever creed you want them to learn but also let them know about other religions now why do i says
+[0:05:30 → 0:05:36] because democracy depends on an informed citizenship
+[0:05:37 → 0:05:43] informed consent is the very bedrock of our understanding of democracy
+[0:05:45 → 0:05:56] mis informed consent is not worth it it's like a coin flip it's just not it doesn't count really democracy depends on informed consent this is the way we treat people
+[0:05:57 → 0:06:01] as responsible adults now children
+[0:06:02 → 0:06:04] below the age of consent
+[0:06:05 → 0:06:06] our a special case
+[0:06:09 → 0:06:14] parents i'm going to use a word that the robe pastor rick just used
+[0:06:14 → 0:06:16] parents are stewards of their children
+[0:06:17 → 0:06:18] then our own them
+[0:06:19 → 0:06:29] you can't only your children you have a responsibility to the world to the state to them to take care of them right
+[0:06:31 → 0:06:32] you may
+[0:06:33 → 0:06:36] teach them whatever creed you think is most important
+[0:06:37 → 0:06:39] but i say you have a responsibility
+[0:06:40 → 0:06:44] to let them be informed about all the other creeds in the world to
+[0:06:45 → 0:06:51] now what the reason i've taken this time is i've been fascinated to hear some of the reactions to this
+[0:06:53 → 0:06:54] one reviewer
+[0:06:55 → 0:06:58] for a roman catholic newspaper called totalitarian
+[0:07:00 → 0:07:03] it strikes me is practically libertarian
+[0:07:04 → 0:07:10] is it totalitarian to require reading writing and arithmetic i don't think so all i'm saying is
+[0:07:10 → 0:07:13] and facts are facts only
+[0:07:14 → 0:07:16] no values just facts
+[0:07:16 → 0:07:18] about all the world's religions
+[0:07:20 → 0:07:21] another reviewer call it hilarious
+[0:07:23 → 0:07:23] well
+[0:07:24 → 0:07:32] i'm really bothered by the fact that anybody would think that was hilarious it seems to me to be such a plausible
+[0:07:33 → 0:07:45] natural extension of the democratic principles we already have that i'm shocked to think anybody would find that just ridiculous i know many religions
+[0:07:47 → 0:07:59] are so anxious about preserving the purity of their faith among their among their children that they are intent on keeping their children ignorant of other faiths
+[0:08:00 → 0:08:02] i don't think that's defensible
+[0:08:03 → 0:08:09] but i'd really be pleased to get your answers on there are any reaction to that later but now i'm going to move on
+[0:08:10 → 0:08:10] fact that the cow
+[0:08:11 → 0:08:13] this picture which i've pulled off the web
+[0:08:15 → 0:08:33] the fellow on the left is really an important part of this picture that's the steward that's cows couldn't live without human stewards they're domesticated their a sort of ectosymbiont they depend on us for their for their survival
+[0:08:33 → 0:08:34] and
+[0:08:35 → 0:08:41] pastor rick was just talking about sheep i'm going to talk about sheep to there's a lot of of a serendipitous convergence here
+[0:08:42 → 0:08:46] how clever it was and sheep to acquire shepherds
+[0:08:47 → 0:08:56] i think think of what this got them they could outsource all their problems protection from predators food finding
+[0:08:57 → 0:08:58] health maintenance
+[0:09:01 → 0:09:05] the only cost and in most flocks not even this a loss of free meeting
+[0:09:08 → 0:09:09] what a deal
+[0:09:10 → 0:09:18] how clever of sheep you might say except of course it wasn't a sheep's cleverness wheel and sheep are not exactly rocket scientists they're not very smart
+[0:09:20 → 0:09:23] it wasn't the cleverness of the sheep at all they were clueless
+[0:09:24 → 0:09:31] but it was a very clever move who's clever move was it was a clever move of natural selection itself
+[0:09:32 → 0:09:33] francis crick
+[0:09:34 → 0:09:51] the co discover of the structure of dna with jim watson once joked about what he called orbital second rule leslie oracle is is what is still the molecular biologist brilliant guy an oracle second rule is evolution is clever a new are
+[0:09:53 → 0:09:56] now that is not intelligent design
+[0:09:57 → 0:09:58] not from francis crick
+[0:10:00 → 0:10:06] evolution is clever you are if you understand oracle second rule then you understand why the intelligent design
+[0:10:08 → 0:10:09] the flint is basically a hoax
+[0:10:11 → 0:10:30] the designs discovered by the process of natural selection are brilliant unbelievably brilliant again and again biologist i'm fascinated with the brilliance of the of was discovered but the process itself is without purpose without for site without design when i was here
+[0:10:30 → 0:10:49] four years ago i told a story about and and climbing a blade of grass and why was he ain't doing it was because it's brain had been infected with the with the lancet fluke that was needed to get into the belly of a sheep or a cow in order to to reproduce it was sort of a spooky story i think some people may have misunderstood
+[0:10:50 → 0:10:51] lance flukes aren't smart
+[0:10:52 → 0:11:05] ice i submit that the the the intelligence of the lancet fluke is down there somewhere between petunia and carrot they're not really bright they don't have to be the lesson we learned from this is you don't have to have a mind to be a beneficiary
+[0:11:06 → 0:11:14] the design is there in nature but it's not in anybody's head and it doesn't have to be that's the way evolution works
+[0:11:15 → 0:11:25] question was domestication good for sheep it was great for their genetic fitness and here i want to remind you of a wonderful point that paul mccready made a ted three years ago
+[0:11:26 → 0:11:27] here's what he said
+[0:11:28 → 0:11:40] ten thousand years ago at the dawn of agriculture human population plus livestock and pets was approximately a tenth of one percent of the terrestrial vertebrate landmass that was just ten thousand years ago
+[0:11:41 → 0:11:46] yesterday in biological terms what does it today anybody remember what he told us
+[0:11:47 → 0:12:06] ninety eight percent that is what we have done on this planet now i talked to paul afterwards i wanted to check out to find out how we'd calculated this and get the sources and so forth and he also he gave me a paper that he had written on this and that was a passage in which he did not present here and i think it is so good i'm going to read it to you
+[0:12:07 → 0:12:09] over billions of years on a unique sphere
+[0:12:10 → 0:12:29] chance has painted a thin covering of life complex improbable wonderful and fragile suddenly we humans are recently arrived species no longer subject to the checks and balances inherent nature have grown and population technology and intelligence to a position of terrible power we now we'll the paint brush
+[0:12:30 → 0:12:37] we heard about the atmosphere as a thin layer of varnish life itself is just a thin coat of paint on this planet
+[0:12:38 → 0:12:40] and we're the ones that hold the paintbrush
+[0:12:41 → 0:12:45] and how can we do that the key to our domination of the plan is culture
+[0:12:47 → 0:12:48] and the key to culture is religion
+[0:12:50 → 0:12:52] suppose martian scientists came to earth
+[0:12:53 → 0:12:59] they would be puzzled by many things going to have them were below anybody know what this is i'll tell you what it is
+[0:13:01 → 0:13:20] this is a million people gathering on the banks of the ganges and two and two thousand and one perhaps the largest single gathering of human beings ever as seen from satellite photo have here's a big crowd here's another crowd and in mecca marsans would be amazed by this they'd want to know how it originated what
+[0:13:20 → 0:13:25] it was for and how it perpetuates itself actually i'm going to pass over this this is a
+[0:13:26 → 0:13:32] the answer isn't alone there's all sorts of wonderful cases of species which in that case
+[0:13:35 → 0:13:44] the parasite gets into a mouse and it needs to get into the belly of a cat and that turns the mouse and a mighty mouse makes a fearless so it runs out in the open world will be eaten by a cat true story
+[0:13:46 → 0:13:58] in other words we have these hijackers you've seen this slide before from four years ago a parasite that infects the brain and induces even suicidal behavior on behalf of because cause other than one's own genetic fitness
+[0:13:58 → 0:14:00] does that ever happened to us
+[0:14:01 → 0:14:02] yes it does
+[0:14:03 → 0:14:03] quite wonderfully
+[0:14:05 → 0:14:10] the arabic word islam means submission mean surrender of self interest to the will of allah
+[0:14:11 → 0:14:21] but i'm not just talking about islam i'm talking also about christianity this is a parchment music page that i found on the paris bookstore fifty years ago and on it it says in latin
+[0:14:23 → 0:14:29] same and este where that you saw software out and priestess the word of god to secede and the sorrow the see it as christ
+[0:14:30 → 0:14:33] same idea will not quite but in fact
+[0:14:34 → 0:14:35] christians to
+[0:14:36 → 0:14:43] glory in the fact that they have surrendered to god i'll give you a few quotes the heart of worship his surrender
+[0:14:44 → 0:14:48] surrendered people obey god's words even if it doesn't make sense
+[0:14:49 → 0:14:51] those words or by rick warren
+[0:14:52 → 0:14:54] those are from the purpose driven life
+[0:14:55 → 0:15:01] and i want to turn now briefly to talk about that book which i've heard you've got a copy and you've just heard the man
+[0:15:02 → 0:15:09] and what i want to do now you say a bit about this book from the design standpoint because i think it's actually a brilliant book
+[0:15:11 → 0:15:17] it first of all the goal and you heard just now what the goal is to bring purpose of the lives of millions and he has succeeded
+[0:15:18 → 0:15:31] this is a good go in itself i'm sure we all agree it is a wonderful goal he's absolutely right there are lots of people out there who don't have purpose in their life and bringing purpose of their life is a wonderful go i give him an a plus on this
+[0:15:33 → 0:15:34] this is a goal achieved
+[0:15:37 → 0:15:38] yes
+[0:15:39 → 0:15:42] thirty million copies of this book
+[0:15:44 → 0:15:45] al gore eat your heart out
+[0:15:49 → 0:15:55] just exactly what hours trying to do rick is doing this is this is a fantastic achievement
+[0:15:56 → 0:15:57] and
+[0:15:58 → 0:15:59] the means how does he do it
+[0:16:00 → 0:16:15] so brilliant redesign of traditional religious themes updating them quietly dropping obsolete features putting new interpretation to another is this is the evolution of religion it's been going on for thousands of years and he's just the latest brilliant practitioner of it
+[0:16:17 → 0:16:24] i don't have to tell you this you just heard the man excellent insights into human psychology wise advice on every page
+[0:16:25 → 0:16:26] moreover
+[0:16:27 → 0:16:37] he invites us to look under the hood i really appreciated that for see as an appendix where he explains his choice of translations of different bible verses the book is clear
+[0:16:38 → 0:16:41] vivid accessible beautifully form added
+[0:16:42 → 0:16:46] just enough repetition that's really important
+[0:16:47 → 0:16:50] every time you read it or say you make another coffee and your brain
+[0:16:52 → 0:16:56] every time you read it or say it you make another hobby and your brain
+[0:16:57 → 0:17:04] with me everybody every time you read it or say you make another copy and your brain thank you
+[0:17:04 → 0:17:12] and now we come to my problem because i'm absolutely sincere in my appreciation of all that i've said about this book
+[0:17:13 → 0:17:20] but i wish it were better i have some problems with the book and it would it would just be insincere me not to address the problems
+[0:17:20 → 0:17:26] i wish he could do this with a revision a mark to version of his book
+[0:17:29 → 0:17:32] the truth will set you free that's what it says in the bible
+[0:17:33 → 0:17:37] and it's something that i want to live by to my problem is
+[0:17:38 → 0:17:40] some other bits of the i don't think are true
+[0:17:41 → 0:17:43] now some of this is a difference of opinion
+[0:17:45 → 0:17:51] and that's not my main complaint that's worth mentioning here's a passage is very much what he said anyway
+[0:17:51 → 0:18:11] if there was no cod we would all be accidents the result of astronomical random chance in the universe you can stop reading this book because life would have no purpose or meaning or significance there would be no right or wrong and no hope beyond your brief years on earth now i just do not believe that by the way i foot homer grains film
+[0:18:12 → 0:18:15] presented a beautiful alternative to that very close
+[0:18:16 → 0:18:21] yes there is meaning and a reason for right or wrong we don't need
+[0:18:22 → 0:18:28] a belief in god to be good or to have meaning and nice but that as i say that is just
+[0:18:29 → 0:18:31] the difference of opinion that's not what i'm really worried about
+[0:18:33 → 0:18:37] how about this god designed this planet's environment just so we could live in it
+[0:18:38 → 0:18:42] i'm afraid that a lot of people take that sentiment
+[0:18:43 → 0:19:02] to mean that we don't have to do the sorts of things that al gore is trying so hard to get us to do i'm not happy with that sentiment at all and then i find this all the evidence available in the biological sciences supports the core proposition that the cosmos as a specially designed whole with life and mankind as it's fundamental role and purpose a whole and which are
+[0:19:02 → 0:19:09] all facets of reality have their meaning and explanation in the central fat well that's michael then and he's a creationist
+[0:19:10 → 0:19:24] and here i think wait a minute i read this again i read it three or four times it is he really endorsing intelligent design as see endorsing creationism your and it you can't tell so i'm so well i don't know i don't know if i want to get upset with this yet
+[0:19:25 → 0:19:33] but then i read on and i read this first know i had never seen rain because prior to the flood god irrigated the earth from the ground up
+[0:19:35 → 0:19:39] i wish that sentence worth in there because i think it is false
+[0:19:40 → 0:19:49] and i think that thinking this way about the history of the planet after we've just been hearing about the history of the planet over millions of years
+[0:19:50 → 0:19:53] discourages people from scientific understanding now
+[0:19:56 → 0:19:56] rick warren
+[0:19:57 → 0:20:13] uses scientific terms and scientific factoids and information in a very interesting way here's one god deliberately shape and form due to serve him in a way that makes your ministry unique he carefully mix the dna cocktail that created to
+[0:20:16 → 0:20:20] i think that's false now maybe we want to treat it as metaphorical
+[0:20:22 → 0:20:28] there's another one for instance your brain can store one hundred trillion facts your mind can handle fifteen thousand and second decisions a second
+[0:20:29 → 0:20:36] well be interesting to find the interpretation where i would accept that there might be some way of of of treating that is true
+[0:20:37 → 0:20:45] anthropologists have noted that worship and it is a universal urge hardwired by god and the the very fiber of bearing but being an inbuilt need to connect with cause
+[0:20:46 → 0:21:00] well the says which i agree with them except i think it has an evolutionary explanation and what i find deeply troubling in this book is that he seems to be arguing that if you want to be moral if you want have meaning in your life
+[0:21:01 → 0:21:14] you have to be an intelligent designer you have to deny the theory of evolution by natural selection and i think on the contrary that it is very important to solving the world's problems that we take evolutionary biology seriously
+[0:21:16 → 0:21:17] who's truth are we going to listen to
+[0:21:19 → 0:21:32] well this from a purpose driven life the bible must become the authoritative standard of i'm from my life the compass i rely on for direction the council i listen to for making wise decisions and the benchmark i used for evaluating everything
+[0:21:32 → 0:21:39] well maybe okay but what does it what's going to follow from this and here's one that the does concern me
+[0:21:41 → 0:21:47] well remember i quoted him before this land surrendered people obey god's word even if it doesn't make sense
+[0:21:48 → 0:21:51] and that's that's a problem
+[0:21:54 → 0:21:59] don't ever argue with the devil he's better at arguing than you are having had thousands of years to practice
+[0:22:00 → 0:22:00] now
+[0:22:01 → 0:22:05] rick warren didn't invent this clever move that's an old movie
+[0:22:06 → 0:22:12] it's a very clever adaptation of religions it's a wild card for disarming any reasonable criticism
+[0:22:14 → 0:22:18] you know like my interpretation you've got a reasonable objection to dollars and don't listen
+[0:22:19 → 0:22:21] that's the devil species
+[0:22:22 → 0:22:26] this discourages the sort of reasoning
+[0:22:27 → 0:22:30] citizenship it seems to me that we want to have
+[0:22:31 → 0:22:33] i've got one more problem than i'm through
+[0:22:33 → 0:22:37] and i really like to get a response if if if the record is able to do
+[0:22:39 → 0:22:52] in the great commission jesus so go to all people of all nations and make for my disciples baptize and the name of the father the son the holy spirit teach them to do everything i've told you the bible says jesus is the only one who can save the world
+[0:22:53 → 0:22:57] now here we've seen many wonderful maps of the world and the last day or so
+[0:22:57 → 0:23:02] here's one not as beautiful as the others there's simply shows the religions of the world
+[0:23:03 → 0:23:07] and here's one that shows the sort of current breakdown of the different religions
+[0:23:08 → 0:23:08] now
+[0:23:10 → 0:23:15] do we really want to commit ourselves to
+[0:23:16 → 0:23:18] and golfing all the other religions
+[0:23:20 → 0:23:22] when their holy books are telling them
+[0:23:23 → 0:23:25] don't listen to the other side
+[0:23:26 → 0:23:29] that's just satan talking it seems to me that that's
+[0:23:30 → 0:23:32] a very problematic
+[0:23:33 → 0:23:36] ship to get on for the future
+[0:23:37 → 0:23:47] i found this sign as i was driving for main recently in front of a church good without god become zero for cute very very clever little meme
+[0:23:50 → 0:23:51] i don't believe it
+[0:23:52 → 0:24:04] and i think this idea popular as it is not in this guy's with in general is itself one of the main problems that we face if you're like me you know many wonderful
+[0:24:05 → 0:24:16] committed engaged atheists agnostics who are being very good without god and you also know many religious people who
+[0:24:17 → 0:24:28] hide behind their sanctity instead of doing good works so i wish we could drop this mean i wish this mean would go extinct sanctuary my career
+
+============================================================
+FULL TEXT:
+it's wonderful to be back i love this wonderful gathering and you must be wondering what on earth and they put up the wrong slide no no look at this magnificent beast and ask the question who designed it this is ted this is technology entertainment design and there's a dairy cow it's quite wonderfully designed animal and i was thinking how do i introduce this and i thought well maybe that old doggerel by joyce kilmer you know or poems are made by fools like me but only god can make a tree the you might say well god designed the car but of course god got a lot of help this is the ancestor of catalysts is the orcs and it was designed by natural selection the process of natural selection over many millions of years and then it became domesticated thousands of years ago and human beings became it's stewards and without even knowing what they were doing they gradually redesigned and redesigned and redesigned it and then more recently they really began to do sort of reverse engineering on this beast and figure out just what the parts were how they worked and how they might be optimized how they might female better now why am i talking about cows because i want to say that much the same thing is true of religions religions are natural phenomena they're just as natural as cows they have evolved over millennia they have a biological base just like the or rocks they have become domesticated and human beings have and redesigning their religions for thousands of years this is ted and i want to talk about design because what i've been doing for the last four years really since the first time you saw me someone who saw me a ted when i was talking about religion and in the in the last four years i've been working just about non stop on this topic and you might say it's about the reverse engineering of religions now that very idea i think strikes terror and many people or or or anger or anxiety of one sort or another and that is the spell that i want to break i want to say no religions are an important natural phenomenon we should study them with the same intensity that we study all the other important natural phenomena like global warming as we heard so eloquently last night from al gore today's religions are brilliantly designed brilliantly designed they are immensely powerful social institutions and many of their features can be traced back to earlier features that we can really make sense of by reverse engineering and as was the cow there's a mixture of evolutionary design designed by natural selection itself and intelligent design more or less intelligent design and redesigned by human beings who are trying to redesign their religions so this is you don't do book talks a ted but i will have under how does one slide about my book because there's one message and it which i think this group really needs to hear and i would be very interested to get your responses to this it's the one policy proposal that i make in the book at this time when i claim not to know enough about religion to know what other policy proposals to make and it's one that echoes remarks that you've heard already today here's my proposal i'm going to just take a couple of minutes to explain it that education in world religions on world religions for all of our children in primary school in high school in public schools in private schools and and home schooling so what i'm proposing is just as we require reading writing arithmetic american history so we should have a curriculum on facts about all the religions of the world about their history about their creeds about their texts their me music their symbolisms their prohibitions their requirements and that this should be presented factually straightforwardly with no particular spin to all of the children in the country and as long as it is them that you can teach him anything else to like that i think is maximal tolerance for religious freedom as long as you inform your children about other religions then you may and as early as you like it whatever you like teach them whatever creed you want them to learn but also let them know about other religions now why do i says because democracy depends on an informed citizenship informed consent is the very bedrock of our understanding of democracy mis informed consent is not worth it it's like a coin flip it's just not it doesn't count really democracy depends on informed consent this is the way we treat people as responsible adults now children below the age of consent our a special case parents i'm going to use a word that the robe pastor rick just used parents are stewards of their children then our own them you can't only your children you have a responsibility to the world to the state to them to take care of them right you may teach them whatever creed you think is most important but i say you have a responsibility to let them be informed about all the other creeds in the world to now what the reason i've taken this time is i've been fascinated to hear some of the reactions to this one reviewer for a roman catholic newspaper called totalitarian it strikes me is practically libertarian is it totalitarian to require reading writing and arithmetic i don't think so all i'm saying is and facts are facts only no values just facts about all the world's religions another reviewer call it hilarious well i'm really bothered by the fact that anybody would think that was hilarious it seems to me to be such a plausible natural extension of the democratic principles we already have that i'm shocked to think anybody would find that just ridiculous i know many religions are so anxious about preserving the purity of their faith among their among their children that they are intent on keeping their children ignorant of other faiths i don't think that's defensible but i'd really be pleased to get your answers on there are any reaction to that later but now i'm going to move on fact that the cow this picture which i've pulled off the web the fellow on the left is really an important part of this picture that's the steward that's cows couldn't live without human stewards they're domesticated their a sort of ectosymbiont they depend on us for their for their survival and pastor rick was just talking about sheep i'm going to talk about sheep to there's a lot of of a serendipitous convergence here how clever it was and sheep to acquire shepherds i think think of what this got them they could outsource all their problems protection from predators food finding health maintenance the only cost and in most flocks not even this a loss of free meeting what a deal how clever of sheep you might say except of course it wasn't a sheep's cleverness wheel and sheep are not exactly rocket scientists they're not very smart it wasn't the cleverness of the sheep at all they were clueless but it was a very clever move who's clever move was it was a clever move of natural selection itself francis crick the co discover of the structure of dna with jim watson once joked about what he called orbital second rule leslie oracle is is what is still the molecular biologist brilliant guy an oracle second rule is evolution is clever a new are now that is not intelligent design not from francis crick evolution is clever you are if you understand oracle second rule then you understand why the intelligent design the flint is basically a hoax the designs discovered by the process of natural selection are brilliant unbelievably brilliant again and again biologist i'm fascinated with the brilliance of the of was discovered but the process itself is without purpose without for site without design when i was here four years ago i told a story about and and climbing a blade of grass and why was he ain't doing it was because it's brain had been infected with the with the lancet fluke that was needed to get into the belly of a sheep or a cow in order to to reproduce it was sort of a spooky story i think some people may have misunderstood lance flukes aren't smart ice i submit that the the the intelligence of the lancet fluke is down there somewhere between petunia and carrot they're not really bright they don't have to be the lesson we learned from this is you don't have to have a mind to be a beneficiary the design is there in nature but it's not in anybody's head and it doesn't have to be that's the way evolution works question was domestication good for sheep it was great for their genetic fitness and here i want to remind you of a wonderful point that paul mccready made a ted three years ago here's what he said ten thousand years ago at the dawn of agriculture human population plus livestock and pets was approximately a tenth of one percent of the terrestrial vertebrate landmass that was just ten thousand years ago yesterday in biological terms what does it today anybody remember what he told us ninety eight percent that is what we have done on this planet now i talked to paul afterwards i wanted to check out to find out how we'd calculated this and get the sources and so forth and he also he gave me a paper that he had written on this and that was a passage in which he did not present here and i think it is so good i'm going to read it to you over billions of years on a unique sphere chance has painted a thin covering of life complex improbable wonderful and fragile suddenly we humans are recently arrived species no longer subject to the checks and balances inherent nature have grown and population technology and intelligence to a position of terrible power we now we'll the paint brush we heard about the atmosphere as a thin layer of varnish life itself is just a thin coat of paint on this planet and we're the ones that hold the paintbrush and how can we do that the key to our domination of the plan is culture and the key to culture is religion suppose martian scientists came to earth they would be puzzled by many things going to have them were below anybody know what this is i'll tell you what it is this is a million people gathering on the banks of the ganges and two and two thousand and one perhaps the largest single gathering of human beings ever as seen from satellite photo have here's a big crowd here's another crowd and in mecca marsans would be amazed by this they'd want to know how it originated what it was for and how it perpetuates itself actually i'm going to pass over this this is a the answer isn't alone there's all sorts of wonderful cases of species which in that case the parasite gets into a mouse and it needs to get into the belly of a cat and that turns the mouse and a mighty mouse makes a fearless so it runs out in the open world will be eaten by a cat true story in other words we have these hijackers you've seen this slide before from four years ago a parasite that infects the brain and induces even suicidal behavior on behalf of because cause other than one's own genetic fitness does that ever happened to us yes it does quite wonderfully the arabic word islam means submission mean surrender of self interest to the will of allah but i'm not just talking about islam i'm talking also about christianity this is a parchment music page that i found on the paris bookstore fifty years ago and on it it says in latin same and este where that you saw software out and priestess the word of god to secede and the sorrow the see it as christ same idea will not quite but in fact christians to glory in the fact that they have surrendered to god i'll give you a few quotes the heart of worship his surrender surrendered people obey god's words even if it doesn't make sense those words or by rick warren those are from the purpose driven life and i want to turn now briefly to talk about that book which i've heard you've got a copy and you've just heard the man and what i want to do now you say a bit about this book from the design standpoint because i think it's actually a brilliant book it first of all the goal and you heard just now what the goal is to bring purpose of the lives of millions and he has succeeded this is a good go in itself i'm sure we all agree it is a wonderful goal he's absolutely right there are lots of people out there who don't have purpose in their life and bringing purpose of their life is a wonderful go i give him an a plus on this this is a goal achieved yes thirty million copies of this book al gore eat your heart out just exactly what hours trying to do rick is doing this is this is a fantastic achievement and the means how does he do it so brilliant redesign of traditional religious themes updating them quietly dropping obsolete features putting new interpretation to another is this is the evolution of religion it's been going on for thousands of years and he's just the latest brilliant practitioner of it i don't have to tell you this you just heard the man excellent insights into human psychology wise advice on every page moreover he invites us to look under the hood i really appreciated that for see as an appendix where he explains his choice of translations of different bible verses the book is clear vivid accessible beautifully form added just enough repetition that's really important every time you read it or say you make another coffee and your brain every time you read it or say it you make another hobby and your brain with me everybody every time you read it or say you make another copy and your brain thank you and now we come to my problem because i'm absolutely sincere in my appreciation of all that i've said about this book but i wish it were better i have some problems with the book and it would it would just be insincere me not to address the problems i wish he could do this with a revision a mark to version of his book the truth will set you free that's what it says in the bible and it's something that i want to live by to my problem is some other bits of the i don't think are true now some of this is a difference of opinion and that's not my main complaint that's worth mentioning here's a passage is very much what he said anyway if there was no cod we would all be accidents the result of astronomical random chance in the universe you can stop reading this book because life would have no purpose or meaning or significance there would be no right or wrong and no hope beyond your brief years on earth now i just do not believe that by the way i foot homer grains film presented a beautiful alternative to that very close yes there is meaning and a reason for right or wrong we don't need a belief in god to be good or to have meaning and nice but that as i say that is just the difference of opinion that's not what i'm really worried about how about this god designed this planet's environment just so we could live in it i'm afraid that a lot of people take that sentiment to mean that we don't have to do the sorts of things that al gore is trying so hard to get us to do i'm not happy with that sentiment at all and then i find this all the evidence available in the biological sciences supports the core proposition that the cosmos as a specially designed whole with life and mankind as it's fundamental role and purpose a whole and which are all facets of reality have their meaning and explanation in the central fat well that's michael then and he's a creationist and here i think wait a minute i read this again i read it three or four times it is he really endorsing intelligent design as see endorsing creationism your and it you can't tell so i'm so well i don't know i don't know if i want to get upset with this yet but then i read on and i read this first know i had never seen rain because prior to the flood god irrigated the earth from the ground up i wish that sentence worth in there because i think it is false and i think that thinking this way about the history of the planet after we've just been hearing about the history of the planet over millions of years discourages people from scientific understanding now rick warren uses scientific terms and scientific factoids and information in a very interesting way here's one god deliberately shape and form due to serve him in a way that makes your ministry unique he carefully mix the dna cocktail that created to i think that's false now maybe we want to treat it as metaphorical there's another one for instance your brain can store one hundred trillion facts your mind can handle fifteen thousand and second decisions a second well be interesting to find the interpretation where i would accept that there might be some way of of of treating that is true anthropologists have noted that worship and it is a universal urge hardwired by god and the the very fiber of bearing but being an inbuilt need to connect with cause well the says which i agree with them except i think it has an evolutionary explanation and what i find deeply troubling in this book is that he seems to be arguing that if you want to be moral if you want have meaning in your life you have to be an intelligent designer you have to deny the theory of evolution by natural selection and i think on the contrary that it is very important to solving the world's problems that we take evolutionary biology seriously who's truth are we going to listen to well this from a purpose driven life the bible must become the authoritative standard of i'm from my life the compass i rely on for direction the council i listen to for making wise decisions and the benchmark i used for evaluating everything well maybe okay but what does it what's going to follow from this and here's one that the does concern me well remember i quoted him before this land surrendered people obey god's word even if it doesn't make sense and that's that's a problem don't ever argue with the devil he's better at arguing than you are having had thousands of years to practice now rick warren didn't invent this clever move that's an old movie it's a very clever adaptation of religions it's a wild card for disarming any reasonable criticism you know like my interpretation you've got a reasonable objection to dollars and don't listen that's the devil species this discourages the sort of reasoning citizenship it seems to me that we want to have i've got one more problem than i'm through and i really like to get a response if if if the record is able to do in the great commission jesus so go to all people of all nations and make for my disciples baptize and the name of the father the son the holy spirit teach them to do everything i've told you the bible says jesus is the only one who can save the world now here we've seen many wonderful maps of the world and the last day or so here's one not as beautiful as the others there's simply shows the religions of the world and here's one that shows the sort of current breakdown of the different religions now do we really want to commit ourselves to and golfing all the other religions when their holy books are telling them don't listen to the other side that's just satan talking it seems to me that that's a very problematic ship to get on for the future i found this sign as i was driving for main recently in front of a church good without god become zero for cute very very clever little meme i don't believe it and i think this idea popular as it is not in this guy's with in general is itself one of the main problems that we face if you're like me you know many wonderful committed engaged atheists agnostics who are being very good without god and you also know many religious people who hide behind their sanctity instead of doing good works so i wish we could drop this mean i wish this mean would go extinct sanctuary my career

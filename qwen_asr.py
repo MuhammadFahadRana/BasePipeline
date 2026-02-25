@@ -29,6 +29,7 @@ Usage:
 import torch
 import torchaudio
 import soundfile as sf
+import time
 import json
 import warnings
 import os
@@ -256,21 +257,71 @@ class QwenTranscriber:
                     sample_rate = 16000
                 
                 audio_array = waveform.squeeze().numpy()
-                
                 print(f"  Duration: {len(audio_array) / sample_rate:.1f}s")
-                
+                    
             except Exception as e:
                 print(f"✗ Error loading audio: {e}")
                 return {}
             
-            # Transcribe
-            print(f"Transcribing with Qwen-Audio...")
-            result = self._transcribe_qwen(
-                audio_array,
-                sample_rate,
-                include_emotion=include_emotion,
-                include_speaker_info=include_speaker_info
-            )
+            # Start timing
+            start_processing_time = time.time()
+            
+            # Transcribe with chunking to handle long audio
+            print(f"Transcribing with Qwen-Audio (chunking enabled)...")
+            
+            chunk_size_sec = 30  # Qwen2-Audio works best with 30s chunks
+            stride_sec = 2
+            chunk_size = chunk_size_sec * sample_rate
+            stride = stride_sec * sample_rate
+            
+            full_text = []
+            segments = []
+            
+            curr = 0
+            while curr < len(audio_array):
+                end = min(curr + chunk_size, len(audio_array))
+                chunk = audio_array[curr:end]
+                
+                # Skip very short tail
+                if len(chunk) < sample_rate * 0.5: # 0.5s
+                    break
+                
+                print(f"  Processing chunk {curr/sample_rate:.1f}s - {end/sample_rate:.1f}s...")
+                
+                try:
+                    chunk_res = self._transcribe_qwen(
+                        chunk,
+                        sample_rate,
+                        include_emotion=include_emotion,
+                        include_speaker_info=include_speaker_info
+                    )
+                    
+                    chunk_text = chunk_res.get("text", "").strip()
+                    
+                    # Prevent refusal messages from being included in the final transcript
+                    if chunk_text and "I'm sorry" not in chunk_text and "provide the" not in chunk_text:
+                        full_text.append(chunk_text)
+                        segments.append({
+                            "start": curr / sample_rate,
+                            "end": end / sample_rate,
+                            "text": chunk_text
+                        })
+                except Exception as e:
+                    print(f"    Warning: Chunk processing failed: {e}")
+                
+                curr += (chunk_size - stride)
+                if end == len(audio_array):
+                    break
+            
+            # End timing
+            processing_time = time.time() - start_processing_time
+            
+            result = {
+                "text": " ".join(full_text),
+                "segments": segments,
+                "language": self.language,
+                "processing_time_seconds": round(processing_time, 2)
+            }
         
             # Add metadata
             result["metadata"] = {
@@ -279,6 +330,7 @@ class QwenTranscriber:
                 "duration": len(audio_array) / sample_rate,
                 "language": self.language,
                 "device": self.device,
+                "processing_time": round(processing_time, 2)
             }
             
             # Save results
