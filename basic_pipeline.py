@@ -1,4 +1,5 @@
-# ATLAS – AI-driven Temporal Linking and Search, this is the name of the project. 
+# -*- coding: utf-8 -*-
+# ATLAS – AI-driven Temporal Linking and Search
 
 import hashlib
 import json
