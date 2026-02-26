@@ -536,26 +536,48 @@ class BasicVideoPipeline:
         print(f"{'='*60}")
 
         results = []
+        batch_start_time = time.time()
         for i, video_path in enumerate(videos, 1):
             print(f"\nVideo {i}/{len(videos)}: {video_path.name}")
+            video_start_time = time.time()
             try:
-                _ = self.process_video(
+                result = self.process_video(
                     str(video_path),
                     output_base=output_base,
                     use_hash=use_hash,
                     force=force,
                 )
-                results.append({"video": video_path.name, "success": True})
+                video_elapsed = time.time() - video_start_time
+                processing_time = result.get("processing_info", {}).get("processing_duration", video_elapsed)
+                results.append({
+                    "video": video_path.name,
+                    "success": True,
+                    "processing_time": processing_time,
+                    "wall_clock_time": video_elapsed
+                })
             except Exception as e:
+                video_elapsed = time.time() - video_start_time
                 print(f"Processing failed: {str(e)}")
-                results.append({"video": video_path.name, "success": False, "error": str(e)})
+                results.append({
+                    "video": video_path.name,
+                    "success": False,
+                    "error": str(e),
+                    "wall_clock_time": video_elapsed
+                })
 
-        self.create_batch_summary(results, output_base=output_base)
+        batch_total_time = time.time() - batch_start_time
+        self.create_batch_summary(results, output_base=output_base, batch_total_time=batch_total_time)
         return results
 
-    def create_batch_summary(self, results: List[Dict], output_base: str = "processed"):
+    def create_batch_summary(self, results: List[Dict], output_base: str = "processed", batch_total_time: float = 0.0):
         successful = [r for r in results if r["success"]]
         failed = [r for r in results if not r["success"]]
+
+        # Calculate timing statistics
+        processing_times = [r.get("processing_time", 0) for r in successful if "processing_time" in r]
+        min_time = min(processing_times) if processing_times else 0
+        max_time = max(processing_times) if processing_times else 0
+        avg_time = sum(processing_times) / len(processing_times) if processing_times else 0
 
         summary = {
             "total_videos": len(results),
@@ -563,6 +585,13 @@ class BasicVideoPipeline:
             "failed": len(failed),
             "failed_videos": [r["video"] for r in failed],
             "saved_at_iso": datetime.now().isoformat(),
+            "timing": {
+                "batch_total_time": round(batch_total_time, 2),
+                "processing_time_min": round(min_time, 2),
+                "processing_time_max": round(max_time, 2),
+                "processing_time_avg": round(avg_time, 2),
+                "total_processing_time": round(sum(processing_times), 2),
+            },
         }
 
         summary_dir = Path(output_base)
@@ -572,12 +601,34 @@ class BasicVideoPipeline:
         with open(summary_file, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
 
+        # Save detailed timing CSV
+        import csv
+        csv_file = summary_dir / "batch_timing_details.csv"
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["video", "success", "processing_time_s", "wall_clock_time_s", "error"])
+            writer.writeheader()
+            for r in results:
+                writer.writerow({
+                    "video": r["video"],
+                    "success": "Yes" if r["success"] else "No",
+                    "processing_time_s": round(r.get("processing_time", 0), 2),
+                    "wall_clock_time_s": round(r.get("wall_clock_time", 0), 2),
+                    "error": r.get("error", "")
+                })
+
         print(f"\n{'='*60}")
         print("BATCH PROCESSING SUMMARY")
         print(f"{'='*60}")
-        print(f"Successful: {len(successful)}")
-        print(f"Failed: {len(failed)}")
-        print(f"Summary saved to: {summary_file}")
+        print(f"Successful: {len(successful)}/{len(results)}")
+        print(f"Failed: {len(failed)}/{len(results)}")
+        print(f"\nTiming Statistics:")
+        print(f"  Batch Total Time: {batch_total_time:.2f}s")
+        print(f"  Min Time: {min_time:.2f}s")
+        print(f"  Max Time: {max_time:.2f}s")
+        print(f"  Avg Time: {avg_time:.2f}s")
+        print(f"  Total Processing Time: {sum(processing_times):.2f}s")
+        print(f"\nSummary saved to: {summary_file}")
+        print(f"Detailed timing saved to: {csv_file}")
 
         if failed:
             print("\nFailed videos:")
