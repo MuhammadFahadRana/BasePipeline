@@ -264,6 +264,41 @@ class DataIngester:
         if generate_visual_embeddings:
             visual_count = self.ingest_visual_embeddings(scene_db_objects)
 
+        # Caption / Scene Semantic Embeddings
+        # For each scene with a Qwen2-VL caption, generate a text embedding so that
+        # semantic (vector) search can find visually-described scenes even when there is
+        # no matching transcript segment nearby.
+        caption_embs_added = 0
+        scenes_with_captions = [
+            s for s in scene_db_objects
+            if s.caption or (s.object_labels and len(s.object_labels) > 0) or s.ocr_text
+        ]
+        if scenes_with_captions:
+            print(f"Generating caption embeddings for {len(scenes_with_captions)} enriched scenes...")
+            caption_texts = []
+            for scene in scenes_with_captions:
+                parts = [scene.caption] if scene.caption else []
+                if scene.object_labels:
+                    if isinstance(scene.object_labels, list):
+                        parts.append(" ".join(str(lbl) for lbl in scene.object_labels))
+                    else:
+                        parts.append(str(scene.object_labels))
+                if scene.ocr_text:
+                    parts.append(scene.ocr_text)
+                caption_texts.append(" ".join(parts))
+
+            caption_vecs = self.embedding_gen.encode(caption_texts, batch_size=16, show_progress=False)
+            for scene, vec in zip(scenes_with_captions, caption_vecs):
+                emb = Embedding(
+                    scene_id=scene.id,
+                    segment_id=None,
+                    embedding=vec.tolist(),
+                    embedding_model=self.embedding_gen.model_name,
+                )
+                self.db.add(emb)
+                caption_embs_added += 1
+            print(f"✓ {caption_embs_added} caption embeddings generated")
+
         # Commit all changes
         self.db.commit()
         print(f"Successfully ingested: {video_name}\n")

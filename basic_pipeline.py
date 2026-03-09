@@ -59,8 +59,6 @@ class BasicVideoPipeline:
         )
         scene_cfg = SceneConfig(
             threshold=scene_threshold,
-            yolo_model="yolov8n.pt",
-            yolo_person_conf=0.35,
             clip_sim_merge_threshold=0.90,
             device="cuda" if device in ("auto", "cuda") else "cpu",
         )
@@ -146,11 +144,10 @@ class BasicVideoPipeline:
             "whisper_model": getattr(self.transcriber, "model_name", "unknown"),
             "scene_threshold": self.scene_detector.config.threshold,
             "semantic_refine": False,
-            "yolo_model": "yolov8n.pt",
-            "yolo_person_conf": 0.35,
             "vision_model": "google/siglip-base-patch16-224",
             "text_embedding_model": "Qwen/Qwen3-Embedding-0.6B",
             "clip_sim_merge_threshold": 0.90,
+            "visual_enrichment_model": "Qwen/Qwen2-VL-7B-Instruct",
         }
         manifest = self._load_manifest(manifest_path)
 
@@ -232,22 +229,22 @@ class BasicVideoPipeline:
                 base_output_dir=str(output_base / "scenes")
             )
 
-            print("\n2b. Refining scenes (YOLO + CLIP)...")
+            print("\n2b. Refining scenes (CLIP)...")
             try:
                 scenes = self.scene_detector.refine_scenes(scenes)
             except Exception as e:
                 print(f"Scene refinement failed: {e}")
 
-            print("\n2c. Enriching scenes with OCR (EasyOCR)...")
+            print("\n2c. Enriching scenes with Qwen2-VL (captions, labels, OCR)...")
             try:
-                scenes = self.scene_detector.enrich_with_ocr(scenes)
-                # Re-save scenes cache with OCR data included
+                scenes = self.scene_detector.enrich_with_visual_features(scenes)
+                # Re-save scenes cache with enrichment data included
                 scenes_cache = output_base / "scenes" / video_path.stem / f"{video_path.stem}_scenes.json"
                 if scenes_cache.exists():
                     with open(scenes_cache, "w", encoding="utf-8") as f:
                         json.dump(scenes, f, indent=2, ensure_ascii=False)
             except Exception as e:
-                print(f"OCR enrichment failed: {e}")
+                print(f"Visual enrichment failed: {e}")
 
 
         print("\n3. Aligning transcripts with scenes...")

@@ -1,6 +1,8 @@
 """FastAPI application for video semantic search."""
 
 import sys
+import subprocess
+import asyncio
 from pathlib import Path
 
 # Add parent directory to path to allow imports
@@ -21,6 +23,9 @@ from search.multi_modal_search import MultiModalSearchEngine, set_optimal_weight
 import traceback
 import time
 from datetime import datetime
+
+# Formats that browsers cannot play natively → must be transcoded
+TRANSCODE_EXTENSIONS = {".ts", ".mp2t", ".m2ts", ".mts", ".avi", ".mkv", ".mov"}
 
 # Lazy-loaded components
 _video_qa = None
@@ -185,16 +190,16 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
     
     file_size = os.path.getsize(video_path)
     
-    # Determine content type based on extension
+    # For .ts and other browser-incompatible formats, redirect to the transcode endpoint
     ext = os.path.splitext(video_path)[1].lower()
+    if ext in TRANSCODE_EXTENSIONS:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"/video/transcode/{video_id}")
+    
+    # Determine content type based on extension
     content_types = {
         ".mp4": "video/mp4",
         ".webm": "video/webm",
-        ".mkv": "video/x-matroska",
-        ".avi": "video/x-msvideo",
-        ".mov": "video/quicktime",
-        ".ts": "video/mp2t",
-        ".mp2t": "video/mp2t",
     }
     content_type = content_types.get(ext, "video/mp4")
     
@@ -250,6 +255,76 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
         }
         
         return StreamingResponse(iterfile(), headers=headers)
+
+
+@app.get("/video/transcode/{video_id}")
+async def transcode_video(video_id: int, db: Session = Depends(get_db)):
+    """
+    Transcode a video to browser-compatible MP4 using FFmpeg.
+
+    Used automatically for .ts and other container formats that browsers
+    cannot play natively. Streams the transcoded output directly without
+    writing a temporary file to disk.
+    
+    Requires ffmpeg to be installed and on the system PATH.
+    """
+    # Resolve the video file path (same logic as stream_video)
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    video_path = video.file_path
+    if not os.path.exists(video_path):
+        local_filename = os.path.basename(video_path)
+        project_root = Path(__file__).parent.parent
+        resolved_path = project_root / "videos" / local_filename
+        if resolved_path.exists():
+            video_path = str(resolved_path)
+        else:
+            raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
+
+    async def stream_ffmpeg():
+        """Pipe ffmpeg stdout as a fragmented MP4 stream."""
+        cmd = [
+            "ffmpeg",
+            "-loglevel", "error",      # suppress progress spam
+            "-i", video_path,          # input file
+            "-c:v", "copy",            # copy video stream (no re-encode → fast)
+            "-c:a", "aac",             # re-encode audio to AAC for browser compat
+            "-f", "mp4",               # output container
+            "-movflags", "frag_keyframe+empty_moov+faststart",  # streaming-safe fragmented MP4
+            "pipe:1",                  # write to stdout
+        ]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            while True:
+                chunk = await proc.stdout.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+            await proc.wait()
+            if proc.returncode and proc.returncode != 0:
+                stderr = await proc.stderr.read()
+                print(f"FFmpeg error (video_id={video_id}): {stderr.decode()}")
+        except FileNotFoundError:
+            # ffmpeg not on PATH
+            raise HTTPException(
+                status_code=500,
+                detail="ffmpeg is not installed or not on PATH. Install ffmpeg to play .ts files."
+            )
+
+    return StreamingResponse(
+        stream_ffmpeg(),
+        media_type="video/mp4",
+        headers={
+            "Content-Disposition": f'inline; filename="{Path(video_path).stem}.mp4"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 
@@ -958,6 +1033,168 @@ async def search_analytics(db: Session = Depends(get_db)):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analytics failed: {str(e)}")
+
+
+@app.post("/admin/enrich-captions")
+async def enrich_captions(
+    video_id: Optional[int] = None,
+    batch_size: int = 10,
+    db: Session = Depends(get_db),
+):
+    """
+    Re-enrich existing scenes with Qwen2-VL captions, object labels, and OCR text.
+
+    Finds all scenes with NULL captions (and an existing keyframe), runs Qwen2-VL
+    on each keyframe, saves the results back to the scenes table, and generates a
+    text embedding from the caption so that vector (semantic) search can find these scenes.
+
+    **This is a long-running operation.** For large libraries call it with a small
+    batch_size and repeat until `scenes_remaining` returns 0.
+
+    Args:
+        video_id: Optional - restrict to a single video's scenes
+        batch_size: How many scenes to process per call (default 10)
+    """
+    try:
+        from scene_detector import SceneDetector, SceneConfig
+        from database.models import Scene, Embedding
+        from embeddings.text_embeddings import get_embedding_generator
+
+        # Query scenes that need enrichment: caption IS NULL + keyframe exists
+        query = db.query(Scene).filter(Scene.keyframe_path.isnot(None))
+        if video_id:
+            query = query.filter(Scene.video_id == video_id)
+        
+        # Split into: still need enrichment vs already done
+        all_scenes = query.all()
+        unenriched = [s for s in all_scenes if s.caption is None]
+        total_remaining = len(unenriched)
+        
+        if total_remaining == 0:
+            return {
+                "status": "already_complete",
+                "message": "All scenes with keyframes already have captions.",
+                "scenes_enriched": 0,
+                "scenes_remaining": 0,
+            }
+
+        batch = unenriched[:batch_size]
+        
+        # Load Qwen2-VL via SceneDetector (lazy-loads the model)
+        cfg = SceneConfig(enable_visual_enrichment=True)
+        detector = SceneDetector(config=cfg)
+        qwen = detector._ensure_qwen_vl()
+        if qwen is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Qwen2-VL model could not be loaded. Check server logs."
+            )
+
+        # Load text embedding generator for indexing captions
+        emb_gen = get_embedding_generator()
+        
+        enriched_count = 0
+        embedding_count = 0
+        
+        for scene in batch:
+            kf_path = Path(scene.keyframe_path)
+            # Resolve Windows / Linux path differences
+            if not kf_path.exists():
+                project_root = Path(__file__).parent.parent
+                candidate = project_root / scene.keyframe_path
+                if candidate.exists():
+                    kf_path = candidate
+
+            if not kf_path.exists():
+                print(f"  Keyframe not found for scene {scene.id}: {scene.keyframe_path}")
+                continue
+
+            try:
+                result = qwen.analyze_image(str(kf_path))
+                caption = result.get("caption")
+                object_labels = result.get("object_labels", [])
+                ocr_text = result.get("ocr_text")
+
+                # Update scene columns
+                scene.caption = caption
+                scene.object_labels = object_labels
+                scene.ocr_text = ocr_text
+                enriched_count += 1
+
+                # Build the text to embed: caption + object labels + OCR
+                parts = [caption] if caption else []
+                if object_labels:
+                    if isinstance(object_labels, list):
+                        parts.append(" ".join(str(l) for l in object_labels))
+                    else:
+                        parts.append(str(object_labels))
+                if ocr_text:
+                    parts.append(ocr_text)
+
+                if parts:
+                    embed_text = " ".join(parts)
+                    vec = emb_gen.encode_single(embed_text)
+
+                    # Upsert: skip if an embedding for this scene already exists
+                    existing_emb = db.query(Embedding).filter(
+                        Embedding.scene_id == scene.id,
+                        Embedding.segment_id == None,  # noqa: E711
+                    ).first()
+
+                    if existing_emb:
+                        existing_emb.embedding = vec.tolist()
+                    else:
+                        new_emb = Embedding(
+                            scene_id=scene.id,
+                            segment_id=None,
+                            embedding=vec.tolist(),
+                            embedding_model=emb_gen.model_name,
+                        )
+                        db.add(new_emb)
+                    embedding_count += 1
+
+            except Exception as e:
+                print(f"  Failed to enrich scene {scene.id}: {e}")
+                continue
+
+        db.commit()
+
+        return {
+            "status": "success",
+            "scenes_enriched": enriched_count,
+            "embeddings_created": embedding_count,
+            "scenes_remaining": total_remaining - len(batch),
+            "batch_size": batch_size,
+            "message": (
+                f"Enriched {enriched_count}/{len(batch)} scenes. "
+                f"{total_remaining - len(batch)} scenes still need enrichment. "
+                "Call this endpoint again to continue."
+            ),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Enrichment failed: {str(e)}")
+
+
+@app.get("/admin/caption-stats")
+async def caption_stats(db: Session = Depends(get_db)):
+    """Returns how many scenes have captions vs still need enrichment."""
+    from database.models import Scene
+    total = db.query(Scene).count()
+    with_caption = db.query(Scene).filter(Scene.caption.isnot(None)).count()
+    with_keyframe = db.query(Scene).filter(Scene.keyframe_path.isnot(None)).count()
+    return {
+        "total_scenes": total,
+        "scenes_with_caption": with_caption,
+        "scenes_needing_enrichment": with_keyframe - with_caption,
+        "scenes_without_keyframe": total - with_keyframe,
+        "caption_coverage_pct": round(with_caption / total * 100, 1) if total else 0,
+    }
+
 
 # Serve the frontend
 @app.get("/")

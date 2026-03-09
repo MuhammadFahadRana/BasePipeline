@@ -18,13 +18,12 @@ from scenedetect.detectors import ContentDetector
 from pathlib import Path
 import json
 from PIL import Image
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 # Lazy imports for optional heavy dependencies
 _torch = None
 _open_clip = None
-_YOLO = None
 
 
 def _ensure_torch():
@@ -43,14 +42,6 @@ def _ensure_open_clip():
     return _open_clip
 
 
-def _ensure_yolo():
-    global _YOLO
-    if _YOLO is None:
-        from ultralytics import YOLO
-        _YOLO = YOLO
-    return _YOLO
-
-
 # ──────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────
@@ -64,20 +55,12 @@ class SceneConfig:
 
     # Semantic refinement
     enable_refinement: bool = True
-    yolo_model: str = "yolov8n.pt"
-    yolo_person_conf: float = 0.35
     clip_model: str = "ViT-B-32"
     clip_pretrained: str = "openai"
     clip_sim_merge_threshold: float = 0.90
 
-    # OCR enrichment
-    enable_ocr: bool = True
-    ocr_languages: List[str] = field(default_factory=lambda: ["en"])
-    ocr_use_gpu: bool = True
-    ocr_confidence_threshold: float = 0.5
-
-    # Visual Enrichment (Qwen2-VL) — disabled by default, use EasyOCR instead
-    enable_visual_enrichment: bool = False
+    # Visual Enrichment (Qwen2-VL) — primary enrichment: captions, object labels, OCR
+    enable_visual_enrichment: bool = True
     qwen_vl_model: str = "Qwen/Qwen2-VL-7B-Instruct"
     qwen_vl_load_in_4bit: bool = True
 
@@ -102,7 +85,7 @@ class SceneConfig:
 class SceneDetector:
     """
     Unified scene processing:
-    detect → refine (YOLO+CLIP) → enrich (OCR) → save
+    detect → refine (CLIP) → enrich (Qwen2-VL: captions, labels, OCR) → save
     """
 
     def __init__(self, config: Optional[SceneConfig] = None, threshold: float = None):
@@ -118,20 +101,12 @@ class SceneDetector:
             self.config.threshold = threshold
 
         # Lazy-loaded models
-        self._yolo = None
         self._clip_model = None
         self._clip_preprocess = None
         self._clip_tokenizer = None
-        self._ocr = None
         self._qwen_vl = None
 
     # ── Lazy model loaders ──────────────────────
-
-    def _ensure_yolo(self):
-        if self._yolo is None:
-            YOLO = _ensure_yolo()
-            self._yolo = YOLO(self.config.yolo_model)
-        return self._yolo
 
     def _ensure_clip(self):
         if self._clip_model is None:
@@ -147,19 +122,6 @@ class SceneDetector:
             self._clip_tokenizer = open_clip.get_tokenizer(self.config.clip_model)
         return self._clip_model, self._clip_preprocess
 
-    def _ensure_ocr(self):
-        if self._ocr is None:
-            try:
-                from embeddings.ocr import get_ocr_reader
-                self._ocr = get_ocr_reader(
-                    languages=self.config.ocr_languages,
-                    use_gpu=self.config.ocr_use_gpu,
-                )
-            except ImportError:
-                print("Warning: EasyOCR not found. OCR enrichment disabled.")
-                self.config.enable_ocr = False
-                return None
-        return self._ocr
 
     def _ensure_qwen_vl(self):
         if self._qwen_vl is None:
@@ -170,8 +132,11 @@ class SceneDetector:
                     device=self.config.get_device(),
                     load_in_4bit=self.config.qwen_vl_load_in_4bit
                 )
-            except ImportError:
-                print("Warning: VisualFeatureExtractor dependencies not found. Visual enrichment disabled.")
+            except Exception as e:
+                import traceback
+                print(f"Failed to load VisualFeatureExtractor: {e}")
+                traceback.print_exc()
+                print("Warning: Visual enrichment disabled.")
                 self.config.enable_visual_enrichment = False
                 return None
         return self._qwen_vl
@@ -405,30 +370,6 @@ class SceneDetector:
 
     # ── 3. Semantic Refinement ──────────────────
 
-    def _person_present(self, image_path: str) -> Tuple[bool, float]:
-        """Detect person using YOLO. Returns (present, max_confidence)."""
-        if not image_path or not Path(image_path).exists():
-            return False, 0.0
-
-        yolo = self._ensure_yolo()
-        results = yolo(image_path, verbose=False)
-
-        max_conf = 0.0
-        present = False
-
-        for r in results:
-            if r.boxes is None:
-                continue
-            cls = r.boxes.cls.detach().cpu().numpy().astype(int)
-            conf = r.boxes.conf.detach().cpu().numpy()
-            person_confs = conf[cls == 0] if len(cls) else np.array([])
-            if person_confs.size > 0:
-                max_conf = float(person_confs.max())
-                if max_conf >= self.config.yolo_person_conf:
-                    present = True
-
-        return present, max_conf
-
     def _clip_embed(self, image_path: str) -> Optional[np.ndarray]:
         """Get CLIP embedding for an image."""
         if not image_path or not Path(image_path).exists():
@@ -454,9 +395,8 @@ class SceneDetector:
     def refine_scenes(self, scenes: List[Dict]) -> List[Dict]:
         """
         Refine scenes with semantic signals:
-          - Tag each scene with speaker_present / speaker_conf
           - Compute CLIP similarity between consecutive scenes
-          - Merge near-identical consecutive speaker scenes
+          - Merge near-identical consecutive scenes
 
         Args:
             scenes: List of scene dicts from detect_scenes()
@@ -467,17 +407,13 @@ class SceneDetector:
         if not self.config.enable_refinement or not scenes:
             return scenes
 
-        print("  Annotating scenes with YOLO + CLIP...")
+        print("  Annotating scenes with CLIP...")
 
-        # 1) Annotate with YOLO + CLIP
+        # 1) Annotate with CLIP
         clip_embs: List[Optional[np.ndarray]] = []
 
         for i, s in enumerate(scenes):
             kf = s.get("keyframe_path")
-
-            speaker_present, speaker_conf = self._person_present(kf) if kf else (False, 0.0)
-            s["speaker_present"] = speaker_present
-            s["speaker_conf"] = speaker_conf
 
             emb = self._clip_embed(kf) if kf else None
             clip_embs.append(emb)
@@ -487,7 +423,7 @@ class SceneDetector:
             else:
                 s["clip_sim_to_prev"] = None
 
-        # 2) Merge consecutive similar speaker scenes
+        # 2) Merge consecutive similar scenes
         merged: List[Dict] = []
         i = 0
         while i < len(scenes):
@@ -499,8 +435,6 @@ class SceneDetector:
                 nxt = scenes[j]
                 nxt_emb = clip_embs[j]
 
-                if not (cur.get("speaker_present") and nxt.get("speaker_present")):
-                    break
                 if cur_emb is None or nxt_emb is None:
                     break
 
@@ -528,107 +462,7 @@ class SceneDetector:
 
         return merged
 
-    # ── 4. OCR Enrichment ───────────────────────
-
-    def enrich_with_ocr(
-        self,
-        scenes: List[Dict],
-        cache_dir: Optional[Path] = None,
-    ) -> List[Dict]:
-        """
-        Run OCR on each scene keyframe and add ocr_text field.
-        Results are cached in a JSON sidecar file so repeated runs
-        skip already-processed keyframes.
-
-        Args:
-            scenes:    List of scene dicts (must have keyframe_path)
-            cache_dir: Directory to store/read ``ocr_cache.json``.
-                       Defaults to the parent directory of the first keyframe.
-
-        Returns:
-            Same list with ocr_text added to each scene
-        """
-        if not self.config.enable_ocr:
-            return scenes
-
-        ocr = self._ensure_ocr()
-        if ocr is None:
-            return scenes
-
-        # ── Resolve cache file ──────────────────────────────────────────
-        if cache_dir is None:
-            # Use the directory of the first scene's keyframe, if available
-            for s in scenes:
-                kf = s.get("keyframe_path")
-                if kf and Path(kf).exists():
-                    cache_dir = Path(kf).parent
-                    break
-
-        ocr_cache: Dict[str, str] = {}
-        cache_file: Optional[Path] = None
-        if cache_dir is not None:
-            cache_file = Path(cache_dir) / "ocr_cache.json"
-            if cache_file.exists():
-                try:
-                    ocr_cache = json.loads(cache_file.read_text(encoding="utf-8"))
-                except Exception:
-                    ocr_cache = {}
-
-        print(f"  Running OCR on {len(scenes)} scene keyframes (cache: {cache_file})...")
-        ocr_count = 0
-        cache_hits = 0
-
-        for scene in scenes:
-            kf = scene.get("keyframe_path")
-            if not kf or not Path(kf).exists():
-                scene["ocr_text"] = None
-                continue
-
-            kf_path = Path(kf)
-            # Cache key: filename + mtime (detects edits without hashing)
-            try:
-                mtime = str(kf_path.stat().st_mtime)
-            except OSError:
-                mtime = "unknown"
-            cache_key = f"{kf_path.name}::{mtime}"
-
-            if cache_key in ocr_cache:
-                scene["ocr_text"] = ocr_cache[cache_key] or None
-                if ocr_cache[cache_key]:
-                    ocr_count += 1
-                cache_hits += 1
-                continue
-
-            try:
-                text = ocr.extract_text(
-                    kf,
-                    confidence_threshold=self.config.ocr_confidence_threshold,
-                    clean=True,
-                )
-                scene["ocr_text"] = text if text else None
-                ocr_cache[cache_key] = text  # store even if empty string
-                if text:
-                    ocr_count += 1
-            except Exception as e:
-                print(f"    OCR failed for scene {scene.get('scene_id')}: {e}")
-                scene["ocr_text"] = None
-                ocr_cache[cache_key] = ""
-
-        # ── Persist updated cache ───────────────────────────────────────
-        if cache_file is not None:
-            try:
-                cache_file.write_text(
-                    json.dumps(ocr_cache, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-            except Exception as e:
-                print(f"  Warning: could not write OCR cache: {e}")
-
-        hit_str = f", {cache_hits} from cache" if cache_hits else ""
-        print(f"  ✓ OCR complete: {ocr_count}/{len(scenes)} scenes had text{hit_str}")
-        return scenes
-
-    # ── 5. Visual Enrichment (Qwen2-VL) ─────────
+    # ── 4. Visual Enrichment (Qwen2-VL) ─────────
 
     def enrich_with_visual_features(self, scenes: List[Dict]) -> List[Dict]:
         """
@@ -650,8 +484,6 @@ class SceneDetector:
         print(f"  Running visual enrichment (Qwen2-VL) on {len(scenes)} scenes...")
         count = 0
 
-        failed_scenes: List[Dict] = []  # scenes where Qwen failed → EasyOCR fallback
-
         for scene in scenes:
             kf = scene.get("keyframe_path")
             if not kf or not Path(kf).exists():
@@ -665,23 +497,14 @@ class SceneDetector:
                 scene.update({
                     "caption": result.get("caption"),
                     "object_labels": result.get("object_labels", []),
-                    "ocr_text": result.get("ocr_text"),  # Qwen2-VL OCR
+                    "ocr_text": result.get("ocr_text"),
                 })
                 count += 1
             except Exception as e:
                 print(f"    Visual enrichment failed for scene {scene.get('scene_id')}: {e}")
                 scene.setdefault("caption", None)
                 scene.setdefault("object_labels", [])
-                # Mark for EasyOCR fallback so ocr_text is not silently null
-                failed_scenes.append(scene)
-
-        # ── Fallback: run EasyOCR on scenes where Qwen failed ──────────
-        if failed_scenes and self.config.enable_ocr:
-            print(f"  Falling back to EasyOCR for {len(failed_scenes)} scene(s) where Qwen failed...")
-            try:
-                self.enrich_with_ocr(failed_scenes)
-            except Exception as e:
-                print(f"  EasyOCR fallback also failed: {e}")
+                scene.setdefault("ocr_text", None)
 
         print(f"  ✓ Visual enrichment complete: {count}/{len(scenes)} scenes processed")
         return scenes
@@ -694,17 +517,15 @@ class SceneDetector:
         base_output_dir: str = "processed/scenes",
         force_reprocess: bool = False,
         run_refinement: bool = None,
-        run_ocr: bool = None,
     ) -> List[Dict]:
         """
-        Full scene processing pipeline: detect → refine → OCR.
+        Full scene processing pipeline: detect → refine (CLIP) → enrich (Qwen2-VL).
 
         Args:
             video_path: Path to video file (any format)
             base_output_dir: Output directory for scene data
             force_reprocess: Overwrite existing results
             run_refinement: Override config.enable_refinement
-            run_ocr: Override config.enable_ocr
 
         Returns:
             List of fully processed scene dicts
@@ -716,7 +537,7 @@ class SceneDetector:
             force_reprocess=force_reprocess,
         )
 
-        # Refine
+        # Refine (CLIP similarity merging)
         do_refine = run_refinement if run_refinement is not None else self.config.enable_refinement
         if do_refine and scenes:
             try:
@@ -724,18 +545,9 @@ class SceneDetector:
             except Exception as e:
                 print(f"  ! Refinement failed: {e}")
 
-        # OCR (EasyOCR) - only if Qwen-VL is not fulfilling enrichment or specifically forced
-        do_ocr = run_ocr if run_ocr is not None else self.config.enable_ocr
-        if do_ocr and scenes and not self.config.enable_visual_enrichment:
-            try:
-                scenes = self.enrich_with_ocr(scenes)
-            except Exception as e:
-                print(f"  ! OCR enrichment failed: {e}")
-
-        # Visual Enrichment (Qwen2-VL) - includes Caption, Labels, and OCR
+        # Visual Enrichment (Qwen2-VL) — captions, object labels, OCR
         if self.config.enable_visual_enrichment and scenes:
             try:
-                # This now provides ocr_text as well, replacing the need for EasyOCR
                 scenes = self.enrich_with_visual_features(scenes)
             except Exception as e:
                 print(f"  ! Visual enrichment failed: {e}")

@@ -443,9 +443,36 @@ class SemanticSearchEngine:
             metadata["search_message"] = f"Showing best available matches for \"{search_query}\""
             return {"results": results, "search_metadata": metadata}
         
-        # ── Tier 3: Word decomposition using extracted keywords ──
-        words = keywords  # Already cleaned of stop words
+        # ── Tier 3a: Keyword-phrase search ──────────────────────────────────
+        # Before splitting into individual words, try the extracted keywords
+        # joined as a phrase. This keeps named entities ("Deepsea Stavanger",
+        # "Omega Alpha well") intact and avoids misleading "individual terms"
+        # messages when a specific proper noun just isn't in transcripts.
+        words = keywords  # already cleaned of stop words
         
+        if len(words) > 1:
+            phrase_query = " ".join(words)
+            metadata["tiers_tried"].append("phrase")
+            phrase_results = self.search(
+                query=phrase_query,
+                top_k=top_k,
+                min_score=0.15,
+                video_filter=video_filter,
+                log_query=False,
+            )
+            
+            if phrase_results and phrase_results[0].score > (results[0].score if results else 0):
+                results = phrase_results
+            
+            # If phrase search produced enough good hits, stop here
+            good_results = [r for r in results if r.score >= 0.20]
+            if len(good_results) >= min(2, top_k):
+                metadata["search_strategy"] = "phrase"
+                metadata["search_message"] = f"Showing best matches for \"{phrase_query}\""
+                return {"results": results, "search_metadata": metadata}
+        
+        # ── Tier 3b: Individual word decomposition (last resort) ─────────────
+        # Only reached when Tier 1, 2, and 3a all fail to produce enough hits.
         if len(words) > 1:
             metadata["tiers_tried"].append("decomposed")
             all_word_results = {}
@@ -468,7 +495,7 @@ class SemanticSearchEngine:
             
             decomposed_results = sorted(
                 all_word_results.values(),
-                key=lambda x: x.score, 
+                key=lambda x: x.score,
                 reverse=True
             )[:top_k]
             
@@ -477,10 +504,9 @@ class SemanticSearchEngine:
             ):
                 results = decomposed_results
                 metadata["search_strategy"] = "expanded"
-                matched_words = ", ".join(f'"{w}"' for w in words)
                 metadata["search_message"] = (
-                    f"No exact matches for \"{search_query}\". "
-                    f"Showing results for individual terms: {matched_words}"
+                    f"Couldn't find \"{search_query}\" as a phrase. "
+                    f"Showing similar results for related terms."
                 )
             elif results:
                 metadata["search_strategy"] = "relaxed"
@@ -505,6 +531,7 @@ class SemanticSearchEngine:
             )
         
         return {"results": results, "search_metadata": metadata}
+
 
     def _semantic_search(
         self, query_embedding, top_k: int = 20, video_filter: Optional[str] = None

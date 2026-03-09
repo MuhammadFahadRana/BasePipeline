@@ -115,8 +115,15 @@ class VisualFeatureExtractor:
         """
         if not os.path.exists(image_path):
             return {"caption": "", "object_labels": [], "ocr_text": ""}
-            
-        # Prepare the query
+        
+        try:
+            return self._run_inference(image_path)
+        except Exception as e:
+            print(f"  Warning: analyze_image failed for {image_path}: {e}")
+            return {"caption": None, "object_labels": [], "ocr_text": None}
+
+    def _run_inference(self, image_path) -> dict:
+        """Internal: run the model on a single image."""
         query = (
             "1. Describe this video scene in a short, descriptive sentence.\n"
             "2. List all important objects visible in the scene as comma-separated tags.\n"
