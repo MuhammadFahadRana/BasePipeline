@@ -929,6 +929,129 @@ async def hybrid_search(
         raise HTTPException(status_code=500, detail=f"Hybrid search failed: {str(e)}")
 
 
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  OpenAI-compatible endpoints — for Open WebUI / any OpenAI client       ║
+# ║  Base URL to use in Open WebUI: http://host.docker.internal:8000/v1     ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatCompletionRequest(BaseModel):
+    model: str = "video-rag"
+    messages: List[ChatMessage]
+    stream: bool = True
+    max_tokens: int = Field(512, ge=1, le=2048)
+    temperature: float = Field(0.1, ge=0.0, le=2.0)
+
+
+@app.get("/v1/models")
+async def list_models():
+    """OpenAI-compatible model list. Required by Open WebUI on startup."""
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": "video-rag",
+                "object": "model",
+                "created": 1700000000,
+                "owned_by": "local",
+                "description": "Video semantic search RAG — answers questions from your video library.",
+            }
+        ],
+    }
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(
+    request: ChatCompletionRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    OpenAI-compatible chat completions endpoint.
+
+    Workflow:
+    1. Extract the latest user message as the question
+    2. Check system message for optional `video:<filename>` scoping directive
+    3. Run VideoQA RAG: semantic search → Qwen2.5-1.5B generates grounded answer
+    4. Stream back tokens via SSE (or return full JSON if stream=False)
+
+    Connect Open WebUI to: http://host.docker.internal:8000/v1
+    Select model: video-rag
+    """
+    from llm.video_qa_streaming import get_streaming_qa
+
+    # ── Extract the user's question ──────────────────────────────────────
+    user_question = ""
+    for msg in reversed(request.messages):
+        if msg.role == "user":
+            user_question = msg.content.strip()
+            break
+
+    if not user_question:
+        raise HTTPException(status_code=400, detail="No user message found in messages.")
+
+    # ── Check system prompt for video scoping directive ──────────────────
+    # e.g. system: "video:AkerBP_2.mp4" → restricts search to that file
+    video_filter: Optional[str] = None
+    for msg in request.messages:
+        if msg.role == "system":
+            import re
+            m = re.search(r"video:\s*([^\s]+)", msg.content, re.IGNORECASE)
+            if m:
+                video_filter = m.group(1).strip()
+                break
+
+    # ── Load StreamingVideoQA (singleton, lazy) ──────────────────────────
+    try:
+        qa = get_streaming_qa(db=db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"VideoQA system could not be initialised: {e}"
+        )
+
+    # ── Streaming response (Open WebUI default: stream=True) ─────────────
+    if request.stream:
+        async def sse_generator():
+            try:
+                for chunk in qa.stream_ask(
+                    question=user_question,
+                    video_filter=video_filter,
+                    max_new_tokens=request.max_tokens,
+                ):
+                    yield chunk
+                    # Small yield point so FastAPI can flush SSE chunks
+                    await asyncio.sleep(0)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+
+        return StreamingResponse(
+            sse_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",   # Disable nginx buffering
+            },
+        )
+
+    # ── Non-streaming response ────────────────────────────────────────────
+    try:
+        result = qa.ask_sync(
+            question=user_question,
+            video_filter=video_filter,
+            top_k=5,
+        )
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/keyframe")
 async def serve_keyframe(path: str = Query(..., description="Path to keyframe image")):
     """Serve keyframe images for thumbnails in search results."""

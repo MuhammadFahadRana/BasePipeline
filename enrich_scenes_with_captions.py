@@ -40,26 +40,44 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 
-# ── Default model ─────────────────────────────────────────────────────────────
 DEFAULT_MODEL = "Qwen/Qwen2-VL-2B-Instruct"
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Enrich scene keyframes with Qwen2-VL captions")
-    p.add_argument("--model",   default=DEFAULT_MODEL, help="HuggingFace model ID")
-    p.add_argument("--limit",   type=int, default=None,  help="Max scenes to process (None = all)")
-    p.add_argument("--dry-run", action="store_true",     help="Print captions but do not update DB")
-    p.add_argument("--video",   default=None,            help="Only process scenes from this video filename")
-    p.add_argument("--batch-size", type=int, default=1,  help="Images per Qwen2-VL call (keep 1 for stability)")
-    p.add_argument("--force",   action="store_true",     help="Re-run even if caption already exists")
-    p.add_argument("--skip-embeddings", action="store_true",
-                   help="Skip text embedding generation (captions only, no vector search indexing)")
+    p = argparse.ArgumentParser(
+        description="Enrich scene keyframes with Qwen2-VL captions"
+    )
+    p.add_argument("--model", default=DEFAULT_MODEL, help="HuggingFace model ID")
+    p.add_argument(
+        "--limit", type=int, default=None, help="Max scenes to process (None = all)"
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", help="Print captions but do not update DB"
+    )
+    p.add_argument(
+        "--video", default=None, help="Only process scenes from this video filename"
+    )
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="Images per Qwen2-VL call (keep 1 for stability)",
+    )
+    p.add_argument(
+        "--force", action="store_true", help="Re-run even if caption already exists"
+    )
+    p.add_argument(
+        "--skip-embeddings",
+        action="store_true",
+        help="Skip text embedding generation (captions only, no vector search indexing)",
+    )
     return p.parse_args()
 
 
 def load_extractor(model_name: str):
     """Load Qwen2-VL. Uses 4-bit by default to fit in 8 GB VRAM."""
     from extract_visual_features import VisualFeatureExtractor
+
     return VisualFeatureExtractor(
         model_name=model_name,
         device="auto",
@@ -70,6 +88,7 @@ def load_extractor(model_name: str):
 def load_embedding_generator():
     """Load the text embedding model used by the search engine."""
     from embeddings.text_embeddings import get_embedding_generator
+
     return get_embedding_generator()
 
 
@@ -95,9 +114,9 @@ def get_scenes_to_process(db: Session, video_filter, force: bool, limit):
 
 def update_scene(db: Session, scene: Scene, result: dict, dry_run: bool):
     """Write caption/object_labels/ocr_text back to the DB."""
-    caption       = result.get("caption") or None
+    caption = result.get("caption") or None
     object_labels = result.get("object_labels") or []
-    ocr_text      = result.get("ocr_text") or None
+    ocr_text = result.get("ocr_text") or None
 
     if dry_run:
         return
@@ -112,15 +131,17 @@ def update_scene(db: Session, scene: Scene, result: dict, dry_run: bool):
             WHERE id = :scene_id
         """),
         {
-            "caption":  caption,
-            "labels":   json.dumps(object_labels),
+            "caption": caption,
+            "labels": json.dumps(object_labels),
             "ocr_text": ocr_text,
             "scene_id": scene.id,
         },
     )
 
 
-def upsert_caption_embedding(db: Session, scene: Scene, result: dict, emb_gen, dry_run: bool) -> bool:
+def upsert_caption_embedding(
+    db: Session, scene: Scene, result: dict, emb_gen, dry_run: bool
+) -> bool:
     """
     Generate and upsert a text embedding from the scene's caption +
     object labels + OCR text into the embeddings table.
@@ -152,20 +173,26 @@ def upsert_caption_embedding(db: Session, scene: Scene, result: dict, emb_gen, d
     vec = emb_gen.encode_single(embed_text)
 
     # Upsert: update if a scene-level embedding already exists, else insert
-    existing = db.query(Embedding).filter(
-        Embedding.scene_id == scene.id,
-        Embedding.segment_id == None,  # noqa: E711
-    ).first()
+    existing = (
+        db.query(Embedding)
+        .filter(
+            Embedding.scene_id == scene.id,
+            Embedding.segment_id == None,  # noqa: E711
+        )
+        .first()
+    )
 
     if existing:
         existing.embedding = vec.tolist()
     else:
-        db.add(Embedding(
-            scene_id=scene.id,
-            segment_id=None,
-            embedding=vec.tolist(),
-            embedding_model=emb_gen.model_name,
-        ))
+        db.add(
+            Embedding(
+                scene_id=scene.id,
+                segment_id=None,
+                embedding=vec.tolist(),
+                embedding_model=emb_gen.model_name,
+            )
+        )
 
     return True
 
@@ -181,7 +208,9 @@ def main():
     print(f"Limit      : {args.limit or 'all'}")
     print(f"Force      : {args.force}")
     print(f"Video      : {args.video or 'all'}")
-    print(f"Embeddings : {'skip' if args.skip_embeddings else 'yes — generate + store for vector search'}")
+    print(
+        f"Embeddings : {'skip' if args.skip_embeddings else 'yes — generate + store for vector search'}"
+    )
     print("=" * 60)
 
     if not test_connection():
@@ -209,7 +238,9 @@ def main():
             if kf_path.exists():
                 valid_scenes.append((s, str(kf_path)))
             else:
-                print(f"  ⚠ Keyframe not found, skipping scene {s.id}: {s.keyframe_path}")
+                print(
+                    f"  ⚠ Keyframe not found, skipping scene {s.id}: {s.keyframe_path}"
+                )
 
         print(f"Valid keyframes on disk: {len(valid_scenes)} / {total}")
 
@@ -220,7 +251,9 @@ def main():
         if args.dry_run:
             print("\n[DRY-RUN] Loading model for test...")
         else:
-            print("\nLoading Qwen2-VL model (first time may download weights ~4-8 GB)...")
+            print(
+                "\nLoading Qwen2-VL model (first time may download weights ~4-8 GB)..."
+            )
 
         extractor = load_extractor(args.model)
 
@@ -232,8 +265,8 @@ def main():
             print(f"✓ Embedding model ready: {emb_gen.model_name}")
 
         print(f"\nStarting enrichment of {len(valid_scenes)} scenes...\n")
-        success   = 0
-        failed    = 0
+        success = 0
+        failed = 0
         emb_saved = 0
         start_time = time.time()
 
@@ -243,8 +276,8 @@ def main():
                 result = extractor.analyze_image(kf_path)
                 elapsed = time.time() - t0
 
-                caption  = result.get("caption", "")
-                labels   = result.get("object_labels", [])
+                caption = result.get("caption", "")
+                labels = result.get("object_labels", [])
                 ocr_text = result.get("ocr_text", "")
 
                 status = "[DRY-RUN]" if args.dry_run else "✓"
@@ -261,7 +294,9 @@ def main():
 
                 # 2. Generate + store semantic embedding for this caption
                 if emb_gen is not None:
-                    saved = upsert_caption_embedding(db, scene, result, emb_gen, dry_run=args.dry_run)
+                    saved = upsert_caption_embedding(
+                        db, scene, result, emb_gen, dry_run=args.dry_run
+                    )
                     if saved:
                         emb_saved += 1
 
@@ -290,7 +325,9 @@ def main():
         print(f"Success          : {success}")
         print(f"Failed           : {failed}")
         print(f"Embeddings saved : {emb_saved}")
-        print(f"Time             : {total_time/60:.1f} min ({total_time/max(success, 1):.1f}s/scene avg)")
+        print(
+            f"Time             : {total_time / 60:.1f} min ({total_time / max(success, 1):.1f}s/scene avg)"
+        )
         if not args.dry_run:
             print(f"\nNext step: restart api/app.py to see improved search results.")
 

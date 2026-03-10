@@ -9,7 +9,7 @@ from datetime import timedelta, datetime
 import time
 
 # Import from transcribe_all for multi-model support
-#from transcribe_all import SimpleTranscriber
+# from transcribe_all import SimpleTranscriber
 
 from transcriber import SimpleTranscriber
 from scene_detector import SceneDetector, SceneConfig
@@ -17,6 +17,7 @@ from scene_detector import SceneDetector, SceneConfig
 # Database ingestion
 try:
     from database.ingest import DataIngester
+
     HAS_DB = True
 except ImportError:
     HAS_DB = False
@@ -52,7 +53,10 @@ class BasicVideoPipeline:
         """
         # Default to Whisper base if no variant specified
         if model_variant is None:
-            model_variant = {"name": "base", "description": "Fast, good for simple audio"}
+            model_variant = {
+                "name": "base",
+                "description": "Fast, good for simple audio",
+            }
 
         self.transcriber = SimpleTranscriber(
             backend=backend, model_variant=model_variant, device=device
@@ -138,7 +142,7 @@ class BasicVideoPipeline:
         # Cache check
         current_fp = self._video_fingerprint(video_path, use_hash=use_hash)
 
-        # current_cfg 
+        # current_cfg
         # TODO: Make this more dynamic
         current_cfg = {
             "whisper_model": getattr(self.transcriber, "model_name", "unknown"),
@@ -163,21 +167,23 @@ class BasicVideoPipeline:
             results_file = results_dir / "results.json"
             print(f"\n✓ Skipping (cached): {video_name}")
             print(f"  Using existing results: {results_file}")
-            
+
             try:
                 with open(results_file, "r", encoding="utf-8") as f:
                     results = json.load(f)
-                
+
                 duration = results.get("processing_info", {}).get("processing_duration")
                 if duration is not None:
-                    is_estimated = results.get("processing_info", {}).get("duration_is_estimated", False)
+                    is_estimated = results.get("processing_info", {}).get(
+                        "duration_is_estimated", False
+                    )
                     est_str = " (estimated)" if is_estimated else ""
                     print(f"  Processing time: {duration:.2f}s{est_str}")
-                
+
                 # Still check if we need to ingest into DB if HAS_DB
                 if HAS_DB and not self.skip_ingest:
                     self._ingest_results(results_file, generate_embeddings)
-                
+
                 return results
             except Exception as e:
                 print(f"  ! Error reading cached results: {e}")
@@ -188,9 +194,9 @@ class BasicVideoPipeline:
         scenes_dir.mkdir(parents=True, exist_ok=True)
         results_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print(f"Processing: {video_name}")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
 
         start_time = time.time()
 
@@ -205,7 +211,9 @@ class BasicVideoPipeline:
             transcript = {"text": "", "segments": [], "language": "unknown"}
 
         # Check if audio-only
-        is_audio = video_path.suffix.lower() in self.scene_detector.config.audio_extensions
+        is_audio = (
+            video_path.suffix.lower() in self.scene_detector.config.audio_extensions
+        )
 
         if is_audio:
             print("\n2. Audio file detected - Skipping scene detection & refinement.")
@@ -213,20 +221,21 @@ class BasicVideoPipeline:
             last_end = 0.0
             if transcript.get("segments"):
                 last_end = transcript["segments"][-1]["end"]
-            
-            scenes = [{
-                "scene_id": 0,
-                "start_time": 0.0,
-                "end_time": last_end,
-                "duration": last_end,
-                "keyframe_path": None,
-                "ocr_text": None
-            }]
+
+            scenes = [
+                {
+                    "scene_id": 0,
+                    "start_time": 0.0,
+                    "end_time": last_end,
+                    "duration": last_end,
+                    "keyframe_path": None,
+                    "ocr_text": None,
+                }
+            ]
         else:
             print("\n2. Detecting & refining scenes...")
             scenes = self.scene_detector.detect_scenes(
-                video_path, 
-                base_output_dir=str(output_base / "scenes")
+                video_path, base_output_dir=str(output_base / "scenes")
             )
 
             print("\n2b. Refining scenes (CLIP)...")
@@ -239,13 +248,17 @@ class BasicVideoPipeline:
             try:
                 scenes = self.scene_detector.enrich_with_visual_features(scenes)
                 # Re-save scenes cache with enrichment data included
-                scenes_cache = output_base / "scenes" / video_path.stem / f"{video_path.stem}_scenes.json"
+                scenes_cache = (
+                    output_base
+                    / "scenes"
+                    / video_path.stem
+                    / f"{video_path.stem}_scenes.json"
+                )
                 if scenes_cache.exists():
                     with open(scenes_cache, "w", encoding="utf-8") as f:
                         json.dump(scenes, f, indent=2, ensure_ascii=False)
             except Exception as e:
                 print(f"Visual enrichment failed: {e}")
-
 
         print("\n3. Aligning transcripts with scenes...")
         aligned_data = self.align_transcript_with_scenes(transcript, scenes)
@@ -293,7 +306,7 @@ class BasicVideoPipeline:
                     results_file,
                     generate_embeddings=generate_embeddings,
                     generate_visual_embeddings=generate_embeddings,
-                    update_existing=True
+                    update_existing=True,
                 )
         except Exception as e:
             print(f"  ! Ingestion failed: {e}")
@@ -414,7 +427,7 @@ class BasicVideoPipeline:
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Video Analysis Report: {results['video']['filename']}</title>
+            <title>Video Analysis Report: {results["video"]["filename"]}</title>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 20px; }}
                 .header {{ background: #f0f0f0; padding: 20px; border-radius: 5px; }}
@@ -429,15 +442,15 @@ class BasicVideoPipeline:
         <body>
             <div class="header">
                 <h1>Video Analysis Report</h1>
-                <h2>{results['video']['filename']}</h2>
+                <h2>{results["video"]["filename"]}</h2>
             </div>
 
             <div class="stats">
                 <div class="stat-box">
                     <h3>Statistics</h3>
-                    <p>Duration: {results['scene_analysis']['total_duration']:.1f}s</p>
-                    <p>Scenes: {results['scene_analysis']['num_scenes']}</p>
-                    <p>Transcript Segments: {results['transcription']['num_segments']}</p>
+                    <p>Duration: {results["scene_analysis"]["total_duration"]:.1f}s</p>
+                    <p>Scenes: {results["scene_analysis"]["num_scenes"]}</p>
+                    <p>Transcript Segments: {results["transcription"]["num_segments"]}</p>
                 </div>
             </div>
 
@@ -451,14 +464,14 @@ class BasicVideoPipeline:
 
             html_content += f"""
                 <div class="scene">
-                    <h3>Scene {scene.get('scene_id', '')}</h3>
-                    <p>{scene.get('start_time', 0):.1f}s - {scene.get('end_time', 0):.1f}s ({duration:.1f}s)</p>
+                    <h3>Scene {scene.get("scene_id", "")}</h3>
+                    <p>{scene.get("start_time", 0):.1f}s - {scene.get("end_time", 0):.1f}s ({duration:.1f}s)</p>
             """
 
             if scene.get("keyframe_path"):
                 html_content += f"""
                     <div class="keyframe">
-                        <img src="{scene['keyframe_path']}" alt="Keyframe" style="max-width: 300px;">
+                        <img src="{scene["keyframe_path"]}" alt="Keyframe" style="max-width: 300px;">
                     </div>
                 """
 
@@ -467,7 +480,7 @@ class BasicVideoPipeline:
                 for seg in scene["transcript_segments"]:
                     html_content += f"""
                         <div class="transcript">
-                            <strong>[{seg['start_str']}]</strong> {seg['text']}
+                            <strong>[{seg["start_str"]}]</strong> {seg["text"]}
                         </div>
                     """
 
@@ -522,16 +535,18 @@ class BasicVideoPipeline:
         video_folder = Path(video_folder)
 
         if selected:
-            videos = [Path(s) if Path(s).suffix else (video_folder / s) for s in selected]
+            videos = [
+                Path(s) if Path(s).suffix else (video_folder / s) for s in selected
+            ]
         else:
             videos = list(video_folder.glob("*.*"))
 
         if limit is not None:
             videos = videos[:limit]
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Starting batch processing of {len(videos)} videos")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         results = []
         batch_start_time = time.time()
@@ -546,36 +561,53 @@ class BasicVideoPipeline:
                     force=force,
                 )
                 video_elapsed = time.time() - video_start_time
-                processing_time = result.get("processing_info", {}).get("processing_duration", video_elapsed)
-                results.append({
-                    "video": video_path.name,
-                    "success": True,
-                    "processing_time": processing_time,
-                    "wall_clock_time": video_elapsed
-                })
+                processing_time = result.get("processing_info", {}).get(
+                    "processing_duration", video_elapsed
+                )
+                results.append(
+                    {
+                        "video": video_path.name,
+                        "success": True,
+                        "processing_time": processing_time,
+                        "wall_clock_time": video_elapsed,
+                    }
+                )
             except Exception as e:
                 video_elapsed = time.time() - video_start_time
                 print(f"Processing failed: {str(e)}")
-                results.append({
-                    "video": video_path.name,
-                    "success": False,
-                    "error": str(e),
-                    "wall_clock_time": video_elapsed
-                })
+                results.append(
+                    {
+                        "video": video_path.name,
+                        "success": False,
+                        "error": str(e),
+                        "wall_clock_time": video_elapsed,
+                    }
+                )
 
         batch_total_time = time.time() - batch_start_time
-        self.create_batch_summary(results, output_base=output_base, batch_total_time=batch_total_time)
+        self.create_batch_summary(
+            results, output_base=output_base, batch_total_time=batch_total_time
+        )
         return results
 
-    def create_batch_summary(self, results: List[Dict], output_base: str = "processed", batch_total_time: float = 0.0):
+    def create_batch_summary(
+        self,
+        results: List[Dict],
+        output_base: str = "processed",
+        batch_total_time: float = 0.0,
+    ):
         successful = [r for r in results if r["success"]]
         failed = [r for r in results if not r["success"]]
 
         # Calculate timing statistics
-        processing_times = [r.get("processing_time", 0) for r in successful if "processing_time" in r]
+        processing_times = [
+            r.get("processing_time", 0) for r in successful if "processing_time" in r
+        ]
         min_time = min(processing_times) if processing_times else 0
         max_time = max(processing_times) if processing_times else 0
-        avg_time = sum(processing_times) / len(processing_times) if processing_times else 0
+        avg_time = (
+            sum(processing_times) / len(processing_times) if processing_times else 0
+        )
 
         summary = {
             "total_videos": len(results),
@@ -601,22 +633,34 @@ class BasicVideoPipeline:
 
         # Save detailed timing CSV
         import csv
+
         csv_file = summary_dir / "batch_timing_details.csv"
         with open(csv_file, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=["video", "success", "processing_time_s", "wall_clock_time_s", "error"])
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "video",
+                    "success",
+                    "processing_time_s",
+                    "wall_clock_time_s",
+                    "error",
+                ],
+            )
             writer.writeheader()
             for r in results:
-                writer.writerow({
-                    "video": r["video"],
-                    "success": "Yes" if r["success"] else "No",
-                    "processing_time_s": round(r.get("processing_time", 0), 2),
-                    "wall_clock_time_s": round(r.get("wall_clock_time", 0), 2),
-                    "error": r.get("error", "")
-                })
+                writer.writerow(
+                    {
+                        "video": r["video"],
+                        "success": "Yes" if r["success"] else "No",
+                        "processing_time_s": round(r.get("processing_time", 0), 2),
+                        "wall_clock_time_s": round(r.get("wall_clock_time", 0), 2),
+                        "error": r.get("error", ""),
+                    }
+                )
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("BATCH PROCESSING SUMMARY")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Successful: {len(successful)}/{len(results)}")
         print(f"Failed: {len(failed)}/{len(results)}")
         print(f"\nTiming Statistics:")
@@ -637,17 +681,40 @@ class BasicVideoPipeline:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Basic Video Pipeline with SOTA Embeddings")
+    parser = argparse.ArgumentParser(
+        description="Basic Video Pipeline with SOTA Embeddings"
+    )
     parser.add_argument("--video", type=str, help="Path to a single video file")
-    parser.add_argument("--folder", type=str, default="videos", help="Folder containing videos to batch process")
-    parser.add_argument("--limit", type=int, help="Limit number of videos in batch process")
+    parser.add_argument(
+        "--folder",
+        type=str,
+        default="videos",
+        help="Folder containing videos to batch process",
+    )
+    parser.add_argument(
+        "--limit", type=int, help="Limit number of videos in batch process"
+    )
     parser.add_argument("--force", action="store_true", help="Force re-processing")
-    parser.add_argument("--use-hash", action="store_true", help="Use SHA256 hashing for input change detection")
-    parser.add_argument("--skip-db", action="store_true", help="Skip database ingestion")
-    parser.add_argument("--ingest-only", action="store_true", help="Only perform database ingestion (results must exist)")
+    parser.add_argument(
+        "--use-hash",
+        action="store_true",
+        help="Use SHA256 hashing for input change detection",
+    )
+    parser.add_argument(
+        "--skip-db", action="store_true", help="Skip database ingestion"
+    )
+    parser.add_argument(
+        "--ingest-only",
+        action="store_true",
+        help="Only perform database ingestion (results must exist)",
+    )
     parser.add_argument("--backend", type=str, default="whisper", help="ASR backend")
-    parser.add_argument("--model", type=str, default="large-v3", help="Whisper model variant")
-    parser.add_argument("--threshold", type=float, default=20.0, help="Scene detection threshold")
+    parser.add_argument(
+        "--model", type=str, default="large-v3", help="Whisper model variant"
+    )
+    parser.add_argument(
+        "--threshold", type=float, default=20.0, help="Scene detection threshold"
+    )
 
     args = parser.parse_args()
 
@@ -671,20 +738,16 @@ if __name__ == "__main__":
                     ingester.ingest_batch(
                         processed_dir="processed",
                         update_existing=True,
-                        force=args.force
+                        force=args.force,
                     )
             except Exception as e:
                 print(f"Batch ingestion failed: {e}")
     elif args.video:
-        pipeline.process_video(
-            args.video,
-            force=args.force,
-            use_hash=args.use_hash
-        )
+        pipeline.process_video(args.video, force=args.force, use_hash=args.use_hash)
     else:
         pipeline.batch_process(
             video_folder=args.folder,
             limit=args.limit,
             force=args.force,
-            use_hash=args.use_hash
+            use_hash=args.use_hash,
         )
