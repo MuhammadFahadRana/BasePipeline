@@ -23,6 +23,7 @@ const videoModal = document.getElementById('videoModal');
 const videoModalOverlay = document.getElementById('videoModalOverlay');
 const videoModalClose = document.getElementById('videoModalClose');
 const videoPlayer = document.getElementById('videoPlayer');
+const videoSubtitles = document.getElementById('videoSubtitles');
 const videoModalTitle = document.getElementById('videoModalTitle');
 const videoModalTimestamp = document.getElementById('videoModalTimestamp');
 const videoModalText = document.getElementById('videoModalText');
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     attachEventListeners();
     attachModalEventListeners();
     attachTabListeners();
+    attachMainNavListeners();
 });
 
 // Initialize App
@@ -84,19 +86,112 @@ async function loadVideos() {
         videos = await response.json();
 
         videoCount.textContent = videos.length;
-
-        // videoFilter
-        // Populate video filter dropdown
-        // videos.forEach(video => {
-        //     const option = document.createElement('option');
-        //     option.value = video.filename;
-        //     option.textContent = video.filename;
-        //     videoFilter.appendChild(option);
-        // });
+        renderVideosGrid(videos);
     } catch (error) {
         console.error('Failed to load videos:', error);
         videoCount.textContent = '?';
     }
+}
+
+// ============================================
+// MAIN NAV (Search / Videos tabs)
+// ============================================
+
+function attachMainNavListeners() {
+    const mainContent = document.querySelector('.main-content');
+    const videosTab = document.getElementById('videosTab');
+    const tabs = document.querySelectorAll('.main-nav-tab');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            if (tab.dataset.tab === 'videos') {
+                mainContent.style.display = 'none';
+                videosTab.style.display = 'block';
+            } else {
+                mainContent.style.display = '';
+                videosTab.style.display = 'none';
+            }
+        });
+    });
+}
+
+function formatDuration(seconds) {
+    if (!seconds) return '';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function renderVideosGrid(videoList) {
+    const grid = document.getElementById('videosGrid');
+    const empty = document.getElementById('videosEmpty');
+    const countEl = document.getElementById('videoTabCount');
+
+    grid.innerHTML = '';
+    countEl.textContent = `${videoList.length} video${videoList.length !== 1 ? 's' : ''}`;
+
+    if (!videoList.length) {
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+
+    videoList.forEach(video => {
+        const card = document.createElement('div');
+        card.className = 'video-browser-card';
+
+        const dur = formatDuration(video.duration_seconds);
+        const durHtml = dur ? `<span class="video-duration-badge">${dur}</span>` : '';
+        const model = video.whisper_model ? `<span>${video.whisper_model}</span>` : '';
+        const thumbUrl = `${API_BASE_URL}/video/thumbnail/${video.id}`;
+
+        card.innerHTML = `
+            <div class="video-browser-thumb">
+                <img class="video-thumb-img" src="${thumbUrl}" alt="Thumbnail for ${escapeHtml(video.filename)}"
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                />
+                <div class="video-thumb-fallback" style="display:none;">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="2" y="4" width="20" height="16" rx="3" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+                        <path d="M10 9L15 12L10 15V9Z" fill="rgba(255,255,255,0.3)"/>
+                    </svg>
+                </div>
+                <div class="play-overlay">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M8 5.14v14l11-7-11-7z"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="video-browser-info">
+                <p class="video-browser-name" title="${escapeHtml(video.filename)}">${escapeHtml(video.filename)}</p>
+                <div class="video-browser-meta">
+                    ${durHtml}
+                    ${model}
+                </div>
+            </div>
+        `;
+
+        card.addEventListener('click', () => openVideoFromBrowser(video));
+        grid.appendChild(card);
+    });
+}
+
+function openVideoFromBrowser(video) {
+    // Build a minimal result object compatible with openVideoPlayer
+    const result = {
+        video_id: video.id,
+        video_filename: video.filename,
+        timestamp: '00:00:00',
+        text: '',
+        start_time: 0,
+    };
+    currentQuery = ''; // no search query context
+    openVideoPlayer(result);
 }
 
 // Attach Event Listeners
@@ -650,6 +745,10 @@ function openVideoPlayer(result) {
     // Set video source using streaming endpoint
     const videoUrl = `${API_BASE_URL}/video/stream/${result.video_id}`;
     videoPlayer.src = videoUrl;
+
+    // Set subtitles source
+    const subtitlesUrl = `${API_BASE_URL}/video/subtitles/${result.video_id}`;
+    videoSubtitles.src = subtitlesUrl;
 
     // Show modal
     videoModal.style.display = 'flex';

@@ -90,6 +90,37 @@ select {
     margin: 0;
 }
 
+/* Videos toggle button in header */
+.nav-videos-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: #f1f5f9;
+    border: 1px solid var(--border-light);
+    color: var(--text-secondary);
+    padding: 0.4rem 0.85rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.nav-videos-btn:hover {
+    background: #e2e8f0;
+    color: var(--text-primary);
+    border-color: #d1d5db;
+}
+
+.nav-videos-btn.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+
 /* Search Area */
 .search-section {
     max-width: 720px;
@@ -986,4 +1017,211 @@ select {
     border-color: #22c55e;
     font-weight: 700;
     box-shadow: 0 0 0 1px #22c55e;
+}
+
+/* ========================================
+   MAIN NAVIGATION TABS
+   ======================================== */
+
+.main-nav {
+    display: flex;
+    gap: 0;
+    margin: 0 0 2.5rem;
+    border-bottom: 2px solid var(--border-light);
+    position: relative;
+}
+
+.main-nav-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: color 0.18s ease, border-color 0.18s ease;
+    letter-spacing: 0.01em;
+}
+
+.main-nav-tab:hover {
+    color: var(--text-primary);
+    border-bottom-color: #d1d5db;
+}
+
+.main-nav-tab.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent);
+    font-weight: 700;
+}
+
+.main-nav-tab svg {
+    flex-shrink: 0;
+}
+
+/* ========================================
+   VIDEOS TAB BROWSER
+   ======================================== */
+
+.videos-tab {
+    max-width: 1000px;
+    margin: 0 auto;
+    animation: fadeIn 0.25s ease-out;
+}
+
+.videos-tab-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.videos-tab-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.videos-tab-count {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+    background: #f1f5f9;
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius-full);
+}
+
+.videos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1.25rem;
+}
+
+.video-browser-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    box-shadow: var(--shadow-sm);
+}
+
+.video-browser-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+    border-color: #d1d5db;
+}
+
+.video-browser-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.video-browser-thumb .play-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    background: rgba(255, 255, 255, 0.15);
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(4px);
+    position: absolute;
+    /* Always centered over the image */
+    z-index: 1;
+    opacity: 0;
+    transform: scale(0.9);
+}
+
+.video-browser-card:hover .play-overlay {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.video-browser-thumb svg {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Thumbnail image */
+.video-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    position: absolute;
+    inset: 0;
+}
+
+/* Fallback for when thumbnail fails to load */
+.video-thumb-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    inset: 0;
+}
+
+.video-browser-info {
+    padding: 1rem 1rem 0.85rem;
+}
+
+.video-browser-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 0.4rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.video-browser-meta {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.video-duration-badge {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    background: #f1f5f9;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.videos-empty {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-tertiary);
+}
+
+.videos-empty svg {
+    margin-bottom: 1rem;
+    opacity: 0.3;
+}
+
+.videos-empty p {
+    margin: 0;
+    font-size: 0.9rem;
 }

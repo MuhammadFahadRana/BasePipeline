@@ -37,6 +37,23 @@
             </div>
         </header>
 
+        <!-- Tab Navigation -->
+        <nav class="main-nav">
+            <button class="main-nav-tab active" data-tab="search">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                Search
+            </button>
+            <button class="main-nav-tab" data-tab="videos">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="2" y="4" width="20" height="16" rx="3" stroke="currentColor" stroke-width="2"/>
+                    <path d="M10 9L15 12L10 15V9Z" fill="currentColor"/>
+                </svg>
+                Videos
+            </button>
+        </nav>
+
         <!-- Main Content -->
         <main class="main-content">
             <!-- Search Section -->
@@ -172,6 +189,23 @@
                 <p>Enter a query to search through the database</p>
             </div>
         </main>
+
+        <!-- Videos Tab Content -->
+        <section id="videosTab" class="videos-tab" style="display:none;">
+            <div class="videos-tab-header">
+                <h2>All Videos</h2>
+                <span class="videos-tab-count" id="videoTabCount">0 videos</span>
+            </div>
+            <div class="videos-grid" id="videosGrid"></div>
+            <div class="videos-empty" id="videosEmpty" style="display:none;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="2" y="4" width="20" height="16" rx="3" stroke="currentColor" stroke-width="2"/>
+                    <path d="M10 9L15 12L10 15V9Z" fill="currentColor" opacity="0.4"/>
+                </svg>
+                <p>No videos found. Make sure the API is running.</p>
+            </div>
+        </section>
+
     </div>
 
     <!-- Video Player Modal -->
@@ -201,7 +235,8 @@
                 </div>
             </div>
             <div class="video-container">
-                <video id="videoPlayer" controls preload="metadata">
+                <video id="videoPlayer" controls preload="metadata" crossorigin="anonymous">
+                    <track id="videoSubtitles" kind="subtitles" srclang="en" label="English" default>
                     Your browser does not support the video tag.
                 </video>
             </div>
@@ -255,4 +290,4 @@
     <script src="chat.js"></script>
 </body>
 
-</html>
+</html>

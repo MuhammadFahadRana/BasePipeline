@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastapi import FastAPI, Depends, HTTPException, Query, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -51,14 +51,20 @@ class MultiModalSearchRequest(BaseModel):
 
     query: str = Field(..., description="Search query", min_length=1)
     top_k: int = Field(10, description="Number of results to return", ge=1, le=50)
-    text_weight: float = Field(0.5, description="Weight for text similarity", ge=0, le=1)
-    vision_weight: float = Field(0.5, description="Weight for vision similarity", ge=0, le=1)
+    text_weight: float = Field(
+        0.5, description="Weight for text similarity", ge=0, le=1
+    )
+    vision_weight: float = Field(
+        0.5, description="Weight for vision similarity", ge=0, le=1
+    )
     use_vision: bool = Field(True, description="Enable vision search")
     search_mode: Optional[str] = Field(
         "balanced",
         description="Search mode: balanced, text_heavy, vision_heavy, visual_only",
     )
-    use_llm: bool = Field(True, description="Use LLM for intent parsing (disable for speed)")
+    use_llm: bool = Field(
+        True, description="Use LLM for intent parsing (disable for speed)"
+    )
     video_filter: Optional[str] = Field(None, description="Filter by video filename")
 
 
@@ -68,15 +74,23 @@ class SearchResponse(BaseModel):
     query: str
     results_count: int
     results: List[dict]
-    search_time_seconds: float = Field(..., description="Time taken to execute search in seconds")
-    search_metadata: Optional[dict] = Field(None, description="Additional search metadata (strategies, LLM intent, etc)")
+    search_time_seconds: float = Field(
+        ..., description="Time taken to execute search in seconds"
+    )
+    search_metadata: Optional[dict] = Field(
+        None, description="Additional search metadata (strategies, LLM intent, etc)"
+    )
 
 
 class QARequest(BaseModel):
     """Question Answering request model."""
 
-    question: str = Field(..., description="The question to ask about the video", min_length=3)
-    video_filter: Optional[str] = Field(None, description="Optional specific video to search in")
+    question: str = Field(
+        ..., description="The question to ask about the video", min_length=3
+    )
+    video_filter: Optional[str] = Field(
+        None, description="Optional specific video to search in"
+    )
     top_k: int = Field(5, description="Number of context snippets to use", ge=1, le=10)
 
 
@@ -129,7 +143,9 @@ app.add_middleware(
 async def startup_event():
     """Check database connection on startup."""
     if not test_connection():
-        raise RuntimeError("Failed to connect to database. Check your .env configuration.")
+        raise RuntimeError(
+            "Failed to connect to database. Check your .env configuration."
+        )
     print("✓ API server started successfully")
 
 
@@ -157,14 +173,17 @@ def get_search_engine(db: Session = Depends(get_db)):
 async def health_check():
     """Health check endpoint."""
     db_ok = test_connection()
-    return {"status": "healthy" if db_ok else "unhealthy", "database": "ok" if db_ok else "error"}
+    return {
+        "status": "healthy" if db_ok else "unhealthy",
+        "database": "ok" if db_ok else "error",
+    }
 
 
 @app.get("/video/stream/{video_id}")
 async def stream_video(video_id: int, request: Request, db: Session = Depends(get_db)):
     """
     Stream video file with support for range requests (seeking).
-    
+
     This endpoint allows the frontend to play videos directly in the browser
     and seek to specific timestamps from search results.
     """
@@ -172,9 +191,9 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
     video = db.query(Video).filter(Video.id == video_id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-    
+
     video_path = video.file_path
-    
+
     # Path Mapping (FIX): If DB contains Linux absolute paths but we are on Windows,
     # resolve the filename to the local 'videos' directory.
     if not os.path.exists(video_path):
@@ -182,44 +201,47 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
         # Check local 'videos' folder relative to project root
         project_root = Path(__file__).parent.parent
         resolved_path = project_root / "videos" / local_filename
-        
+
         if resolved_path.exists():
             video_path = str(resolved_path)
         else:
-            raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
-    
+            raise HTTPException(
+                status_code=404, detail=f"Video file not found: {video_path}"
+            )
+
     file_size = os.path.getsize(video_path)
-    
+
     # For .ts and other browser-incompatible formats, redirect to the transcode endpoint
     ext = os.path.splitext(video_path)[1].lower()
     if ext in TRANSCODE_EXTENSIONS:
         from fastapi.responses import RedirectResponse
+
         return RedirectResponse(url=f"/video/transcode/{video_id}")
-    
+
     # Determine content type based on extension
     content_types = {
         ".mp4": "video/mp4",
         ".webm": "video/webm",
     }
     content_type = content_types.get(ext, "video/mp4")
-    
+
     # Handle range requests for seeking
     range_header = request.headers.get("Range")
-    
+
     if range_header:
         # Parse range header (e.g., "bytes=0-1024")
         range_spec = range_header.replace("bytes=", "")
         start_str, end_str = range_spec.split("-")
         start = int(start_str) if start_str else 0
         end = int(end_str) if end_str else file_size - 1
-        
+
         # Ensure valid range
         if start >= file_size:
             raise HTTPException(status_code=416, detail="Range not satisfiable")
         end = min(end, file_size - 1)
-        
+
         chunk_size = end - start + 1
-        
+
         def iterfile():
             with open(video_path, "rb") as f:
                 f.seek(start)
@@ -231,29 +253,29 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
                         break
                     remaining -= len(data)
                     yield data
-        
+
         headers = {
             "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Accept-Ranges": "bytes",
             "Content-Length": str(chunk_size),
             "Content-Type": content_type,
         }
-        
+
         return StreamingResponse(iterfile(), status_code=206, headers=headers)
-    
+
     else:
         # Full file request
         def iterfile():
             with open(video_path, "rb") as f:
                 while chunk := f.read(8192):
                     yield chunk
-        
+
         headers = {
             "Accept-Ranges": "bytes",
             "Content-Length": str(file_size),
             "Content-Type": content_type,
         }
-        
+
         return StreamingResponse(iterfile(), headers=headers)
 
 
@@ -265,14 +287,14 @@ async def transcode_video(video_id: int, db: Session = Depends(get_db)):
     Used automatically for .ts and other container formats that browsers
     cannot play natively. Streams the transcoded output directly without
     writing a temporary file to disk.
-    
+
     Requires ffmpeg to be installed and on the system PATH.
     """
     # Resolve the video file path (same logic as stream_video)
     video = db.query(Video).filter(Video.id == video_id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-    
+
     video_path = video.file_path
     if not os.path.exists(video_path):
         local_filename = os.path.basename(video_path)
@@ -281,19 +303,27 @@ async def transcode_video(video_id: int, db: Session = Depends(get_db)):
         if resolved_path.exists():
             video_path = str(resolved_path)
         else:
-            raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
+            raise HTTPException(
+                status_code=404, detail=f"Video file not found: {video_path}"
+            )
 
     async def stream_ffmpeg():
         """Pipe ffmpeg stdout as a fragmented MP4 stream."""
         cmd = [
             "ffmpeg",
-            "-loglevel", "error",      # suppress progress spam
-            "-i", video_path,          # input file
-            "-c:v", "copy",            # copy video stream (no re-encode → fast)
-            "-c:a", "aac",             # re-encode audio to AAC for browser compat
-            "-f", "mp4",               # output container
-            "-movflags", "frag_keyframe+empty_moov+faststart",  # streaming-safe fragmented MP4
-            "pipe:1",                  # write to stdout
+            "-loglevel",
+            "error",  # suppress progress spam
+            "-i",
+            video_path,  # input file
+            "-c:v",
+            "copy",  # copy video stream (no re-encode → fast)
+            "-c:a",
+            "aac",  # re-encode audio to AAC for browser compat
+            "-f",
+            "mp4",  # output container
+            "-movflags",
+            "frag_keyframe+empty_moov+faststart",  # streaming-safe fragmented MP4
+            "pipe:1",  # write to stdout
         ]
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -314,7 +344,7 @@ async def transcode_video(video_id: int, db: Session = Depends(get_db)):
             # ffmpeg not on PATH
             raise HTTPException(
                 status_code=500,
-                detail="ffmpeg is not installed or not on PATH. Install ffmpeg to play .ts files."
+                detail="ffmpeg is not installed or not on PATH. Install ffmpeg to play .ts files.",
             )
 
     return StreamingResponse(
@@ -326,6 +356,48 @@ async def transcode_video(video_id: int, db: Session = Depends(get_db)):
         },
     )
 
+
+def format_vtt_timestamp(seconds: float) -> str:
+    """Format a float seconds value to WebVTT timestamp format (HH:MM:SS.mmm)."""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int(round((seconds - int(seconds)) * 1000))
+    return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
+
+@app.get("/video/subtitles/{video_id}", response_class=PlainTextResponse)
+async def get_video_subtitles(video_id: int, db: Session = Depends(get_db)):
+    """
+    Serve video subtitles in WebVTT format directly from the database.
+    """
+    from database.models import TranscriptSegment
+
+    # Check if video exists
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    segments = (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.video_id == video_id)
+        .order_by(TranscriptSegment.start_time)
+        .all()
+    )
+
+    if not segments:
+        return "WEBVTT\n\n"
+
+    # Build WebVTT string
+    vtt = ["WEBVTT\n"]
+    for i, seg in enumerate(segments, 1):
+        start = format_vtt_timestamp(seg.start_time)
+        end = format_vtt_timestamp(seg.end_time)
+        vtt.append(f"\n{i}")
+        vtt.append(f"{start} --> {end}")
+        vtt.append(seg.text.strip())
+
+    return "\n".join(vtt)
 
 
 @app.get("/videos", response_model=List[VideoInfo])
@@ -354,14 +426,16 @@ async def ask_video_question(request: QARequest, qa_system=Depends(get_video_qa)
     """
     try:
         result = qa_system.ask(
-            question=request.question, video_filter=request.video_filter, top_k=request.top_k
+            question=request.question,
+            video_filter=request.video_filter,
+            top_k=request.top_k,
         )
         return result
     except Exception as e:
         print(f"QA Error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-    
+
     videos = db.query(Video).all()
 
     return [
@@ -374,10 +448,13 @@ async def ask_video_question(request: QARequest, qa_system=Depends(get_video_qa)
         )
         for v in videos
     ]
-    
-    
+
+
 @app.post("/search", response_model=SearchResponse)
-async def search(request: SearchRequest, search_engine: SemanticSearchEngine = Depends(get_search_engine)):
+async def search(
+    request: SearchRequest,
+    search_engine: SemanticSearchEngine = Depends(get_search_engine),
+):
     """
     Semantic search endpoint.
 
@@ -395,7 +472,7 @@ async def search(request: SearchRequest, search_engine: SemanticSearchEngine = D
             video_filter=request.video_filter,
             log_query=True,
         )
-        
+
         search_time = time.time() - start_time
 
         return SearchResponse(
@@ -428,7 +505,7 @@ async def quick_search(
         fallback_data = search_engine.search_with_fallback(
             query=q, top_k=limit, video_filter=video
         )
-        
+
         results = fallback_data["results"]
         metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
@@ -460,7 +537,7 @@ async def exact_search(
 
     try:
         results = search_engine.search_exact_phrase(phrase=phrase, video_filter=video)
-        
+
         search_time = time.time() - start_time
 
         return {
@@ -475,7 +552,9 @@ async def exact_search(
 
 
 @app.post("/search/multimodal", response_model=SearchResponse)
-async def multimodal_search(request: MultiModalSearchRequest, db: Session = Depends(get_db)):
+async def multimodal_search(
+    request: MultiModalSearchRequest, db: Session = Depends(get_db)
+):
     """
     Multi-modal search endpoint combining text and vision.
 
@@ -497,7 +576,7 @@ async def multimodal_search(request: MultiModalSearchRequest, db: Session = Depe
     Results with both text_score and vision_score for transparency.
     """
     start_time = time.time()
-    
+
     try:
         # Set weights based on search mode if provided
         if request.search_mode:
@@ -510,9 +589,7 @@ async def multimodal_search(request: MultiModalSearchRequest, db: Session = Depe
 
         # Initialize multi-modal search engine
         mm_search = MultiModalSearchEngine(
-            db=db,
-            text_weight=text_weight,
-            vision_weight=vision_weight
+            db=db, text_weight=text_weight, vision_weight=vision_weight
         )
 
         # Perform search with fallback (includes LLM intent parsing)
@@ -522,7 +599,7 @@ async def multimodal_search(request: MultiModalSearchRequest, db: Session = Depe
             video_filter=request.video_filter,
             use_llm=request.use_llm,
         )
-        
+
         results = fallback_data["results"]
         metadata = fallback_data["search_metadata"]
 
@@ -531,7 +608,7 @@ async def multimodal_search(request: MultiModalSearchRequest, db: Session = Depe
         return SearchResponse(
             query=request.query,
             results_count=len(results),
-            results=[r.to_dict() if hasattr(r, 'to_dict') else r for r in results],
+            results=[r.to_dict() if hasattr(r, "to_dict") else r for r in results],
             search_time_seconds=round(search_time, 3),
             search_metadata=metadata,
         )
@@ -541,7 +618,7 @@ async def multimodal_search(request: MultiModalSearchRequest, db: Session = Depe
         print(f"\nMulti-modal search error: {str(e)}")
         print("Full traceback:")
         traceback.print_exc()
-        
+
         # Fallback to text-only search if vision fails
         if any(w in str(e).lower() for w in ["vision", "clip", "siglip", "embedding"]):
             print(f"Vision search failed, falling back to text-only: {e}")
@@ -549,7 +626,7 @@ async def multimodal_search(request: MultiModalSearchRequest, db: Session = Depe
             results = search_engine.search(
                 query=request.query,
                 top_k=request.top_k,
-                video_filter=request.video_filter
+                video_filter=request.video_filter,
             )
             search_time = time.time() - start_time
             return SearchResponse(
@@ -559,15 +636,22 @@ async def multimodal_search(request: MultiModalSearchRequest, db: Session = Depe
                 search_time_seconds=round(search_time, 3),
             )
         else:
-            raise HTTPException(status_code=500, detail=f"Multi-modal search failed: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Multi-modal search failed: {str(e)}"
+            )
 
 
 @app.get("/search/multimodal/quick")
 async def quick_multimodal_search(
     q: str = Query(..., description="Search query", min_length=1),
     limit: int = Query(10, description="Number of results", ge=1, le=50),
-    mode: str = Query("balanced", description="Search mode: balanced, text_heavy, vision_heavy, visual_only"),
-    use_llm: bool = Query(True, description="Use LLM for intent parsing (disable for speed)"),
+    mode: str = Query(
+        "balanced",
+        description="Search mode: balanced, text_heavy, vision_heavy, visual_only",
+    ),
+    use_llm: bool = Query(
+        True, description="Use LLM for intent parsing (disable for speed)"
+    ),
     video: Optional[str] = Query(None, description="Filter by video filename"),
     db: Session = Depends(get_db),
 ):
@@ -591,9 +675,7 @@ async def quick_multimodal_search(
         start_time = time.time()
 
         mm_search = MultiModalSearchEngine(
-            db=db,
-            text_weight=text_weight,
-            vision_weight=vision_weight
+            db=db, text_weight=text_weight, vision_weight=vision_weight
         )
 
         fallback_data = mm_search.search_with_fallback(
@@ -624,7 +706,7 @@ async def quick_multimodal_search(
         print(f"\nQuick multi-modal search error: {str(e)}")
         print("Full traceback:")
         traceback.print_exc()
-        
+
         # Graceful fallback to text-only
         if any(w in str(e).lower() for w in ["vision", "clip", "siglip", "embedding"]):
             print(f"Vision search unavailable, using text-only: {e}")
@@ -658,42 +740,44 @@ async def visual_image_search(
 ):
     """
     Reverse image search - upload an image to find similar moments in videos!
-    
+
     **How it works:**
     - Uploads the image and generates a vision embedding (SigLIP)
     - Matches against all indexed keyframes
     - Returns timestamps of similar visual scenes
     """
     start_time = time.time()
-    
+
     try:
         from search.visual_search import VisualSearchEngine
         from database.models import SearchQuery, SearchImageCache
         import hashlib
-        
+
         # Read image bytes
         image_bytes = await file.read()
-        
+
         visual_engine = VisualSearchEngine(db)
         results = visual_engine.search_by_image(
-            image_input=image_bytes,
-            top_k=limit,
-            video_filter=video
+            image_input=image_bytes, top_k=limit, video_filter=video
         )
-        
+
         search_time = time.time() - start_time
-        
+
         # Cache image embedding for re-ranking / "find more like this"
         try:
             image_hash = hashlib.sha256(image_bytes).hexdigest()
-            existing_cache = db.query(SearchImageCache).filter_by(image_hash=image_hash).first()
+            existing_cache = (
+                db.query(SearchImageCache).filter_by(image_hash=image_hash).first()
+            )
             if existing_cache:
                 existing_cache.search_count += 1
                 existing_cache.last_used = datetime.utcnow()
             else:
-                vision_embedding = visual_engine.vision_model.encode_image(image_bytes, normalize=True)
+                vision_embedding = visual_engine.vision_model.encode_image(
+                    image_bytes, normalize=True
+                )
                 cache_entry = SearchImageCache(
-                    filename=file.filename or 'uploaded_image',
+                    filename=file.filename or "uploaded_image",
                     image_hash=image_hash,
                     embedding=vision_embedding.tolist(),
                 )
@@ -702,7 +786,7 @@ async def visual_image_search(
         except Exception as cache_err:
             print(f"Warning: Failed to cache image embedding: {cache_err}")
             db.rollback()
-        
+
         # Log image search query for analytics/learning
         try:
             query_log = SearchQuery(
@@ -716,7 +800,7 @@ async def visual_image_search(
         except Exception as log_err:
             print(f"Warning: Failed to log image query: {log_err}")
             db.rollback()
-        
+
         return {
             "query": f"Image: {file.filename}",
             "search_type": "reverse_image_search",
@@ -724,12 +808,15 @@ async def visual_image_search(
             "results": [r.to_dict() for r in results],
             "search_time_seconds": round(search_time, 3),
         }
-        
+
     except Exception as e:
         print(f"Visual image search error: {e}")
         import traceback
+
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Visual image search failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Visual image search failed: {str(e)}"
+        )
 
 
 @app.post("/search/visual/combined")
@@ -747,15 +834,15 @@ async def visual_combined_search(
     The image and text embeddings are fused with configurable weights.
     """
     start_time = time.time()
-    
+
     try:
         from search.visual_search import VisualSearchEngine
         from database.models import SearchQuery
-        
+
         image_bytes = await file.read()
         visual_engine = VisualSearchEngine(db)
         text_weight = 1.0 - image_weight
-        
+
         if text_query.strip():
             results = visual_engine.search_by_image_and_text(
                 image_input=image_bytes,
@@ -763,21 +850,21 @@ async def visual_combined_search(
                 top_k=limit,
                 video_filter=video,
                 image_weight=image_weight,
-                text_weight=text_weight
+                text_weight=text_weight,
             )
         else:
             results = visual_engine.search_by_image(
-                image_input=image_bytes,
-                top_k=limit,
-                video_filter=video
+                image_input=image_bytes, top_k=limit, video_filter=video
             )
-        
+
         search_time = time.time() - start_time
-        
+
         # Log
         try:
             query_log = SearchQuery(
-                query_text=f"[IMAGE+TEXT] {file.filename}: {text_query}" if text_query.strip() else f"[IMAGE] {file.filename}",
+                query_text=f"[IMAGE+TEXT] {file.filename}: {text_query}"
+                if text_query.strip()
+                else f"[IMAGE] {file.filename}",
                 search_type="image" if not text_query.strip() else "hybrid",
                 results_count=len(results),
                 top_result_id=results[0].segment_id if results else None,
@@ -786,10 +873,12 @@ async def visual_combined_search(
             db.commit()
         except Exception:
             db.rollback()
-        
+
         return {
             "query": text_query or f"Image: {file.filename}",
-            "search_type": "combined_image_text" if text_query.strip() else "reverse_image_search",
+            "search_type": "combined_image_text"
+            if text_query.strip()
+            else "reverse_image_search",
             "image_weight": image_weight,
             "text_weight": text_weight,
             "results_count": len(results),
@@ -799,6 +888,7 @@ async def visual_combined_search(
     except Exception as e:
         print(f"Combined search error: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Combined search failed: {str(e)}")
 
@@ -812,37 +902,33 @@ async def visual_search(
 ):
     """
     Pure visual search - finds images matching your description!
-    
+
     **Perfect for:**
     - "picture of an oil rig"
-    - "image of safety equipment"  
+    - "image of safety equipment"
     - "show me drilling operations"
     - "ocean scenes"
-    
+
     **How it works:**
     - Searches visual embeddings (SigLIP) directly
     - IGNORES transcript completely
     - Finds what's SHOWN, not what's SAID
-    
+
     **Example:**
     ```
     GET /search/visual?q=oil+rig&limit=10
     ```
     """
     start_time = time.time()
-    
+
     try:
         from search.visual_search import VisualSearchEngine
-        
+
         visual_engine = VisualSearchEngine(db)
-        results = visual_engine.search_visual(
-            query=q,
-            top_k=limit,
-            video_filter=video
-        )
-        
+        results = visual_engine.search_visual(query=q, top_k=limit, video_filter=video)
+
         search_time = time.time() - start_time
-        
+
         return {
             "query": q,
             "search_type": "visual_only",
@@ -850,10 +936,11 @@ async def visual_search(
             "results": [r.to_dict() for r in results],
             "search_time_seconds": round(search_time, 3),
         }
-        
+
     except Exception as e:
         print(f"Visual search error: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Visual search failed: {str(e)}")
 
@@ -868,51 +955,54 @@ async def hybrid_search(
 ):
     """
     Truly hybrid search - combines text + semantic + visual!
-    
+
     **Auto-detection:**
     - "picture of oil rig" → Visual-heavy (70% visual, 30% text)
     - "discussed drilling" → Text-heavy (70% text, 30% visual)
     - "oil rig" → Balanced (50% text, 50% visual)
-    
+
     **Modes:**
     - `auto`: Automatically detects query type (recommended)
     - `visual`: Force visual-heavy search
     - `text`: Force text-heavy search
     - `balanced`: Equal weights
-    
+
     **Example:**
     ```
     GET /search/hybrid?q=oil+rig&mode=auto&limit=10
     ```
     """
     start_time = time.time()
-    
+
     try:
         from search.visual_search import HybridSearchEngine
-        
+
         # Set weights based on mode
         if mode == "visual":
-            hybrid_engine = HybridSearchEngine(db, text_weight=0.1, semantic_weight=0.2, visual_weight=0.7)
+            hybrid_engine = HybridSearchEngine(
+                db, text_weight=0.1, semantic_weight=0.2, visual_weight=0.7
+            )
             auto_mode = False
         elif mode == "text":
-            hybrid_engine = HybridSearchEngine(db, text_weight=0.4, semantic_weight=0.5, visual_weight=0.1)
+            hybrid_engine = HybridSearchEngine(
+                db, text_weight=0.4, semantic_weight=0.5, visual_weight=0.1
+            )
             auto_mode = False
         elif mode == "balanced":
-            hybrid_engine = HybridSearchEngine(db, text_weight=0.33, semantic_weight=0.33, visual_weight=0.34)
+            hybrid_engine = HybridSearchEngine(
+                db, text_weight=0.33, semantic_weight=0.33, visual_weight=0.34
+            )
             auto_mode = False
         else:  # auto
             hybrid_engine = HybridSearchEngine(db)
             auto_mode = True
-        
+
         results = hybrid_engine.search(
-            query=q,
-            top_k=limit,
-            video_filter=video,
-            auto_mode=auto_mode
+            query=q, top_k=limit, video_filter=video, auto_mode=auto_mode
         )
-        
+
         search_time = time.time() - start_time
-        
+
         return {
             "query": q,
             "search_type": "hybrid",
@@ -921,10 +1011,11 @@ async def hybrid_search(
             "results": [r.to_dict() for r in results],
             "search_time_seconds": round(search_time, 3),
         }
-        
+
     except Exception as e:
         print(f"Hybrid search error: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Hybrid search failed: {str(e)}")
 
@@ -934,9 +1025,11 @@ async def hybrid_search(
 # ║  Base URL to use in Open WebUI: http://host.docker.internal:8000/v1     ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
+
 class ChatMessage(BaseModel):
     role: str
     content: str
+
 
 class ChatCompletionRequest(BaseModel):
     model: str = "video-rag"
@@ -990,7 +1083,9 @@ async def chat_completions(
             break
 
     if not user_question:
-        raise HTTPException(status_code=400, detail="No user message found in messages.")
+        raise HTTPException(
+            status_code=400, detail="No user message found in messages."
+        )
 
     # ── Check system prompt for video scoping directive ──────────────────
     # e.g. system: "video:AkerBP_2.mp4" → restricts search to that file
@@ -998,6 +1093,7 @@ async def chat_completions(
     for msg in request.messages:
         if msg.role == "system":
             import re
+
             m = re.search(r"video:\s*([^\s]+)", msg.content, re.IGNORECASE)
             if m:
                 video_filter = m.group(1).strip()
@@ -1008,12 +1104,12 @@ async def chat_completions(
         qa = get_streaming_qa(db=db)
     except Exception as e:
         raise HTTPException(
-            status_code=503,
-            detail=f"VideoQA system could not be initialised: {e}"
+            status_code=503, detail=f"VideoQA system could not be initialised: {e}"
         )
 
     # ── Streaming response (Open WebUI default: stream=True) ─────────────
     if request.stream:
+
         async def sse_generator():
             try:
                 for chunk in qa.stream_ask(
@@ -1026,15 +1122,16 @@ async def chat_completions(
                     await asyncio.sleep(0)
             except Exception as e:
                 import traceback
+
                 traceback.print_exc()
-                yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+                yield f'data: {{"error": "{str(e)}"}}\n\n'
 
         return StreamingResponse(
             sse_generator(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",   # Disable nginx buffering
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
             },
         )
 
@@ -1048,28 +1145,71 @@ async def chat_completions(
         return result
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/video/thumbnail/{video_id}")
+async def get_video_thumbnail(video_id: int, db: Session = Depends(get_db)):
+    """Return the first keyframe of a video as a thumbnail image."""
+    from database.models import Scene as SceneModel
+    from pathlib import Path as FilePath
+
+    # Get the first scene for this video (smallest start_time)
+    scene = (
+        db.query(SceneModel)
+        .filter(
+            SceneModel.video_id == video_id,
+            SceneModel.keyframe_path.isnot(None),
+        )
+        .order_by(SceneModel.start_time)
+        .first()
+    )
+
+    if not scene or not scene.keyframe_path:
+        raise HTTPException(
+            status_code=404, detail="No thumbnail available for this video"
+        )
+
+    # Resolve path — try absolute first, then relative to project root
+    kf = FilePath(scene.keyframe_path)
+    if not kf.exists():
+        project_root = FilePath(__file__).parent.parent
+        kf = project_root / scene.keyframe_path
+    if not kf.exists():
+        raise HTTPException(status_code=404, detail="Keyframe file not found on disk")
+
+    suffix = kf.suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
+        raise HTTPException(status_code=400, detail="Invalid keyframe file type")
+
+    media_type = f"image/{suffix.lstrip('.').replace('jpg', 'jpeg')}"
+    return FileResponse(str(kf), media_type=media_type)
 
 
 @app.get("/keyframe")
 async def serve_keyframe(path: str = Query(..., description="Path to keyframe image")):
     """Serve keyframe images for thumbnails in search results."""
     from pathlib import Path as FilePath
-    
+
     keyframe_path = FilePath(path)
     if not keyframe_path.exists():
         raise HTTPException(status_code=404, detail="Keyframe not found")
-    
+
     # Basic security: only serve image files
-    if keyframe_path.suffix.lower() not in {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}:
+    if keyframe_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
         raise HTTPException(status_code=400, detail="Invalid file type")
-    
-    return FileResponse(str(keyframe_path), media_type=f"image/{keyframe_path.suffix.lstrip('.').replace('jpg', 'jpeg')}")
+
+    return FileResponse(
+        str(keyframe_path),
+        media_type=f"image/{keyframe_path.suffix.lstrip('.').replace('jpg', 'jpeg')}",
+    )
 
 
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+
 
 @app.get("/api-info")
 async def api_info():
@@ -1095,54 +1235,62 @@ async def search_analytics(db: Session = Depends(get_db)):
     """
     from sqlalchemy import func, text as sa_text
     from database.models import SearchQuery
-    
+
     try:
         # Total queries
         total = db.query(func.count(SearchQuery.id)).scalar() or 0
-        
+
         # Breakdown by search_type
-        type_rows = db.query(
-            SearchQuery.search_type,
-            func.count(SearchQuery.id)
-        ).group_by(SearchQuery.search_type).all()
+        type_rows = (
+            db.query(SearchQuery.search_type, func.count(SearchQuery.id))
+            .group_by(SearchQuery.search_type)
+            .all()
+        )
         type_breakdown = {t or "text": c for t, c in type_rows}
-        
+
         # Average results count
         avg_results = db.query(func.avg(SearchQuery.results_count)).scalar()
         avg_results = round(float(avg_results), 1) if avg_results else 0
-        
+
         # Top 10 most common queries
-        top_queries_rows = db.query(
-            SearchQuery.query_text,
-            func.count(SearchQuery.id).label('count')
-        ).group_by(SearchQuery.query_text).order_by(
-            func.count(SearchQuery.id).desc()
-        ).limit(10).all()
+        top_queries_rows = (
+            db.query(SearchQuery.query_text, func.count(SearchQuery.id).label("count"))
+            .group_by(SearchQuery.query_text)
+            .order_by(func.count(SearchQuery.id).desc())
+            .limit(10)
+            .all()
+        )
         top_queries = [{"query": q, "count": c} for q, c in top_queries_rows]
-        
+
         # Queries with zero results
-        zero_results = db.query(
-            SearchQuery.query_text,
-            SearchQuery.search_type,
-            SearchQuery.search_timestamp
-        ).filter(
-            SearchQuery.results_count == 0
-        ).order_by(SearchQuery.search_timestamp.desc()).limit(20).all()
+        zero_results = (
+            db.query(
+                SearchQuery.query_text,
+                SearchQuery.search_type,
+                SearchQuery.search_timestamp,
+            )
+            .filter(SearchQuery.results_count == 0)
+            .order_by(SearchQuery.search_timestamp.desc())
+            .limit(20)
+            .all()
+        )
         zero_result_queries = [
             {"query": q, "type": t or "text", "timestamp": str(ts)}
             for q, t, ts in zero_results
         ]
-        
+
         # Daily trend (last 14 days)
-        daily_rows = db.execute(sa_text("""
+        daily_rows = db.execute(
+            sa_text("""
             SELECT DATE(search_timestamp) as day, COUNT(*) as count
             FROM search_queries
             WHERE search_timestamp >= CURRENT_DATE - INTERVAL '14 days'
             GROUP BY DATE(search_timestamp)
             ORDER BY day DESC
-        """)).fetchall()
+        """)
+        ).fetchall()
         daily_trend = [{"date": str(d), "count": c} for d, c in daily_rows]
-        
+
         return {
             "total_queries": total,
             "type_breakdown": type_breakdown,
@@ -1154,6 +1302,7 @@ async def search_analytics(db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Analytics error: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analytics failed: {str(e)}")
 
@@ -1187,12 +1336,12 @@ async def enrich_captions(
         query = db.query(Scene).filter(Scene.keyframe_path.isnot(None))
         if video_id:
             query = query.filter(Scene.video_id == video_id)
-        
+
         # Split into: still need enrichment vs already done
         all_scenes = query.all()
         unenriched = [s for s in all_scenes if s.caption is None]
         total_remaining = len(unenriched)
-        
+
         if total_remaining == 0:
             return {
                 "status": "already_complete",
@@ -1202,7 +1351,7 @@ async def enrich_captions(
             }
 
         batch = unenriched[:batch_size]
-        
+
         # Load Qwen2-VL via SceneDetector (lazy-loads the model)
         cfg = SceneConfig(enable_visual_enrichment=True)
         detector = SceneDetector(config=cfg)
@@ -1210,15 +1359,15 @@ async def enrich_captions(
         if qwen is None:
             raise HTTPException(
                 status_code=503,
-                detail="Qwen2-VL model could not be loaded. Check server logs."
+                detail="Qwen2-VL model could not be loaded. Check server logs.",
             )
 
         # Load text embedding generator for indexing captions
         emb_gen = get_embedding_generator()
-        
+
         enriched_count = 0
         embedding_count = 0
-        
+
         for scene in batch:
             kf_path = Path(scene.keyframe_path)
             # Resolve Windows / Linux path differences
@@ -1229,7 +1378,9 @@ async def enrich_captions(
                     kf_path = candidate
 
             if not kf_path.exists():
-                print(f"  Keyframe not found for scene {scene.id}: {scene.keyframe_path}")
+                print(
+                    f"  Keyframe not found for scene {scene.id}: {scene.keyframe_path}"
+                )
                 continue
 
             try:
@@ -1259,10 +1410,14 @@ async def enrich_captions(
                     vec = emb_gen.encode_single(embed_text)
 
                     # Upsert: skip if an embedding for this scene already exists
-                    existing_emb = db.query(Embedding).filter(
-                        Embedding.scene_id == scene.id,
-                        Embedding.segment_id == None,  # noqa: E711
-                    ).first()
+                    existing_emb = (
+                        db.query(Embedding)
+                        .filter(
+                            Embedding.scene_id == scene.id,
+                            Embedding.segment_id == None,  # noqa: E711
+                        )
+                        .first()
+                    )
 
                     if existing_emb:
                         existing_emb.embedding = vec.tolist()
@@ -1299,6 +1454,7 @@ async def enrich_captions(
         raise
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Enrichment failed: {str(e)}")
 
@@ -1307,6 +1463,7 @@ async def enrich_captions(
 async def caption_stats(db: Session = Depends(get_db)):
     """Returns how many scenes have captions vs still need enrichment."""
     from database.models import Scene
+
     total = db.query(Scene).count()
     with_caption = db.query(Scene).filter(Scene.caption.isnot(None)).count()
     with_keyframe = db.query(Scene).filter(Scene.keyframe_path.isnot(None)).count()
@@ -1322,7 +1479,8 @@ async def caption_stats(db: Session = Depends(get_db)):
 # Serve the frontend
 @app.get("/")
 async def read_root():
-    return FileResponse('frontend/index.html')
+    return FileResponse("frontend/index.html")
+
 
 # Mount static files (css, js) - Make sure this is AFTER all other routes
 app.mount("/", StaticFiles(directory="frontend"), name="frontend")
