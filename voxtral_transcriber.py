@@ -125,8 +125,8 @@ class VoxtralTranscriber:
                 end_idx = min(start_idx + chunk_size, total_samples)
                 chunk_samples = audio_array_np[start_idx:end_idx]
 
-                # Expand dims back for the processor if it expects batches
-                chunk_input = chunk_samples[np.newaxis, :]
+                # The processor expects a 1D array for single inputs, or a list of 1D arrays for batches
+                chunk_input = chunk_samples
 
                 # Print progress
                 chunk_start_s = start_idx / sample_rate
@@ -212,5 +212,5 @@ class VoxtralTranscriber:
 if __name__ == "__main__":
     device = get_device()
     transcriber = VoxtralTranscriber(model_size="large", device=device)
-    # transcriber.batch_transcribe(folder_path="videos", output_dir="processed")
-    transcriber.transcribe_video(r"videos\30Min.mp4", output_dir="processed")
+    transcriber.batch_transcribe(folder_path="videos", output_dir="processed")
+    # transcriber.transcribe_video(r"videos\30Min.mp4", output_dir="processed")
