@@ -194,12 +194,14 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
 
     video_path = video.file_path
 
+    # Fix relative paths from the database (e.g. "videos\filename.mp4" or just "filename.mp4")
     # Path Mapping (FIX): If DB contains Linux absolute paths but we are on Windows,
-    # resolve the filename to the local 'videos' directory.
+    # or relative paths, resolve the filename to the local 'videos' directory.
+    project_root = Path(__file__).parent.parent
+    
     if not os.path.exists(video_path):
+        # Try finding it in the videos directory
         local_filename = os.path.basename(video_path)
-        # Check local 'videos' folder relative to project root
-        project_root = Path(__file__).parent.parent
         resolved_path = project_root / "videos" / local_filename
 
         if resolved_path.exists():
@@ -208,6 +210,10 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
             raise HTTPException(
                 status_code=404, detail=f"Video file not found: {video_path}"
             )
+    else:
+        # If the path exists but it's a relative path, make it absolute for streaming
+        if not os.path.isabs(video_path):
+            video_path = str(project_root / video_path)
 
     file_size = os.path.getsize(video_path)
 
@@ -296,9 +302,10 @@ async def transcode_video(video_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Video not found")
 
     video_path = video.file_path
+    project_root = Path(__file__).parent.parent
+    
     if not os.path.exists(video_path):
         local_filename = os.path.basename(video_path)
-        project_root = Path(__file__).parent.parent
         resolved_path = project_root / "videos" / local_filename
         if resolved_path.exists():
             video_path = str(resolved_path)
@@ -306,6 +313,10 @@ async def transcode_video(video_id: int, db: Session = Depends(get_db)):
             raise HTTPException(
                 status_code=404, detail=f"Video file not found: {video_path}"
             )
+    else:
+        # If the path exists but it's a relative path, make it absolute
+        if not os.path.isabs(video_path):
+            video_path = str(project_root / video_path)
 
     async def stream_ffmpeg():
         """Pipe ffmpeg stdout as a fragmented MP4 stream."""
@@ -435,19 +446,6 @@ async def ask_video_question(request: QARequest, qa_system=Depends(get_video_qa)
         print(f"QA Error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
-    videos = db.query(Video).all()
-
-    return [
-        VideoInfo(
-            id=v.id,
-            filename=v.filename,
-            duration_seconds=v.duration_seconds,
-            whisper_model=v.whisper_model,
-            processed_at=v.processed_at.isoformat() if v.processed_at else None,
-        )
-        for v in videos
-    ]
 
 
 @app.post("/search", response_model=SearchResponse)
@@ -1032,7 +1030,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = "video-rag"
+    model: str = "ATLAS"
     messages: List[ChatMessage]
     stream: bool = True
     max_tokens: int = Field(512, ge=1, le=2048)
@@ -1046,7 +1044,7 @@ async def list_models():
         "object": "list",
         "data": [
             {
-                "id": "video-rag",
+                "id": "ATLAS",
                 "object": "model",
                 "created": 1700000000,
                 "owned_by": "local",
@@ -1071,7 +1069,7 @@ async def chat_completions(
     4. Stream back tokens via SSE (or return full JSON if stream=False)
 
     Connect Open WebUI to: http://host.docker.internal:8000/v1
-    Select model: video-rag
+    Select model: ATLAS
     """
     from llm.video_qa_streaming import get_streaming_qa
 

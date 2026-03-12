@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 from typing import Dict, Optional, List
 from datetime import timedelta, datetime
@@ -71,6 +72,99 @@ class BasicVideoPipeline:
         self.model_variant = model_variant
         self.skip_ingest = skip_ingest
 
+        # Formats that should be auto-converted to .mp4 before processing
+        self.CONVERT_EXTENSIONS = {
+            ".ts",
+            ".mp2t",
+            ".m2ts",
+            ".mts",
+            ".avi",
+            ".mkv",
+            ".mov",
+            ".webm",
+            ".flv",
+            ".wmv",
+        }
+
+    # ---------------------------
+    # Format conversion
+    # ---------------------------
+    def _convert_to_mp4(self, video_path: Path) -> Path:
+        """
+        Convert a non-mp4 video to .mp4 using FFmpeg stream-copy.
+        Returns the path to the .mp4 file (original if already mp4).
+        The original file is kept alongside the new .mp4.
+        """
+        if video_path.suffix.lower() not in self.CONVERT_EXTENSIONS:
+            return video_path
+
+        mp4_path = video_path.with_suffix(".mp4")
+
+        if mp4_path.exists():
+            print(f"  ⏭  MP4 already exists: {mp4_path.name}")
+            return mp4_path
+
+        print(f"  🔄 Converting {video_path.suffix} → .mp4: {video_path.name}")
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path),
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "faststart",
+            str(mp4_path),
+        ]
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            if result.returncode != 0:
+                err = result.stderr.decode("utf-8", errors="replace")[:300]
+                print(f"  ⚠  FFmpeg stream-copy failed, trying re-encode: {err}")
+                # Fallback: re-encode (slower but handles incompatible codecs)
+                cmd_reencode = [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(video_path),
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "fast",
+                    "-crf",
+                    "23",
+                    "-c:a",
+                    "aac",
+                    "-movflags",
+                    "faststart",
+                    str(mp4_path),
+                ]
+                subprocess.run(
+                    cmd_reencode,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+
+            size_mb = mp4_path.stat().st_size / (1024 * 1024)
+            print(f"  ✓  Converted: {mp4_path.name} ({size_mb:.1f} MB)")
+            return mp4_path
+
+        except FileNotFoundError:
+            print("  ✗  ffmpeg not found! Install it: https://ffmpeg.org/download.html")
+            print("      Continuing with original file (may cause issues)...")
+            return video_path
+        except subprocess.CalledProcessError as e:
+            print(f"  ✗  Conversion failed: {e}")
+            print("      Continuing with original file (may cause issues)...")
+            return video_path
+
     # ---------------------------
     # Caching helpers (FIXED)
     # ---------------------------
@@ -128,6 +222,9 @@ class BasicVideoPipeline:
         video_path = Path(video_path)
         if not video_path.exists():
             raise FileNotFoundError(f"Video not found: {video_path}")
+
+        # Auto-convert non-mp4 formats to mp4 before processing
+        video_path = self._convert_to_mp4(video_path)
 
         output_base = Path(output_base)
         output_base.mkdir(parents=True, exist_ok=True)

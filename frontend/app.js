@@ -126,6 +126,77 @@ function formatDuration(seconds) {
     if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     return `${m}:${String(s).padStart(2, '0')}`;
 }
+/**
+ * Load the video stream in a hidden element, seek to 0.1s,
+ * capture the frame to a canvas, then clean up.
+ */
+function captureFirstFrame(streamUrl, canvas, fallback, badgeEl) {
+    const vid = document.createElement('video');
+    vid.crossOrigin = 'anonymous';
+    vid.muted = true;
+    vid.preload = 'metadata';
+    vid.style.display = 'none';
+
+    let done = false;
+
+    const cleanup = () => {
+        vid.pause();
+        vid.removeAttribute('src');
+        vid.load();
+        vid.remove();
+    };
+
+    // Timeout fallback: if we don't get a frame in 10s, show placeholder
+    const timeout = setTimeout(() => {
+        if (done) return;
+        done = true;
+        canvas.style.display = 'none';
+        fallback.style.display = 'flex';
+        cleanup();
+    }, 10000);
+
+    vid.addEventListener('loadedmetadata', () => {
+        vid.currentTime = 0.1;
+        // Dynamically update the duration badge if we can read the real length
+        if (badgeEl && vid.duration && !isNaN(vid.duration) && vid.duration !== Infinity) {
+            const realDuration = formatDuration(vid.duration);
+            if (realDuration) {
+                badgeEl.textContent = realDuration;
+                badgeEl.style.display = 'inline-block';
+            }
+        }
+    });
+
+    vid.addEventListener('seeked', () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timeout);
+
+        try {
+            canvas.width = vid.videoWidth || 320;
+            canvas.height = vid.videoHeight || 180;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+            canvas.style.opacity = '1';
+        } catch (e) {
+            canvas.style.display = 'none';
+            fallback.style.display = 'flex';
+        }
+        cleanup();
+    });
+
+    vid.addEventListener('error', () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timeout);
+        canvas.style.display = 'none';
+        fallback.style.display = 'flex';
+        cleanup();
+    });
+
+    vid.src = streamUrl;
+    document.body.appendChild(vid);
+}
 
 function renderVideosGrid(videoList) {
     const grid = document.getElementById('videosGrid');
@@ -145,20 +216,21 @@ function renderVideosGrid(videoList) {
         const card = document.createElement('div');
         card.className = 'video-browser-card';
 
-        const dur = formatDuration(video.duration_seconds);
-        const durHtml = dur ? `<span class="video-duration-badge">${dur}</span>` : '';
-        const model = video.whisper_model ? `<span>${video.whisper_model}</span>` : '';
-        const thumbUrl = `${API_BASE_URL}/video/thumbnail/${video.id}`;
+        const staticDur = formatDuration(video.duration_seconds);
+        // Start with the static DB duration, or a hidden empty badge
+        let durHtml = `<span class="video-duration-badge" style="display: none;"></span>`;
+        if (staticDur) {
+            durHtml = `<span class="video-duration-badge">${staticDur}</span>`;
+        }
+        const streamUrl = `${API_BASE_URL}/video/stream/${video.id}`;
 
         card.innerHTML = `
             <div class="video-browser-thumb">
-                <img class="video-thumb-img" src="${thumbUrl}" alt="Thumbnail for ${escapeHtml(video.filename)}"
-                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-                />
-                <div class="video-thumb-fallback" style="display:none;">
+                <canvas class="video-thumb-canvas"></canvas>
+                <div class="video-thumb-fallback">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="2" y="4" width="20" height="16" rx="3" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
-                        <path d="M10 9L15 12L10 15V9Z" fill="rgba(255,255,255,0.3)"/>
+                        <rect x="2" y="4" width="20" height="16" rx="3" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"/>
+                        <path d="M10 9L15 12L10 15V9Z" fill="rgba(255,255,255,0.25)"/>
                     </svg>
                 </div>
                 <div class="play-overlay">
@@ -171,10 +243,15 @@ function renderVideosGrid(videoList) {
                 <p class="video-browser-name" title="${escapeHtml(video.filename)}">${escapeHtml(video.filename)}</p>
                 <div class="video-browser-meta">
                     ${durHtml}
-                    ${model}
                 </div>
             </div>
         `;
+
+        // Capture first frame into canvas and fetch real duration dynamically
+        const canvas = card.querySelector('.video-thumb-canvas');
+        const fallback = card.querySelector('.video-thumb-fallback');
+        const badgeEl = card.querySelector('.video-duration-badge');
+        captureFirstFrame(streamUrl, canvas, fallback, badgeEl);
 
         card.addEventListener('click', () => openVideoFromBrowser(video));
         grid.appendChild(card);

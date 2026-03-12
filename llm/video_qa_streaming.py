@@ -55,7 +55,7 @@ class StreamingVideoQA(VideoQA):
                 "id": rid,
                 "object": "chat.completion.chunk",
                 "created": int(time.time()),
-                "model": "video-rag",
+                "model": "ATLAS",
                 "choices": [
                     {
                         "index": 0,
@@ -71,10 +71,8 @@ class StreamingVideoQA(VideoQA):
                 "id": rid,
                 "object": "chat.completion.chunk",
                 "created": int(time.time()),
-                "model": "video-rag",
-                "choices": [
-                    {"index": 0, "delta": {}, "finish_reason": "stop"}
-                ],
+                "model": "ATLAS",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
             }
             return f"data: {json.dumps(payload)}\n\ndata: [DONE]\n\n"
 
@@ -101,7 +99,7 @@ class StreamingVideoQA(VideoQA):
         for i, res in enumerate(search_results):
             ts = _fmt_ts(res.start_time)
             context_parts.append(
-                f"[Source {i+1} | {res.video_filename} @ {ts}]\n{res.text}"
+                f"[Source {i + 1} | {res.video_filename} @ {ts}]\n{res.text}"
             )
         context_text = "\n\n".join(context_parts)
 
@@ -167,7 +165,7 @@ class StreamingVideoQA(VideoQA):
             "id": f"chatcmpl-{int(time.time())}",
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": "video-rag",
+            "model": "ATLAS",
             "choices": [
                 {
                     "index": 0,
@@ -180,6 +178,7 @@ class StreamingVideoQA(VideoQA):
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 def _fmt_ts(seconds: float) -> str:
     """Format seconds as HH:MM:SS."""
@@ -203,7 +202,7 @@ def _build_citation_block(results: List[SearchResult]) -> str:
         snippet = (r.text or "")[:100].replace("\n", " ").strip()
         score_pct = int((r.score or 0) * 100)
         lines.append(
-            f"{i+1}. **{r.video_filename}** @ `{ts}` ({score_pct}% match)  \n"
+            f"{i + 1}. **{r.video_filename}** @ `{ts}` ({score_pct}% match)  \n"
             f"   > {snippet}…\n"
         )
 

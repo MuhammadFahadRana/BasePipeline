@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: "video-rag",
+                    model: "ATLAS",
                     messages: chatHistory,
                     stream: true
                 })

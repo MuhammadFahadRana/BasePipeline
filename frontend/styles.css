@@ -1158,17 +1158,19 @@ select {
     color: rgba(255, 255, 255, 0.9);
 }
 
-/* Thumbnail image */
-.video-thumb-img {
+/* Thumbnail canvas (first frame capture) */
+.video-thumb-canvas {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
     position: absolute;
     inset: 0;
+    opacity: 0;
+    transition: opacity 0.3s ease;
 }
 
-/* Fallback for when thumbnail fails to load */
+/* Fallback for when thumbnail capture fails */
 .video-thumb-fallback {
     width: 100%;
     height: 100%;

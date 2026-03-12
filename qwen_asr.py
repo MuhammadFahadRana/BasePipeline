@@ -38,12 +38,19 @@ from pathlib import Path
 from datetime import timedelta
 from typing import Dict, List, Optional, Tuple
 from tqdm import tqdm
+import numpy as np
 
 try:
     # Key fix: Import Qwen2AudioForConditionalGeneration
-    from transformers import AutoProcessor, Qwen2AudioForConditionalGeneration, AutoModelForCausalLM
+    from transformers import (
+        AutoProcessor,
+        Qwen2AudioForConditionalGeneration,
+        AutoModelForCausalLM,
+    )
 except ImportError as e:
-    raise ImportError(f"transformers error: {e}. Run: pip install transformers accelerate")
+    raise ImportError(
+        f"transformers error: {e}. Run: pip install transformers accelerate"
+    )
 
 try:
     try:
@@ -60,18 +67,18 @@ warnings.filterwarnings("ignore")
 class QwenTranscriber:
     """
     Qwen-Audio ASR Transcriber
-    
+
     Uses Alibaba's Qwen-Audio models for high-quality speech recognition.
     """
-    
+
     VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".ts"}
     AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg"}
-    
+
     SUPPORTED_MODELS = {
         "qwen-audio-chat": "Qwen/Qwen-Audio-Chat",
         "qwen2-audio": "Qwen/Qwen2-Audio-7B-Instruct",  # Recommended
     }
-    
+
     def __init__(
         self,
         model_name: str = "qwen2-audio",
@@ -82,7 +89,7 @@ class QwenTranscriber:
     ):
         """
         Initialize Qwen-Audio transcriber.
-        
+
         Args:
             model_name: Model to use ("qwen-audio-chat" or "qwen2-audio")
             device: "auto", "cpu", or "cuda"
@@ -97,43 +104,43 @@ class QwenTranscriber:
         else:
             self.model_id = model_name  # Allow custom HF model IDs
             self.model_name = model_name.split("/")[-1]
-        
+
         # Device selection
         if device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
-        
+
         if device != "cuda" and not (device == "auto" and torch.cuda.is_available()):
             self.compute_type = "float32"  # float16 segfaults on CPU
         else:
             self.compute_type = compute_type
-        
+
         self.language = language
         self.enable_timestamps = enable_timestamps
-        
-        print(f"\n{'='*60}")
+
+        print(f"\n{'=' * 60}")
         print(f"Qwen-Audio ASR Transcriber")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Model:        {self.model_id}")
         print(f"Device:       {self.device}")
         print(f"Compute Type: {self.compute_type}")
         print(f"Language:     {self.language}")
         print(f"Timestamps:   {self.enable_timestamps}")
-        print(f"{'='*60}\n")
-        
+        print(f"{'=' * 60}\n")
+
         # Load model and processor
         self._load_model()
-    
+
     def _load_model(self):
         """Load Qwen-Audio model and processor."""
         print(f"Loading {self.model_id}...")
-        
+
         dtype = torch.float16 if self.compute_type == "float16" else torch.float32
-        
+
         try:
             self.processor = AutoProcessor.from_pretrained(self.model_id)
-            
+
             # Use specific class for Qwen2-Audio
             if "qwen2-audio" in self.model_id.lower():
                 self.model = Qwen2AudioForConditionalGeneration.from_pretrained(
@@ -150,67 +157,72 @@ class QwenTranscriber:
                     device_map="auto" if self.device == "cuda" else None,
                     trust_remote_code=True,
                 )
-            
+
             if self.device == "cpu":
                 self.model = self.model.to("cpu")
-            
+
             self.model.eval()
-            
+
             print(f"Model loaded successfully\n")
-            
+
         except Exception as e:
             print(f"Error loading model: {e}")
             raise
-    
+
     def transcribe_video(
         self,
         file_path: str,
         output_dir: str = "processed",
         include_emotion: bool = False,
         include_speaker_info: bool = False,
-        skip_if_exists: bool = False
+        skip_if_exists: bool = False,
     ) -> Dict:
         """
         Transcribe video or audio file using Qwen-Audio.
-        
+
         Args:
             file_path: Path to video/audio file
             output_dir: Base output directory
             include_emotion: Detect emotional tone (experimental)
             include_speaker_info: Attempt speaker separation
             skip_if_exists: Skip if output file already exists
-        
+
         Returns:
             Transcription result dictionary
         """
         file_path = Path(file_path)
-        
+
         if not file_path.exists():
             print(f"✗ File not found: {file_path}")
             return {}
-        
+
         # Setup output paths
         video_name = file_path.stem
         # Sanitize video name for folder creation (legacy compatibility)
         video_sanitized = video_name.replace(" ", "_")
-        model_output_dir = Path(output_dir) / "transcripts" / f"Qwen-{self.model_name}" / video_sanitized
+        model_output_dir = (
+            Path(output_dir)
+            / "transcripts"
+            / f"Qwen-{self.model_name}"
+            / video_sanitized
+        )
         json_path = model_output_dir / "full_transcript.json"
 
         # Check cache
         if skip_if_exists and json_path.exists():
             print(f"Cached transcript found for {video_name}. Skipping.")
             try:
-                with open(json_path, 'r', encoding='utf-8') as f:
+                with open(json_path, "r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception:
                 print("  (Cache file corrupted, reprocessing...)")
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Transcribing: {file_path.name}")
-        print(f"{'='*60}")
-        
+        print(f"{'=' * 60}")
+
         model_output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Extract audio if video
         temp_audio_path = None
         try:
@@ -228,7 +240,7 @@ class QwenTranscriber:
                     return {}
             else:
                 audio_path = file_path
-            
+
             # Load audio
             print("Loading audio...")
             try:
@@ -236,93 +248,103 @@ class QwenTranscriber:
                     # Try soundfile first (reliable on Windows)
                     audio_array, sample_rate = sf.read(str(audio_path))
                     waveform = torch.from_numpy(audio_array).float()
-                    
+
                     # Convert to [channels, samples] if needed
                     if waveform.ndim == 1:
                         waveform = waveform.unsqueeze(0)
                     else:
                         waveform = waveform.T
                 except Exception as sf_err:
-                    print(f"  Note: soundfile load failed ({sf_err}), trying torchaudio...")
+                    print(
+                        f"  Note: soundfile load failed ({sf_err}), trying torchaudio..."
+                    )
                     waveform, sample_rate = torchaudio.load(str(audio_path))
-                
+
                 # Convert to mono if stereo
                 if waveform.shape[0] > 1:
                     waveform = torch.mean(waveform, dim=0, keepdim=True)
-                
+
                 # Resample if needed (Qwen expects 16kHz)
                 if sample_rate != 16000:
                     resampler = torchaudio.transforms.Resample(sample_rate, 16000)
                     waveform = resampler(waveform)
                     sample_rate = 16000
-                
+
                 audio_array = waveform.squeeze().numpy()
                 print(f"  Duration: {len(audio_array) / sample_rate:.1f}s")
-                    
+
             except Exception as e:
                 print(f"✗ Error loading audio: {e}")
                 return {}
-            
+
             # Start timing
             start_processing_time = time.time()
-            
+
             # Transcribe with chunking to handle long audio
             print(f"Transcribing with Qwen-Audio (chunking enabled)...")
-            
+
             chunk_size_sec = 30  # Qwen2-Audio works best with 30s chunks
             stride_sec = 2
             chunk_size = chunk_size_sec * sample_rate
             stride = stride_sec * sample_rate
-            
+
             full_text = []
             segments = []
-            
+
             curr = 0
             while curr < len(audio_array):
                 end = min(curr + chunk_size, len(audio_array))
                 chunk = audio_array[curr:end]
-                
+
                 # Skip very short tail
-                if len(chunk) < sample_rate * 0.5: # 0.5s
+                if len(chunk) < sample_rate * 0.5:  # 0.5s
                     break
-                
-                print(f"  Processing chunk {curr/sample_rate:.1f}s - {end/sample_rate:.1f}s...")
-                
+
+                print(
+                    f"  Processing chunk {curr / sample_rate:.1f}s - {end / sample_rate:.1f}s..."
+                )
+
                 try:
                     chunk_res = self._transcribe_qwen(
                         chunk,
                         sample_rate,
                         include_emotion=include_emotion,
-                        include_speaker_info=include_speaker_info
+                        include_speaker_info=include_speaker_info,
                     )
-                    
+
                     chunk_text = chunk_res.get("text", "").strip()
-                    
+
                     # Prevent refusal messages from being included in the final transcript
-                    if chunk_text and "I'm sorry" not in chunk_text and "provide the" not in chunk_text:
+                    if (
+                        chunk_text
+                        and "I'm sorry" not in chunk_text
+                        and "provide the" not in chunk_text
+                    ):
                         full_text.append(chunk_text)
-                        segments.append({
-                            "start": curr / sample_rate,
-                            "end": end / sample_rate,
-                            "text": chunk_text
-                        })
+                        segments.append(
+                            {
+                                "start": curr / sample_rate,
+                                "end": end / sample_rate,
+                                "text": chunk_text,
+                            }
+                        )
                 except Exception as e:
                     print(f"    Warning: Chunk processing failed: {e}")
-                
-                curr += (chunk_size - stride)
+
+                curr += chunk_size - stride
                 if end == len(audio_array):
                     break
-            
+
             # End timing
             processing_time = time.time() - start_processing_time
-            
+
             result = {
                 "text": " ".join(full_text),
                 "segments": segments,
                 "language": self.language,
-                "processing_time_seconds": round(processing_time, 2)
+                "processing_time_seconds": round(processing_time, 2),
             }
-        
+
             # Add metadata
             result["metadata"] = {
                 "model": self.model_id,
@@ -330,25 +352,25 @@ class QwenTranscriber:
                 "duration": len(audio_array) / sample_rate,
                 "language": self.language,
                 "device": self.device,
-                "processing_time": round(processing_time, 2)
+                "processing_time": round(processing_time, 2),
             }
-            
+
             # Save results
             # Save normal transcript.json in addition to full_transcript.json to match user expectation
             # User wants it like transcriber.py
-            
+
             # 1. full_transcript.json
             self.save_transcript(result, json_path)
-            
+
             # 2. transcript.txt
             txt_path = model_output_dir / "transcript.txt"
             self.save_text_transcript(result, txt_path, source_name=video_name)
-            
+
             # 3. transcript.json (standard format)
             # This is what transcriber.py usually produces
             standard_json_path = model_output_dir / "transcript.json"
             self.save_transcript(result, standard_json_path)
-            
+
             print(f"Transcription complete! Saved to: {model_output_dir}")
             return result
 
@@ -362,178 +384,254 @@ class QwenTranscriber:
                     os.remove(temp_audio_path)
                 except:
                     pass
-    
+
     def _transcribe_qwen(
         self,
         audio: any,
         sample_rate: int,
         include_emotion: bool = False,
-        include_speaker_info: bool = False
+        include_speaker_info: bool = False,
     ) -> Dict:
         """
         Perform Qwen-Audio transcription.
         """
+        # --- Audio sanity + normalization (prevents silent failures) ---
+        # Qwen2-Audio expects float audio in roughly [-1, 1]. Some loaders/codepaths
+        # can yield int16-like ranges or NaNs/Infs which often decode to empty output.
+        audio_np = np.asarray(audio)
+        if audio_np.ndim != 1:
+            audio_np = audio_np.reshape(-1)
+
+        if audio_np.size == 0:
+            return {"text": "", "segments": [], "language": self.language}
+
+        audio_np = audio_np.astype(np.float32, copy=False)
+        if not np.isfinite(audio_np).all():
+            audio_np = np.nan_to_num(audio_np, nan=0.0, posinf=0.0, neginf=0.0)
+
+        peak = float(np.max(np.abs(audio_np))) if audio_np.size else 0.0
+        if peak == 0.0:
+            return {"text": "", "segments": [], "language": self.language}
+
+        # If values look like int16 scale (or otherwise too large), normalize.
+        if peak > 1.5:
+            audio_np = audio_np / peak
+
         # Build prompt based on requested features
-        prompt_parts = ["Transcribe this audio to text"]
-        
+        prompt_parts = ["Transcribe the speech in the provided audio"]
+
         if include_timestamps := self.enable_timestamps:
             prompt_parts.append("with timestamps")
-        
+
         if include_emotion:
             prompt_parts.append("and emotion")
-        
+
         if include_speaker_info:
             prompt_parts.append("identifying different speakers")
-        
-        prompt = ", ".join(prompt_parts) + "."
-        
+
+        prompt = (
+            ", ".join(prompt_parts)
+            + f". Output only the transcription in {self.language}."
+        )
+
         # Prepare conversation format
         conversation = [
             {
+                "role": "system",
+                "content": "You are a speech recognition system. Be concise and output only the transcript.",
+            },
+            {
                 "role": "user",
                 "content": [
-                    {"type": "audio", "audio": audio},
+                    # IMPORTANT: For Qwen2-Audio, the chat template expects an audio *placeholder*.
+                    # The actual waveform is passed via `audios=[...]` to the processor.
+                    {"type": "audio"},
                     {"type": "text", "text": prompt},
                 ],
-            }
+            },
         ]
-        
+
         # Process
         text = self.processor.apply_chat_template(
-            conversation, 
-            tokenize=False, 
-            add_generation_prompt=True
+            conversation, tokenize=False, add_generation_prompt=True
         )
-        
+
         inputs = self.processor(
             text=text,
-            audios=[audio],
+            audios=[audio_np],
             return_tensors="pt",
-            sampling_rate=sample_rate
+            sampling_rate=sample_rate,
+            padding=True,
         )
-        
+
         # Move to device
-        inputs = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v 
-                  for k, v in inputs.items()}
-        
+        inputs = {
+            k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+            for k, v in inputs.items()
+        }
+
         # Generate
-        with torch.no_grad():
-            output_ids = self.model.generate(
-                **inputs,
-                max_new_tokens=2048,
-                do_sample=False,  # Deterministic for ASR
+        def _generate(do_sample: bool, temperature: float):
+            gen_kwargs = dict(
+                max_new_tokens=1024,
+                do_sample=do_sample,
             )
-        
+            if do_sample:
+                gen_kwargs.update({"temperature": temperature, "top_p": 0.9})
+
+            # Some configs may not define pad_token_id; align with tokenizer if needed.
+            if hasattr(self.processor, "tokenizer"):
+                tok = self.processor.tokenizer
+                if getattr(self.model.generation_config, "pad_token_id", None) is None:
+                    gen_kwargs["pad_token_id"] = getattr(tok, "pad_token_id", None)
+                if getattr(self.model.generation_config, "eos_token_id", None) is None:
+                    gen_kwargs["eos_token_id"] = getattr(tok, "eos_token_id", None)
+
+            with torch.no_grad():
+                return self.model.generate(**inputs, **gen_kwargs)
+
+        output_ids = _generate(do_sample=False, temperature=0.0)
+
         # Decode
-        output_ids = output_ids[:, inputs['input_ids'].shape[1]:]
+        output_ids = output_ids[:, inputs["input_ids"].shape[1] :]
         transcription = self.processor.batch_decode(
-            output_ids,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=True
+            output_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True
         )[0]
-        
+
+        # Retry once with a simpler prompt + mild sampling if we got nothing back.
+        if not transcription.strip():
+            retry_conversation = [
+                {
+                    "role": "system",
+                    "content": "You are a speech recognition system. Output only the transcript.",
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "audio"},
+                        {
+                            "type": "text",
+                            "text": f"Transcribe the audio. Output only the transcript in {self.language}.",
+                        },
+                    ],
+                },
+            ]
+            retry_text = self.processor.apply_chat_template(
+                retry_conversation, tokenize=False, add_generation_prompt=True
+            )
+            retry_inputs = self.processor(
+                text=retry_text,
+                audios=[audio_np],
+                return_tensors="pt",
+                sampling_rate=sample_rate,
+                padding=True,
+            )
+            retry_inputs = {
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                for k, v in retry_inputs.items()
+            }
+            inputs = retry_inputs
+            output_ids = _generate(do_sample=True, temperature=0.2)
+            output_ids = output_ids[:, inputs["input_ids"].shape[1] :]
+            transcription = self.processor.batch_decode(
+                output_ids,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True,
+            )[0]
+
         # Parse result
         result = {
             "text": transcription.strip(),
             "segments": [],
             "language": self.language,
         }
-        
+
         # Try to parse timestamps
         if self.enable_timestamps:
             result["segments"] = self._parse_timestamps(transcription)
-        
+
         return result
-    
+
     def _parse_timestamps(self, text: str) -> List[Dict]:
         """Parse timestamp-annotated text from Qwen-Audio."""
         import re
-        
+
         segments = []
-        pattern = r'\[(\d+:\d+(?::\d+)?)\]\s*([^\[]+)'
+        pattern = r"\[(\d+:\d+(?::\d+)?)\]\s*([^\[]+)"
         matches = re.findall(pattern, text)
-        
+
         for i, (timestamp, segment_text) in enumerate(matches):
-            parts = timestamp.split(':')
+            parts = timestamp.split(":")
             if len(parts) == 2:  # MM:SS
                 minutes, seconds = map(int, parts)
                 start_time = minutes * 60 + seconds
             else:  # HH:MM:SS
                 hours, minutes, seconds = map(int, parts)
                 start_time = hours * 3600 + minutes * 60 + seconds
-            
+
             if i + 1 < len(matches):
-                next_parts = matches[i + 1][0].split(':')
+                next_parts = matches[i + 1][0].split(":")
                 if len(next_parts) == 2:
                     end_time = int(next_parts[0]) * 60 + int(next_parts[1])
                 else:
-                    end_time = int(next_parts[0]) * 3600 + int(next_parts[1]) * 60 + int(next_parts[2])
+                    end_time = (
+                        int(next_parts[0]) * 3600
+                        + int(next_parts[1]) * 60
+                        + int(next_parts[2])
+                    )
             else:
                 end_time = start_time + 5
-            
-            segments.append({
-                "start": start_time,
-                "end": end_time,
-                "text": segment_text.strip()
-            })
-        
+
+            segments.append(
+                {"start": start_time, "end": end_time, "text": segment_text.strip()}
+            )
+
         if not segments:
-            segments = [{
-                "start": 0,
-                "end": 0,
-                "text": text.strip()
-            }]
-        
+            segments = [{"start": 0, "end": 0, "text": text.strip()}]
+
         return segments
-    
+
     def extract_audio(self, video_path: Path) -> Path:
         """Extract audio from video file."""
         if VideoFileClip is None:
             raise RuntimeError("moviepy not installed. Run: pip install moviepy")
-        
+
         audio_path = video_path.parent / f"{video_path.stem}_audio.wav"
-        
+
         try:
             video = VideoFileClip(str(video_path))
             if video.audio is None:
-                 raise ValueError("Video file has no audio stream")
-                 
+                raise ValueError("Video file has no audio stream")
+
             video.audio.write_audiofile(
-                str(audio_path),
-                codec='pcm_s16le',
-                fps=16000,
-                nbytes=2,
-                logger=None
+                str(audio_path), codec="pcm_s16le", fps=16000, nbytes=2, logger=None
             )
             video.close()
             return audio_path
-            
+
         except Exception as e:
             print(f"Error extracting audio: {e}")
             try:
-                if 'video' in locals():
+                if "video" in locals():
                     video.close()
             except:
                 pass
             raise
-    
+
     def save_transcript(self, result: Dict, output_file: Path):
         """Save full transcription results as JSON."""
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
-    
+
     def save_text_transcript(
-        self, 
-        result: Dict, 
-        output_file: Path, 
-        source_name: str = "file"
+        self, result: Dict, output_file: Path, source_name: str = "file"
     ):
         """Save transcript as readable text."""
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             f.write(f"Transcription of: {source_name}\n")
             f.write(f"Model: {result.get('metadata', {}).get('model', 'Unknown')}\n")
             f.write("=" * 60 + "\n\n")
-            
+
             if result.get("segments"):
                 for seg in result["segments"]:
                     start_str = str(timedelta(seconds=int(seg["start"])))
@@ -542,13 +640,13 @@ class QwenTranscriber:
                     f.write(f"{seg['text']}\n\n")
             else:
                 f.write(result.get("text", ""))
-    
+
     def batch_transcribe(
         self,
         folder_path: str = "videos",
         output_dir: str = "processed",
         file_extensions: Optional[List[str]] = None,
-        skip_existing: bool = True
+        skip_existing: bool = True,
     ) -> List[Dict]:
         """
         Transcribe all video/audio files in a folder.
@@ -557,38 +655,40 @@ class QwenTranscriber:
         if not folder.exists():
             print(f"Folder not found: {folder}")
             return []
-        
+
         if file_extensions is None:
             extensions = self.VIDEO_EXTENSIONS | self.AUDIO_EXTENSIONS
         else:
-            extensions = {ext if ext.startswith('.') else f'.{ext}' 
-                         for ext in file_extensions}
-        
-        files = [f for f in folder.iterdir() 
-                if f.is_file() and f.suffix.lower() in extensions]
-        
+            extensions = {
+                ext if ext.startswith(".") else f".{ext}" for ext in file_extensions
+            }
+
+        files = [
+            f
+            for f in folder.iterdir()
+            if f.is_file() and f.suffix.lower() in extensions
+        ]
+
         if not files:
             print(f"No supported files found in {folder}")
             return []
-        
+
         print(f"\n============================================================")
         print(f"BATCH PROCESSING: {len(files)} files")
         print(f"Model: {self.model_name}")
         print(f"Skip existing: {skip_existing}")
         print(f"============================================================\n")
-        
+
         results = []
         success_count = 0
-        
+
         # Use simple loop if tqdm not available, else tqdm
         iterator = tqdm(files, desc="Batch Progress")
-        
+
         for file_path in iterator:
             try:
                 result = self.transcribe_video(
-                    str(file_path), 
-                    output_dir, 
-                    skip_if_exists=skip_existing
+                    str(file_path), output_dir, skip_if_exists=skip_existing
                 )
                 if result and not result.get("error"):
                     results.append(result)
@@ -599,13 +699,15 @@ class QwenTranscriber:
             except Exception as e:
                 print(f"Unexpected error on {file_path.name}: {e}")
                 continue
-        
+
         print(f"\n============================================================")
         print(f"BATCH COMPLETE")
         print(f"Successful: {success_count}/{len(files)}")
-        print(f"Total transcripts saved to: {Path(output_dir)/'transcripts'/f'Qwen-{self.model_name}'}")
+        print(
+            f"Total transcripts saved to: {Path(output_dir) / 'transcripts' / f'Qwen-{self.model_name}'}"
+        )
         print(f"============================================================\n")
-        
+
         return results
 
 
@@ -613,7 +715,7 @@ def main():
     # If arguments provided, use CLI mode
     import argparse
     import sys
-    
+
     if len(sys.argv) > 1:
         parser = argparse.ArgumentParser(description="Qwen-Audio ASR Transcriber")
         parser.add_argument("input", help="Video/audio file or folder")
@@ -621,38 +723,40 @@ def main():
             "--model",
             default="qwen2-audio",
             choices=list(QwenTranscriber.SUPPORTED_MODELS.keys()),
-            help="Model to use"
+            help="Model to use",
         )
         parser.add_argument("--device", default="auto")
         parser.add_argument("--language", default="en")
         parser.add_argument("--output", default="processed")
-        parser.add_argument("--batch", action="store_true", help="Treat input as folder")
-        parser.add_argument("--force", action="store_true", help="Reprocess existing files")
+        parser.add_argument(
+            "--batch", action="store_true", help="Treat input as folder"
+        )
+        parser.add_argument(
+            "--force", action="store_true", help="Reprocess existing files"
+        )
         parser.add_argument("--emotion", action="store_true", help="Detect emotion")
         parser.add_argument("--speaker", action="store_true", help="Identify speakers")
-        
+
         args = parser.parse_args()
-        
+
         transcriber = QwenTranscriber(
             model_name=args.model,
             device=args.device,
             language=args.language,
-            enable_timestamps=True
+            enable_timestamps=True,
         )
-        
+
         if args.batch or Path(args.input).is_dir():
             transcriber.batch_transcribe(
-                args.input, 
-                args.output, 
-                skip_existing=not args.force
+                args.input, args.output, skip_existing=not args.force
             )
         else:
             transcriber.transcribe_video(
-                args.input, 
+                args.input,
                 args.output,
                 include_emotion=args.emotion,
                 include_speaker_info=args.speaker,
-                skip_if_exists=not args.force
+                skip_if_exists=not args.force,
             )
         return
 
@@ -660,15 +764,10 @@ def main():
     selected_device = "auto"
 
     # Initialize transcriber
-    transcriber = QwenTranscriber(
-        model_name="qwen2-audio", device=selected_device
-    )
+    transcriber = QwenTranscriber(model_name="qwen2-audio", device=selected_device)
 
     ## Batch process all videos in a folder
-    transcriber.batch_transcribe(
-        folder_path="videos",  # Change to your video folder
-        output_dir="processed"
-    )
+    transcriber.batch_transcribe(folder_path="videos", output_dir="processed")
 
     # Process single video
     # transcriber.transcribe_video("videos\\Risk management.mp4", output_dir="processed")
