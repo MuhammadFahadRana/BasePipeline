@@ -11,6 +11,8 @@ const resultsSection = document.getElementById('resultsSection');
 const resultsContainer = document.getElementById('resultsContainer');
 const resultsTitle = document.getElementById('resultsTitle');
 const resultsCount = document.getElementById('resultsCount');
+const answerPanel = document.getElementById('answerPanel');
+const answerBody = document.getElementById('answerBody');
 const loadingState = document.getElementById('loadingState');
 const emptyState = document.getElementById('emptyState');
 const videoCount = document.getElementById('videoCount');
@@ -506,6 +508,30 @@ async function performImageSearch() {
     }
 }
 
+// Helper: fetch AI answer paragraph for the current query using Video QA
+async function fetchAiAnswer(query) {
+    try {
+        const resp = await fetch(`${API_BASE_URL}/qa/ask`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                question: query,
+                video_filter: null,
+                top_k: 5
+            })
+        });
+
+        if (!resp.ok) {
+            throw new Error(`QA failed: ${resp.statusText}`);
+        }
+
+        return await resp.json(); // expected shape: { answer, citations, metadata }
+    } catch (err) {
+        console.error('AI answer fetch error:', err);
+        return null;
+    }
+}
+
 // Perform Search
 async function performSearch() {
     const query = searchInput.value.trim();
@@ -572,7 +598,10 @@ async function performSearch() {
             data = await response.json();
         }
 
-        displayResults(data);
+        // Fetch AI answer paragraph (non-blocking for failures)
+        const qaResult = await fetchAiAnswer(query);
+
+        displayResults(data, qaResult);
     } catch (error) {
         console.error('Search error:', error);
         showNotification('Search failed. Please try again.', 'error');
@@ -581,8 +610,8 @@ async function performSearch() {
     }
 }
 
-// Display Results
-function displayResults(data) {
+// Display Results (and optional AI answer)
+function displayResults(data, qaData = null) {
     hideLoading();
     hideEmpty();
 
@@ -596,6 +625,24 @@ function displayResults(data) {
     currentFacet = data.facet_applied || currentFacet || 'auto';
 
     resultsTitle.textContent = `Results for "${query}"`;
+
+    // Render AI answer paragraph if available
+    if (qaData && qaData.answer && qaData.answer.trim()) {
+        if (answerPanel) {
+            answerPanel.style.display = 'block';
+        }
+        if (answerBody) {
+            // Keep it simple: plain text with basic HTML escaping
+            answerBody.innerHTML = `<p>${escapeHtml(qaData.answer)}</p>`;
+        }
+    } else {
+        if (answerPanel) {
+            answerPanel.style.display = 'none';
+        }
+        if (answerBody) {
+            answerBody.innerHTML = '';
+        }
+    }
 
     // Display count and search time (like Google)
     let countText = `${results_count} result${results_count !== 1 ? 's' : ''}`;
