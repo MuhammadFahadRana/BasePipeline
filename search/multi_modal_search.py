@@ -156,7 +156,7 @@ class MultiModalSearchEngine:
             current_v_score = v_score
             current_keyframe = base_result.keyframe_path
 
-            if current_v_score == 0.0:
+            if current_v_score == 0.0 and base_result.segment_id:
                 vision_data = self._get_vision_embedding_for_segment(
                     base_result.segment_id
                 )
@@ -195,6 +195,7 @@ class MultiModalSearchEngine:
         top_k: int = 10,
         video_filter: Optional[str] = None,
         use_llm: bool = True,
+        facet: str = "auto",
     ) -> dict:
         """
         Multi-modal search with tiered fallback strategy.
@@ -237,6 +238,7 @@ class MultiModalSearchEngine:
             query=search_query,
             top_k=top_k * 3 if self.vision_weight > 0 else top_k,
             video_filter=video_filter,
+            facet=facet or "auto",
         )
 
         # Attach intent metadata
@@ -333,34 +335,49 @@ class MultiModalSearchEngine:
                 target_scene_id = None
                 target_segment_id = None
 
+                # Prefer decoding from result_id when available.
+                # This matters for OCR/Visual matches where `segment_id` can be an encoded scene id.
+                rid = getattr(base_result, "result_id", None)
+                if isinstance(rid, str):
+                    if rid.startswith("visual_"):
+                        try:
+                            raw = int(rid.replace("visual_", ""))
+                            # visual branch encodes as scene_id + 2000000
+                            target_scene_id = raw - 2000000 if raw > 2000000 else raw
+                        except Exception:
+                            pass
+                    elif rid.startswith("ocr_"):
+                        try:
+                            target_scene_id = int(rid.replace("ocr_", ""))
+                        except Exception:
+                            pass
+                elif isinstance(rid, int):
+                    # Fallback to result_id logic for scene_id
+                    if rid < -2000000:
+                        target_scene_id = abs(rid) - 2000000
+                    elif rid < 0:
+                        target_scene_id = abs(rid)
+                    else:
+                        target_segment_id = rid
+
                 if isinstance(key, str):
                     if key.startswith("visual_"):
-                        target_scene_id = int(key.replace("visual_", ""))
+                        raw = int(key.replace("visual_", ""))
+                        target_scene_id = raw - 2000000 if raw > 2000000 else raw
                     elif key.startswith("ocr_"):
                         target_scene_id = int(key.replace("ocr_", ""))
                     elif key.startswith("seg_"):
-                        target_segment_id = int(key.replace("seg_", ""))
+                        seg_val = int(key.replace("seg_", ""))
+                        # If this looks like an encoded scene id, decode it.
+                        if seg_val > 2000000:
+                            target_scene_id = seg_val - 2000000
+                        else:
+                            target_segment_id = seg_val
                     elif key.startswith("scene_"):
                         # format scene_VIDEOID_STARTTIME
                         # we might not have scene_id here directly, but search_with_fallback
                         # results usually have result_id which is negative scene_id
                         pass
-
-                # Fallback to result_id logic for scene_id
-                if (
-                    not target_scene_id
-                    and not target_segment_id
-                    and hasattr(base_result, "result_id")
-                    and base_result.result_id
-                ):
-                    rid = base_result.result_id
-                    if isinstance(rid, int):
-                        if rid < -2000000:
-                            target_scene_id = abs(rid) - 2000000
-                        elif rid < 0:
-                            target_scene_id = abs(rid)
-                        else:
-                            target_segment_id = rid
 
                 # Now fetch vision data
                 if target_segment_id:
@@ -424,11 +441,23 @@ class MultiModalSearchEngine:
         Returns:
             Tuple of (embedding_array, keyframe_path) or None
         """
+        if not segment_id:
+            return None
+
         result = self.db.execute(
             text("""
             SELECT ve.embedding, ve.keyframe_path
             FROM transcript_segments ts
-            JOIN scenes s ON ts.scene_id = s.id
+            -- Most segments may have ts.scene_id = NULL; fall back to time overlap within same video.
+            JOIN scenes s ON (
+                ts.scene_id = s.id
+                OR (
+                    ts.scene_id IS NULL
+                    AND s.video_id = ts.video_id
+                    AND ts.start_time >= s.start_time
+                    AND ts.start_time <= s.end_time
+                )
+            )
             JOIN visual_embeddings ve ON s.id = ve.scene_id
             WHERE ts.id = :segment_id
             AND ve.embedding_model = :model_name

@@ -9,7 +9,9 @@ import numpy as np
 class EmbeddingGenerator:
     """Generate text embeddings for semantic search."""
 
-    def __init__(self, model_name: str = "Qwen/Qwen3-Embedding-0.6B", device: str = "auto"):
+    def __init__(
+        self, model_name: str = "Qwen/Qwen3-Embedding-0.6B", device: str = "auto"
+    ):
         """
         Initialize embedding model.
 
@@ -27,17 +29,20 @@ class EmbeddingGenerator:
         print(f"Device: {device}")
 
         # Note: Qwen3-Embedding models are compatible with SentenceTransformer
-        self.model = SentenceTransformer(model_name, device=device, trust_remote_code=True)
+        self.model = SentenceTransformer(
+            model_name, device=device, trust_remote_code=True
+        )
         self.embedding_dim = self.model.get_sentence_embedding_dimension()
 
-        print(f"✓ Embedding model loaded (dim={self.embedding_dim})")
+        # Avoid Unicode symbols to keep Windows cp1252 consoles happy.
+        print(f"[OK] Embedding model loaded (dim={self.embedding_dim})")
 
     def encode(
-        self, 
-        texts: Union[str, List[str]], 
-        batch_size: int = 32, 
+        self,
+        texts: Union[str, List[str]],
+        batch_size: int = 32,
         show_progress: bool = False,
-        instruction: str = ""
+        instruction: str = "",
     ) -> np.ndarray:
         """
         Generate embeddings for text(s).
@@ -86,7 +91,9 @@ class EmbeddingGenerator:
 _embedding_generator = None
 
 
-def get_embedding_generator(model_name: str = "Qwen/Qwen3-Embedding-0.6B") -> EmbeddingGenerator:
+def get_embedding_generator(
+    model_name: str = "Qwen/Qwen3-Embedding-0.6B",
+) -> EmbeddingGenerator:
     """Get or create global embedding generator instance."""
     global _embedding_generator
     if _embedding_generator is None:

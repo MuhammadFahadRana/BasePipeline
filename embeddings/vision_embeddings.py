@@ -11,7 +11,9 @@ from pathlib import Path
 class VisionEmbeddingGenerator:
     """Generate vision embeddings for images using SigLIP."""
 
-    def __init__(self, model_name: str = "google/siglip-base-patch16-224", device: str = "auto"):
+    def __init__(
+        self, model_name: str = "google/siglip-base-patch16-224", device: str = "auto"
+    ):
         """
         Initialize SigLIP vision model.
 
@@ -31,16 +33,15 @@ class VisionEmbeddingGenerator:
 
         self.model = AutoModel.from_pretrained(model_name).to(device)
         self.processor = AutoProcessor.from_pretrained(model_name)
-        
+
         # Get embedding dimension
         self.embedding_dim = self.model.config.vision_config.hidden_size
 
-        print(f"✓ SigLIP model loaded (dim={self.embedding_dim})")
+        # Avoid Unicode symbols to keep Windows cp1252 consoles happy.
+        print(f"[OK] SigLIP model loaded (dim={self.embedding_dim})")
 
     def encode_image(
-        self, 
-        image_input: Union[str, Path, bytes, Image.Image],
-        normalize: bool = True
+        self, image_input: Union[str, Path, bytes, Image.Image], normalize: bool = True
     ) -> np.ndarray:
         """
         Generate embedding for a single image.
@@ -57,11 +58,14 @@ class VisionEmbeddingGenerator:
                 image = Image.open(image_input).convert("RGB")
             elif isinstance(image_input, bytes):
                 import io
+
                 image = Image.open(io.BytesIO(image_input)).convert("RGB")
             elif isinstance(image_input, Image.Image):
                 image = image_input.convert("RGB")
             else:
-                raise ValueError("image_input must be a path, bytes, or PIL Image object")
+                raise ValueError(
+                    "image_input must be a path, bytes, or PIL Image object"
+                )
         except Exception as e:
             raise ValueError(f"Failed to load image: {e}")
 
@@ -72,7 +76,7 @@ class VisionEmbeddingGenerator:
         # Generate embedding
         with torch.no_grad():
             image_features = self.model.get_image_features(**inputs)
-            
+
         # Convert to numpy
         embedding = image_features.cpu().numpy()[0]
 
@@ -87,7 +91,7 @@ class VisionEmbeddingGenerator:
         image_paths: List[Union[str, Path]],
         batch_size: int = 32,
         show_progress: bool = True,
-        normalize: bool = True
+        normalize: bool = True,
     ) -> np.ndarray:
         """
         Generate embeddings for multiple images (batched).
@@ -104,14 +108,14 @@ class VisionEmbeddingGenerator:
         from tqdm import tqdm
 
         embeddings = []
-        
+
         iterator = range(0, len(image_paths), batch_size)
         if show_progress:
             iterator = tqdm(iterator, desc="Encoding images")
 
         for i in iterator:
-            batch_paths = image_paths[i:i+batch_size]
-            
+            batch_paths = image_paths[i : i + batch_size]
+
             # Load batch of images
             try:
                 images = [Image.open(p).convert("RGB") for p in batch_paths]
@@ -129,7 +133,7 @@ class VisionEmbeddingGenerator:
 
             # Convert to numpy
             batch_embeddings = image_features.cpu().numpy()
-            
+
             # Normalize if requested
             if normalize:
                 norms = np.linalg.norm(batch_embeddings, axis=1, keepdims=True)
@@ -143,9 +147,7 @@ class VisionEmbeddingGenerator:
         return np.vstack(embeddings)
 
     def encode_text(
-        self,
-        text: Union[str, List[str]],
-        normalize: bool = True
+        self, text: Union[str, List[str]], normalize: bool = True
     ) -> np.ndarray:
         """
         Generate embedding for text query (for image-text matching).
@@ -169,7 +171,25 @@ class VisionEmbeddingGenerator:
             text_features = self.model.get_text_features(**inputs)
 
         # Convert to numpy
-        embedding = text_features.cpu().numpy()
+        # `get_text_features` can return either a Tensor or a model output object
+        # depending on Transformers version/model class. Normalize to a Tensor.
+        if isinstance(text_features, torch.Tensor):
+            feats = text_features
+        else:
+            # Common fields across CLIP/SigLIP-like models
+            feats = getattr(text_features, "text_embeds", None)
+            if feats is None:
+                feats = getattr(text_features, "pooler_output", None)
+            if feats is None:
+                last_hidden = getattr(text_features, "last_hidden_state", None)
+                if last_hidden is not None:
+                    feats = last_hidden[:, 0, :]
+            if feats is None:
+                raise TypeError(
+                    f"Unexpected get_text_features output type: {type(text_features)}"
+                )
+
+        embedding = feats.detach().float().cpu().numpy()
 
         # Normalize if requested
         if normalize:
@@ -185,7 +205,9 @@ class VisionEmbeddingGenerator:
 _vision_generator = None
 
 
-def get_vision_embedding_generator(model_name: str = "google/siglip-base-patch16-224") -> VisionEmbeddingGenerator:
+def get_vision_embedding_generator(
+    model_name: str = "google/siglip-base-patch16-224",
+) -> VisionEmbeddingGenerator:
     """Get or create global vision embedding generator instance."""
     global _vision_generator
     if _vision_generator is None:

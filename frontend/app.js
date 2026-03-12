@@ -37,6 +37,7 @@ let selectedImageFile = null; // Store selected image for visual search
 let lastResults = []; // Store results for tab re-sorting
 let lastSearchData = null; // Store full response for re-rendering
 let currentView = 'combined'; // Current active tab view
+let currentFacet = 'auto'; // Meaning facet (auto/oil_gas/tools/analytics)
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -530,7 +531,8 @@ async function performSearch() {
             const params = new URLSearchParams({
                 q: query,
                 limit: limit,
-                mode: searchMode
+                mode: searchMode,
+                facet: currentFacet
             });
 
             if (video) {
@@ -553,7 +555,8 @@ async function performSearch() {
 
             const params = new URLSearchParams({
                 q: query,
-                limit: limit
+                limit: limit,
+                facet: currentFacet
             });
 
             if (video) {
@@ -589,6 +592,8 @@ function displayResults(data) {
     lastResults = results.slice();
     lastSearchData = data;
     currentView = 'combined';
+    // If backend applied a facet, keep it in state
+    currentFacet = data.facet_applied || currentFacet || 'auto';
 
     resultsTitle.textContent = `Results for "${query}"`;
 
@@ -602,6 +607,7 @@ function displayResults(data) {
     if (results_count === 0) {
         showEmptyResults();
         document.getElementById('resultTabs').style.display = 'none';
+        renderFacetChips(data.facets || [], currentFacet);
         return;
     }
 
@@ -614,9 +620,45 @@ function displayResults(data) {
     tabsEl.querySelectorAll('.result-tab').forEach(tab => tab.classList.remove('active'));
     tabsEl.querySelector('[data-view="combined"]').classList.add('active');
 
+    renderFacetChips(data.facets || [], currentFacet);
     renderResultCards(results, search_strategy, search_message);
 
     resultsSection.style.display = 'block';
+}
+
+function renderFacetChips(facets, activeFacet) {
+    const container = document.getElementById('facetChips');
+    if (!container) return;
+
+    if (!facets || !facets.length) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+
+    container.style.display = 'flex';
+    container.innerHTML = '';
+
+    facets.forEach(f => {
+        const btn = document.createElement('button');
+        btn.className = `facet-chip ${f.id === activeFacet ? 'active' : ''}`;
+        btn.type = 'button';
+        btn.title = f.description || '';
+        btn.innerHTML = `<span>${escapeHtml(f.label || f.id)}</span>`;
+
+        btn.addEventListener('click', () => {
+            // Update selection and rerun current search
+            currentFacet = f.id;
+            // Re-render chip active state immediately for responsiveness
+            renderFacetChips(facets, currentFacet);
+            // Re-run the current query if available
+            if (searchInput.value.trim()) {
+                performSearch();
+            }
+        });
+
+        container.appendChild(btn);
+    });
 }
 
 // Render result cards into the container
@@ -877,7 +919,9 @@ const HIGHLIGHT_STOP_WORDS = new Set([
 function highlightText(text, query) {
     if (!query) return escapeHtml(text);
 
-    const words = query.toLowerCase().split(/\s+/).filter(
+    // Extract clean tokens so "well?" highlights "well"
+    const tokens = (query.toLowerCase().match(/[a-z0-9]+/g) || []);
+    const words = tokens.filter(
         word => word.length >= 3 && !HIGHLIGHT_STOP_WORDS.has(word)
     );
     let highlightedText = escapeHtml(text);

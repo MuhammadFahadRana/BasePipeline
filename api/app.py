@@ -198,7 +198,7 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
     # Path Mapping (FIX): If DB contains Linux absolute paths but we are on Windows,
     # or relative paths, resolve the filename to the local 'videos' directory.
     project_root = Path(__file__).parent.parent
-    
+
     if not os.path.exists(video_path):
         # Try finding it in the videos directory
         local_filename = os.path.basename(video_path)
@@ -303,7 +303,7 @@ async def transcode_video(video_id: int, db: Session = Depends(get_db)):
 
     video_path = video.file_path
     project_root = Path(__file__).parent.parent
-    
+
     if not os.path.exists(video_path):
         local_filename = os.path.basename(video_path)
         resolved_path = project_root / "videos" / local_filename
@@ -489,6 +489,10 @@ async def quick_search(
     q: str = Query(..., description="Search query", min_length=1),
     limit: int = Query(10, description="Number of results", ge=1, le=50),
     video: Optional[str] = Query(None, description="Filter by video filename"),
+    facet: str = Query(
+        "auto",
+        description="Optional meaning facet: auto, oil_gas, tools, analytics",
+    ),
     search_engine: SemanticSearchEngine = Depends(get_search_engine),
 ):
     """
@@ -501,7 +505,7 @@ async def quick_search(
 
     try:
         fallback_data = search_engine.search_with_fallback(
-            query=q, top_k=limit, video_filter=video
+            query=q, top_k=limit, video_filter=video, facet=facet or "auto"
         )
 
         results = fallback_data["results"]
@@ -516,6 +520,8 @@ async def quick_search(
             "search_strategy": metadata.get("search_strategy"),
             "search_message": metadata.get("search_message"),
             "did_you_mean": metadata.get("did_you_mean"),
+            "facets": metadata.get("facets") or [],
+            "facet_applied": metadata.get("facet_applied") or (facet or "auto"),
         }
 
     except Exception as e:
@@ -650,6 +656,10 @@ async def quick_multimodal_search(
     use_llm: bool = Query(
         True, description="Use LLM for intent parsing (disable for speed)"
     ),
+    facet: str = Query(
+        "auto",
+        description="Optional meaning facet: auto, oil_gas, tools, analytics",
+    ),
     video: Optional[str] = Query(None, description="Filter by video filename"),
     db: Session = Depends(get_db),
 ):
@@ -681,6 +691,7 @@ async def quick_multimodal_search(
             top_k=limit,
             video_filter=video,
             use_llm=use_llm,
+            facet=facet or "auto",
         )
 
         results = fallback_data["results"]
@@ -697,6 +708,8 @@ async def quick_multimodal_search(
             "search_strategy": metadata.get("search_strategy"),
             "search_message": metadata.get("search_message"),
             "llm_intent": metadata.get("llm_intent"),
+            "facets": metadata.get("facets") or [],
+            "facet_applied": metadata.get("facet_applied") or (facet or "auto"),
         }
 
     except Exception as e:

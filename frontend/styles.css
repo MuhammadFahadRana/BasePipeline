@@ -294,6 +294,45 @@ select {
     border-bottom: 1px solid var(--border-light);
 }
 
+.facet-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: -0.5rem 0 1.0rem 0;
+}
+
+.facet-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-light);
+    background: #ffffff;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.facet-chip:hover {
+    border-color: #cbd5e1;
+    color: var(--text-primary);
+}
+
+.facet-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.facet-chip .facet-desc {
+    font-weight: 500;
+    opacity: 0.75;
+}
+
 .result-card {
     background: var(--bg-card);
     border: 1px solid var(--border-light);
