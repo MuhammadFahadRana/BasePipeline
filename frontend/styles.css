@@ -333,19 +333,15 @@ select {
     opacity: 0.75;
 }
 
-/* AI Answer panel (ChatGPT-style summary above results) */
+/* AI Answer panel (ATLAS answer summary above results) */
 .answer-panel {
     margin-top: 1rem;
     margin-bottom: 1.25rem;
     padding: 1rem 1.25rem;
     border-radius: 0.75rem;
-    background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.25), transparent 55%),
-                radial-gradient(circle at top right, rgba(147, 51, 234, 0.25), transparent 55%),
-                rgba(15, 23, 42, 0.9);
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    box-shadow:
-        0 18px 45px rgba(15, 23, 42, 0.8),
-        0 0 0 1px rgba(15, 23, 42, 0.8);
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
 }
 
 .answer-panel-header {
@@ -376,8 +372,8 @@ select {
 
 .answer-panel-body {
     font-size: 0.95rem;
-    line-height: 1.5;
-    color: #e5e7eb;
+    line-height: 1.6;
+    color: var(--text-primary);
 }
 
 .answer-panel-body p {
@@ -386,6 +382,40 @@ select {
 
 .answer-panel-body strong {
     color: #facc15;
+}
+
+.answer-sources {
+    margin-top: 0.75rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.answer-sources-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(107, 114, 128, 0.95);
+    margin-bottom: 0.35rem;
+}
+
+.answer-sources-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.answer-sources-list li {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.answer-sources-list li:last-child {
+    margin-bottom: 0;
+}
+
+.answer-sources-list .source-snippet {
+    color: var(--text-muted);
 }
 
 .result-card {

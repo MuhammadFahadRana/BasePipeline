@@ -1209,11 +1209,25 @@ class SemanticSearchEngine:
     ):
         """Log search query for analytics."""
         try:
+            # Ensure top_result_id actually refers to an existing transcript segment.
+            # Some results (visual/OCR-only) may not have a valid transcript segment id.
+            from database.models import TranscriptSegment  # local import to avoid cycles
+
+            valid_top_id = top_result_id
+            if top_result_id is not None:
+                exists = (
+                    self.db.query(TranscriptSegment)
+                    .filter(TranscriptSegment.id == top_result_id)
+                    .first()
+                )
+                if exists is None:
+                    valid_top_id = None
+
             query_log = SearchQuery(
                 query_text=query_text,
                 query_embedding=query_embedding,
                 results_count=results_count,
-                top_result_id=top_result_id,
+                top_result_id=valid_top_id,
             )
             self.db.add(query_log)
             self.db.commit()

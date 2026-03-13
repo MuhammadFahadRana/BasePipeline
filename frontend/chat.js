@@ -1,174 +1,207 @@
 /**
- * chat.js
- * Handles the floating AI chat widget interactions and SSE streaming.
+ * chat.js — ATLAS Floating Chat Assistant
+ * Floating widget on the search page, powered by the Qwen RAG backend.
+ * Connects to /v1/chat/completions with SSE streaming.
  */
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Elements
-    const chatToggleBtn = document.getElementById('chatToggleBtn');
-    const chatCloseBtn = document.getElementById('chatCloseBtn');
-    const chatWindow = document.getElementById('chatWindow');
-    const chatMessages = document.getElementById('chatMessages');
-    const chatInput = document.getElementById('chatInput');
-    const chatSendBtn = document.getElementById('chatSendBtn');
+const ChatAssistant = (() => {
+    const API_URL = 'http://localhost:8000/v1/chat/completions';
 
     // State
-    let isChatOpen = false;
+    let chatHistory = [];
     let isGenerating = false;
-    let chatHistory = []; // To keep context if needed in future
+    let isOpen = false;
 
-    // Toggle Chat Window
-    function toggleChat() {
-        isChatOpen = !isChatOpen;
-        if (isChatOpen) {
-            chatWindow.style.display = 'flex';
-            chatToggleBtn.style.transform = 'scale(0)';
-            setTimeout(() => chatInput.focus(), 100);
-            scrollToBottom();
-        } else {
-            chatWindow.style.display = 'none';
-            chatToggleBtn.style.transform = 'scale(1)';
-        }
+    // DOM refs
+    let chatWidget, chatWindow, chatToggleBtn, chatCloseBtn;
+    let chatMessages, chatInput, chatSendBtn, chatClearBtn;
+
+    function init() {
+        chatWidget = document.getElementById('chatWidget');
+        chatWindow = document.getElementById('chatWindow');
+        chatToggleBtn = document.getElementById('chatToggleBtn');
+        chatCloseBtn = document.getElementById('chatCloseBtn');
+        chatMessages = document.getElementById('chatMessages');
+        chatInput = document.getElementById('chatInput');
+        chatSendBtn = document.getElementById('chatSendBtn');
+        chatClearBtn = document.getElementById('chatClearBtn');
+
+        if (!chatWidget || !chatMessages) return;
+
+        chatToggleBtn.addEventListener('click', toggle);
+        chatCloseBtn.addEventListener('click', () => setOpen(false));
+
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        chatInput.addEventListener('input', () => {
+            chatInput.style.height = 'auto';
+            chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+        });
+
+        chatSendBtn.addEventListener('click', sendMessage);
+        chatClearBtn.addEventListener('click', clearChat);
     }
 
-    chatToggleBtn.addEventListener('click', toggleChat);
-    chatCloseBtn.addEventListener('click', toggleChat);
+    function toggle() {
+        setOpen(!isOpen);
+    }
 
-    // Enter key to send
-    chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
+    function setOpen(state) {
+        isOpen = state;
+        chatWidget.classList.toggle('open', isOpen);
+        if (isOpen) {
+            setTimeout(() => chatInput.focus(), 150);
+            scrollToBottom();
         }
-    });
-
-    chatSendBtn.addEventListener('click', sendMessage);
+    }
 
     function scrollToBottom() {
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
-    function appendMessage(role, content) {
-        const msgDiv = document.createElement('div');
-        msgDiv.className = `chat-message ${role}-message`;
-        
-        // Basic markdown formatting (bold, code blocks, links)
-        let formattedContent = content
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/`(.*?)`/g, '<code>$1</code>')
-            .replace(/\n\n/g, '</p><p>')
-            .replace(/\n/g, '<br/>');
+    function createMessageEl(role, content) {
+        const wrapper = document.createElement('div');
+        wrapper.className = `chat-msg chat-msg--${role}`;
 
-        // Note: the citations block has a markdown rule `---` and `**📹 Sources**`
-        // Make sure it looks okay
-        if (role === 'assistant' && formattedContent.includes('---')) {
-            formattedContent = formattedContent.replace('---', '<hr>');
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble';
+
+        if (role === 'assistant') {
+            const label = document.createElement('span');
+            label.className = 'chat-role-label';
+            label.textContent = 'ATLAS';
+            wrapper.appendChild(label);
         }
 
-        msgDiv.innerHTML = `<p>${formattedContent}</p>`;
-        chatMessages.appendChild(msgDiv);
+        bubble.innerHTML = formatMarkdown(content);
+        wrapper.appendChild(bubble);
+        chatMessages.appendChild(wrapper);
         scrollToBottom();
-        return msgDiv;
+        return bubble;
+    }
+
+    function formatMarkdown(text) {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/^---$/gm, '<hr>')
+            .replace(/\n\n/g, '</p><p>')
+            .replace(/\n/g, '<br>');
     }
 
     async function sendMessage() {
         const text = chatInput.value.trim();
         if (!text || isGenerating) return;
 
-        // 1. Add User Message
-        appendMessage('user', text);
+        createMessageEl('user', text);
         chatInput.value = '';
-        isGenerating = true;
-        chatSendBtn.disabled = true;
-        chatInput.disabled = true;
+        chatInput.style.height = 'auto';
 
-        // Add to history
-        chatHistory.push({ role: "user", content: text });
+        chatHistory.push({ role: 'user', content: text });
+        setGenerating(true);
 
-        // 2. Create empty Assistant Message
-        const assistantMsgDiv = document.createElement('div');
-        assistantMsgDiv.className = 'chat-message assistant-message streaming';
-        assistantMsgDiv.innerHTML = '<p></p>';
-        chatMessages.appendChild(assistantMsgDiv);
+        // Create streaming assistant bubble
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chat-msg chat-msg--assistant';
+
+        const label = document.createElement('span');
+        label.className = 'chat-role-label';
+        label.textContent = 'ATLAS';
+        wrapper.appendChild(label);
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble streaming';
+        bubble.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+        wrapper.appendChild(bubble);
+        chatMessages.appendChild(wrapper);
         scrollToBottom();
 
-        const contentP = assistantMsgDiv.querySelector('p');
-        let fullResponse = "";
+        let fullResponse = '';
 
         try {
-            // 3. Make Streaming Request
-            const response = await fetch('http://localhost:8000/v1/chat/completions', {
+            const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: "ATLAS",
+                    model: 'ATLAS',
                     messages: chatHistory,
-                    stream: true
-                })
+                    stream: true,
+                    max_tokens: 512,
+                }),
             });
 
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
-            // 4. Read SSE Stream
             const reader = response.body.getReader();
             const decoder = new TextDecoder('utf-8');
-            let buffer = "";
+            let buffer = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
                 buffer += decoder.decode(value, { stream: true });
-                let lines = buffer.split('\n');
-                
-                // Keep the last partial line in the buffer
+                const lines = buffer.split('\n');
                 buffer = lines.pop();
 
-                for (let line of lines) {
-                    line = line.trim();
-                    if (!line || !line.startsWith('data: ')) continue;
-                    
-                    const dataStr = line.substring(6);
-                    if (dataStr === '[DONE]') continue;
-
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || !trimmed.startsWith('data: ')) continue;
+                    const payload = trimmed.slice(6);
+                    if (payload === '[DONE]') continue;
                     try {
-                        const data = JSON.parse(dataStr);
-                        if (data.choices && data.choices[0].delta.content) {
-                            const chunk = data.choices[0].delta.content;
-                            fullResponse += chunk;
-                            
-                            // Re-render formatting smoothly
-                            let displayHtml = fullResponse
-                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                .replace(/`(.*?)`/g, '<code>$1</code>')
-                                .replace(/\n\n/g, '</p><p>')
-                                .replace(/\n/g, '<br/>')
-                                .replace('---', '<hr>');
-                                
-                            contentP.innerHTML = displayHtml;
+                        const data = JSON.parse(payload);
+                        const token = data.choices?.[0]?.delta?.content;
+                        if (token) {
+                            fullResponse += token;
+                            bubble.innerHTML = formatMarkdown(fullResponse);
                             scrollToBottom();
                         }
-                    } catch (e) {
-                        console.error('Error parsing SSE chunk:', e, dataStr);
-                    }
+                    } catch (_) { /* skip malformed chunk */ }
                 }
             }
 
-            // Finished
-            assistantMsgDiv.classList.remove('streaming');
-            chatHistory.push({ role: "assistant", content: fullResponse });
+            bubble.classList.remove('streaming');
+            chatHistory.push({ role: 'assistant', content: fullResponse });
 
-        } catch (error) {
-            console.error('Chat Error:', error);
-            assistantMsgDiv.classList.remove('streaming');
-            assistantMsgDiv.innerHTML = `<p style="color: #ff4d4d;">Error connecting to assistant: ${error.message}</p>`;
+        } catch (err) {
+            console.error('Chat error:', err);
+            bubble.classList.remove('streaming');
+            bubble.innerHTML = `<span class="chat-error">Failed to get response: ${err.message}</span>`;
         } finally {
-            isGenerating = false;
-            chatSendBtn.disabled = false;
-            chatInput.disabled = false;
-            chatInput.focus();
+            setGenerating(false);
         }
     }
-});
+
+    function setGenerating(state) {
+        isGenerating = state;
+        chatSendBtn.disabled = state;
+        chatInput.disabled = state;
+        if (!state) chatInput.focus();
+    }
+
+    function clearChat() {
+        chatHistory = [];
+        chatMessages.innerHTML = `
+            <div class="chat-msg chat-msg--assistant">
+                <span class="chat-role-label">ATLAS</span>
+                <div class="chat-bubble">
+                    <p>Hello! I'm <strong>ATLAS</strong>, your video assistant. Ask me anything about the videos in your library.</p>
+                </div>
+            </div>`;
+    }
+
+    return { init };
+})();
+
+document.addEventListener('DOMContentLoaded', () => ChatAssistant.init());

@@ -205,7 +205,7 @@ class SimpleTranscriber:
             str(audio_path),
             word_timestamps=True,
             verbose=False,
-            language="en",  # Change to None for auto-detection
+            language=None,  # Auto-detect language (supports 99+ languages including Norwegian)
         )
 
     def _transcribe_whisperx(self, audio_path: Path):

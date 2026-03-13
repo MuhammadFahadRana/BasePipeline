@@ -327,80 +327,62 @@ function attachEventListeners() {
         searchInput.focus();
     });
 
-    // Quick search buttons
-    quickSearchBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const query = btn.dataset.query;
-            searchInput.value = query;
-            clearBtn.style.display = 'flex';
-            removeSelectedImage(); // Clear any image when using quick search
-            performSearch();
-        });
-    });
+    // Quick search buttons removed from UI
 
     // ====== Image Upload Listeners ======
+    // Image-based search removed from UI; skip wiring if elements aren't present.
     const imageUploadBtn = document.getElementById('imageUploadBtn');
     const imageFileInput = document.getElementById('imageFileInput');
     const removeImageBtn = document.getElementById('removeImageBtn');
     const searchContainer = document.querySelector('.search-container');
 
-    // Click to upload
-    imageUploadBtn.addEventListener('click', () => {
-        imageFileInput.click();
-    });
+    if (imageUploadBtn && imageFileInput) {
+        // Click to upload
+        imageUploadBtn.addEventListener('click', () => {
+            imageFileInput.click();
+        });
 
-    // File selected
-    imageFileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            handleImageSelected(file);
-        }
-    });
-
-    // Remove image
-    removeImageBtn.addEventListener('click', () => {
-        removeSelectedImage();
-    });
-
-    // Drag and drop on search container
-    searchContainer.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        searchContainer.classList.add('drag-over');
-    });
-
-    searchContainer.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        searchContainer.classList.remove('drag-over');
-    });
-
-    searchContainer.addEventListener('drop', (e) => {
-        e.preventDefault();
-        searchContainer.classList.remove('drag-over');
-        const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith('image/')) {
-            handleImageSelected(file);
-        } else {
-            showNotification('Please drop an image file', 'warning');
-        }
-    });
-
-    // Clipboard paste (Ctrl+V) to attach images
-    document.addEventListener('paste', (e) => {
-        const items = e.clipboardData?.items;
-        if (!items) return;
-
-        for (const item of items) {
-            if (item.type.startsWith('image/')) {
-                e.preventDefault();
-                const file = item.getAsFile();
-                if (file) {
-                    handleImageSelected(file);
-                    showNotification('Image pasted from clipboard!', 'success');
-                }
-                return;
+        // File selected
+        imageFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleImageSelected(file);
             }
-        }
-    });
+        });
+    }
+
+    if (removeImageBtn) {
+        // Remove image
+        removeImageBtn.addEventListener('click', () => {
+            removeSelectedImage();
+        });
+    }
+
+    if (searchContainer) {
+        // Drag and drop on search container
+        searchContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            searchContainer.classList.add('drag-over');
+        });
+
+        searchContainer.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            searchContainer.classList.remove('drag-over');
+        });
+
+        searchContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            searchContainer.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                handleImageSelected(file);
+            } else {
+                showNotification('Please drop an image file', 'warning');
+            }
+        });
+    }
+
+    // Clipboard paste for images is disabled in the UI.
 }
 
 // ====== Image Upload Functions ======
@@ -632,8 +614,44 @@ function displayResults(data, qaData = null) {
             answerPanel.style.display = 'block';
         }
         if (answerBody) {
-            // Keep it simple: plain text with basic HTML escaping
-            answerBody.innerHTML = `<p>${escapeHtml(qaData.answer)}</p>`;
+            // Remove inline reference boilerplate like:
+            // "Reference(s): [Source 1], [Source 2]" and any stray "[Source N]" tags.
+            let cleanedAnswer = (qaData.answer || '').trim();
+            cleanedAnswer = cleanedAnswer.replace(/\bReference\(s\):\s*\[[^\]]+\](?:\s*,\s*\[[^\]]+\])*\s*\.?/gi, '').trim();
+            cleanedAnswer = cleanedAnswer.replace(/\[Source\s*\d+\]/gi, '').replace(/\s{2,}/g, ' ').trim();
+
+            const safeAnswer = escapeHtml(cleanedAnswer);
+
+            // Build a compact "Sources" section from citations (if present)
+            let sourcesHtml = '';
+            if (Array.isArray(qaData.citations) && qaData.citations.length > 0) {
+                const items = qaData.citations.slice(0, 4).map((c) => {
+                    const ts = c.timestamp || '';
+                    const file = c.video_filename || '';
+                    const snippet = (c.text || '').trim();
+                    const score = typeof c.score === 'number' ? ` (${Math.round(c.score * 100)}% match)` : '';
+                    return `
+                        <li>
+                            <strong>${escapeHtml(file)}</strong> @ ${escapeHtml(ts)}${score}<br/>
+                            <span class="source-snippet">${escapeHtml(snippet)}</span>
+                        </li>
+                    `;
+                }).join('');
+
+                sourcesHtml = `
+                    <div class="answer-sources">
+                        <div class="answer-sources-title">Sources</div>
+                        <ul class="answer-sources-list">
+                            ${items}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            answerBody.innerHTML = `
+                <p>${safeAnswer}</p>
+                ${sourcesHtml}
+            `;
         }
     } else {
         if (answerPanel) {

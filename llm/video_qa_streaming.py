@@ -39,7 +39,7 @@ class StreamingVideoQA(VideoQA):
     ) -> Iterator[str]:
         """
         Generator that yields SSE data lines (already formatted as
-        `data: {...}\\n\\n` strings) for streaming to Open WebUI.
+        `data: {...}\n\n` strings) for SSE streaming.
 
         Args:
             question: User's question

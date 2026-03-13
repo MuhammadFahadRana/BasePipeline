@@ -1032,8 +1032,7 @@ async def hybrid_search(
 
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  OpenAI-compatible endpoints — for Open WebUI / any OpenAI client       ║
-# ║  Base URL to use in Open WebUI: http://host.docker.internal:8000/v1     ║
+# ║  OpenAI-compatible chat completions endpoints                            ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 
@@ -1052,7 +1051,7 @@ class ChatCompletionRequest(BaseModel):
 
 @app.get("/v1/models")
 async def list_models():
-    """OpenAI-compatible model list. Required by Open WebUI on startup."""
+    """OpenAI-compatible model list."""
     return {
         "object": "list",
         "data": [
@@ -1080,9 +1079,6 @@ async def chat_completions(
     2. Check system message for optional `video:<filename>` scoping directive
     3. Run VideoQA RAG: semantic search → Qwen2.5-1.5B generates grounded answer
     4. Stream back tokens via SSE (or return full JSON if stream=False)
-
-    Connect Open WebUI to: http://host.docker.internal:8000/v1
-    Select model: ATLAS
     """
     from llm.video_qa_streaming import get_streaming_qa
 
@@ -1118,7 +1114,7 @@ async def chat_completions(
             status_code=503, detail=f"VideoQA system could not be initialised: {e}"
         )
 
-    # ── Streaming response (Open WebUI default: stream=True) ─────────────
+    # ── Streaming response (default: stream=True) ───────────────────────
     if request.stream:
 
         async def sse_generator():
