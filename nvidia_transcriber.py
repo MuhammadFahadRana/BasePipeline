@@ -2,7 +2,7 @@
 """
 NVIDIA ASR Transcriber (Local NeMo Inference)
 
-Transcribe VIDEO files using NVIDIA Parakeet models locally via NeMo.
+Transcribe VIDEO files using NVIDIA Parakeet/Canary models locally via NeMo.
 
 What it does:
 1) Scans a video folder for supported video/audio files
@@ -18,6 +18,7 @@ Requirements:
 Run:
     python nvidia_transcriber.py --video-folder videos
     python nvidia_transcriber.py --video-folder videos --limit 2 --model parakeet-ctc-1.1b
+    python nvidia_transcriber.py --video-folder videos --limit 2 --model canary-1b-v2
     python nvidia_transcriber.py --single videos/my_video.mp4
 """
 
@@ -45,6 +46,7 @@ AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac", ".wma", ".opus"}
 MODEL_MAP = {
     "parakeet-ctc-1.1b": "nvidia/parakeet-ctc-1.1b",
     "parakeet-ctc-0.6b": "nvidia/parakeet-ctc-0.6b",
+    "canary-1b-v2": "nvidia/canary-1b-v2",
 }
 
 AVAILABLE_MODELS = list(MODEL_MAP.keys())
@@ -127,7 +129,7 @@ def run_ffmpeg_extract_to_wav(
 
 
 class NvidiaTranscriber:
-    """Transcribe video/audio files using NVIDIA Parakeet models locally via NeMo."""
+    """Transcribe video/audio files using NVIDIA Parakeet/Canary models locally via NeMo."""
 
     MODEL_DISPLAY_NAME = "NVIDIA-ASR"
 
@@ -141,15 +143,24 @@ class NvidiaTranscriber:
 
         # Resolve HF repo ID
         hf_model = MODEL_MAP.get(model, model)
+        self.is_canary = "canary" in hf_model.lower()
 
-        # Load the NeMo CTC model locally
+        # Load the NeMo model locally
         print(f"Loading NeMo model '{hf_model}' on {self.device}...")
-        from nemo.collections.asr.models import EncDecCTCModelBPE
-
         try:
-            self.model = EncDecCTCModelBPE.from_pretrained(
-                model_name=hf_model, map_location=self.device
-            )
+            if self.is_canary:
+                from nemo.collections.asr.models import EncDecMultiTaskModel
+
+                self.model = EncDecMultiTaskModel.from_pretrained(
+                    model_name=hf_model, map_location=self.device
+                )
+            else:
+                from nemo.collections.asr.models import EncDecCTCModelBPE
+
+                self.model = EncDecCTCModelBPE.from_pretrained(
+                    model_name=hf_model, map_location=self.device
+                )
+                self._patch_ctc_transcribe_dataloader()
         except Exception as e:
             raise RuntimeError(
                 f"Failed to load model '{hf_model}' locally.\n"
@@ -159,37 +170,6 @@ class NvidiaTranscriber:
             ) from e
 
         self.model.eval()
-
-        # Monkeypatch: bypass broken lhotse DynamicCutSampler
-        # NeMo hardcodes use_lhotse=True in _setup_transcribe_dataloader,
-        # but the installed lhotse version has an incompatible CutSampler.
-        # Override to use the standard NeMo dataloader instead.
-        import types
-        from omegaconf import DictConfig
-
-        _original_setup = self.model._setup_transcribe_dataloader
-
-        def _patched_setup_transcribe_dataloader(config):
-            if 'manifest_filepath' in config:
-                manifest_filepath = config['manifest_filepath']
-                batch_size = config['batch_size']
-            else:
-                manifest_filepath = os.path.join(config['temp_dir'], 'manifest.json')
-                batch_size = min(config['batch_size'], len(config['paths2audio_files']))
-
-            dl_config = {
-                'manifest_filepath': manifest_filepath,
-                'sample_rate': self.model.preprocessor._sample_rate,
-                'batch_size': batch_size,
-                'shuffle': False,
-                'num_workers': config.get('num_workers', min(batch_size, max(os.cpu_count() - 1, 1))),
-                'pin_memory': True,
-                'channel_selector': config.get('channel_selector', None),
-                'use_start_end_token': self.model.cfg.validation_ds.get('use_start_end_token', False),
-            }
-            return self.model._setup_dataloader_from_config(config=DictConfig(dl_config))
-
-        self.model._setup_transcribe_dataloader = _patched_setup_transcribe_dataloader
 
         print(f"Model loaded successfully on {self.device}")
 
@@ -206,6 +186,32 @@ class NvidiaTranscriber:
 
     # ── Core transcription ──────────────────────────────────────────────
 
+    def _patch_ctc_transcribe_dataloader(self) -> None:
+        """Bypass NeMo+lhotse incompatibilities for CTC transcribe() calls."""
+        from omegaconf import DictConfig
+
+        def _patched_setup_transcribe_dataloader(config):
+            if "manifest_filepath" in config:
+                manifest_filepath = config["manifest_filepath"]
+                batch_size = config["batch_size"]
+            else:
+                manifest_filepath = os.path.join(config["temp_dir"], "manifest.json")
+                batch_size = min(config["batch_size"], len(config["paths2audio_files"]))
+
+            dl_config = {
+                "manifest_filepath": manifest_filepath,
+                "sample_rate": self.model.preprocessor._sample_rate,
+                "batch_size": batch_size,
+                "shuffle": False,
+                "num_workers": config.get("num_workers", min(batch_size, max(os.cpu_count() - 1, 1))),
+                "pin_memory": True,
+                "channel_selector": config.get("channel_selector", None),
+                "use_start_end_token": self.model.cfg.validation_ds.get("use_start_end_token", False),
+            }
+            return self.model._setup_dataloader_from_config(config=DictConfig(dl_config))
+
+        self.model._setup_transcribe_dataloader = _patched_setup_transcribe_dataloader
+
     def transcribe_audio(self, wav_path: Path) -> Dict:
         """
         Transcribe a WAV file using the local NeMo model.
@@ -216,9 +222,12 @@ class NvidiaTranscriber:
         print(f"  Transcribing locally (model={self.model_name})...")
 
         with torch.no_grad():
-            result = self.model.transcribe([str(wav_path)])
+            if self.is_canary:
+                result = self.model.transcribe(audio=[str(wav_path)], batch_size=1)
+            else:
+                result = self.model.transcribe([str(wav_path)])
 
-        # NeMo CTC models return a list of strings
+        # NeMo CTC/Canary models return a list of strings
         if isinstance(result, list):
             text = result[0] if result else ""
         else:
@@ -420,7 +429,7 @@ class NvidiaTranscriber:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Transcribe videos using NVIDIA Parakeet models locally (NeMo)."
+        description="Transcribe videos using NVIDIA Parakeet/Canary models locally (NeMo)."
     )
     parser.add_argument(
         "--video-folder",
