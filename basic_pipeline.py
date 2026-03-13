@@ -190,6 +190,7 @@ class BasicVideoPipeline:
     ) -> bool:
         required = [
             transcript_dir / "transcript.json",
+            transcript_dir / "transcript.txt",
             scenes_dir / "scenes.json",
             results_dir / "results.json",
             results_dir / "report.html",
@@ -230,11 +231,14 @@ class BasicVideoPipeline:
         output_base.mkdir(parents=True, exist_ok=True)
 
         video_name = video_path.stem
+        model_name = getattr(self.transcriber, "model_name", "unknown")
 
-        transcript_dir = output_base / "transcripts" / video_name
-        scenes_dir = output_base / "scenes" / video_name
-        results_dir = output_base / "results" / video_name
-        manifest_path = results_dir / "manifest.json"
+        # All outputs go under processed/<ModelName>/<VideoName>/
+        video_output_dir = output_base / model_name / video_name
+        transcript_dir = video_output_dir
+        scenes_dir = video_output_dir
+        results_dir = video_output_dir
+        manifest_path = video_output_dir / "manifest.json"
 
         # Cache check
         current_fp = self._video_fingerprint(video_path, use_hash=use_hash)
@@ -332,7 +336,7 @@ class BasicVideoPipeline:
         else:
             print("\n2. Detecting & refining scenes...")
             scenes = self.scene_detector.detect_scenes(
-                video_path, base_output_dir=str(output_base / "scenes")
+                video_path, base_output_dir=str(video_output_dir)
             )
 
             print("\n2b. Refining scenes (CLIP)...")
@@ -346,9 +350,7 @@ class BasicVideoPipeline:
                 scenes = self.scene_detector.enrich_with_visual_features(scenes)
                 # Re-save scenes cache with enrichment data included
                 scenes_cache = (
-                    output_base
-                    / "scenes"
-                    / video_path.stem
+                    video_output_dir
                     / f"{video_path.stem}_scenes.json"
                 )
                 if scenes_cache.exists():
@@ -499,6 +501,17 @@ class BasicVideoPipeline:
         with open(transcript_file, "w", encoding="utf-8") as f:
             json.dump(transcript, f, indent=2, ensure_ascii=False)
         print(f"✓ Transcript saved to: {transcript_file}")
+
+        # Save transcript.txt (human-readable with timestamps)
+        text_file = transcript_dir / "transcript.txt"
+        with open(text_file, "w", encoding="utf-8") as f:
+            f.write(f"Transcription for {results['video']['filename']}\n")
+            f.write("=" * 50 + "\n\n")
+            for seg in transcript.get("segments", []):
+                start = str(timedelta(seconds=seg["start"])).split(".")[0]
+                text = seg.get("text", "").strip()
+                f.write(f"[{start}] {text}\n")
+        print(f"✓ Transcript (text) saved to: {text_file}")
 
         # Save scenes.json
         scenes_file = scenes_dir / "scenes.json"
@@ -826,7 +839,8 @@ if __name__ == "__main__":
         print("\nRunning Ingestion Only mode")
         if args.video:
             video_path = Path(args.video)
-            results_file = Path("processed/results") / video_path.stem / "results.json"
+            model_name = getattr(pipeline.transcriber, "model_name", "unknown")
+            results_file = Path("processed") / model_name / video_path.stem / "results.json"
             pipeline._ingest_results(results_file)
         else:
             # Batch ingest from processed/results

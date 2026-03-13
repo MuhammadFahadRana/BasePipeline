@@ -56,7 +56,7 @@ class DataIngester:
         Ingest a single video's results into database.
 
         Args:
-            results_file: Path to results.json (e.g., processed/results/AkerBP_1/results.json)
+            results_file: Path to results.json (e.g., processed/Whisper-Large-v3/AkerBP_1/results.json)
             generate_embeddings: Whether to generate embeddings for transcript segments
             generate_visual_embeddings: Whether to generate visual embeddings for keyframes
             skip_existing: Skip if video already exists in database
@@ -444,13 +444,12 @@ class DataIngester:
         Batch ingest all processed videos.
         """
         processed_dir = Path(processed_dir)
-        results_dir = processed_dir / "results"
 
-        if not results_dir.exists():
-            raise FileNotFoundError(f"Results directory not found: {results_dir}")
+        # Find all results.json under processed/<ModelName>/<VideoName>/results.json
+        results_files = list(processed_dir.glob("*/*/results.json"))
 
-        # Find all results.json files
-        results_files = list(results_dir.glob("*/results.json"))
+        if not results_files:
+            raise FileNotFoundError(f"No results.json found under: {processed_dir}")
 
         print(f"\n{'='*60}")
         print(f"BATCH INGESTION")
