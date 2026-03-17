@@ -20,7 +20,8 @@ from search.reranker import get_reranker
 _vocabulary: Optional[Set[str]] = None
 
 # ── Stop words and command verbs (shared across all search methods) ──
-STOP_WORDS = {
+# English stop words
+_STOP_WORDS_EN = {
     "the",
     "a",
     "an",
@@ -135,6 +136,26 @@ STOP_WORDS = {
     "need",
 }
 
+# Norwegian (Bokmål + Nynorsk) stop words
+_STOP_WORDS_NO = {
+    "og", "i", "jeg", "det", "at", "en", "et", "den", "til", "er",
+    "som", "på", "de", "med", "han", "av", "ikke", "der", "så",
+    "var", "meg", "seg", "men", "ett", "har", "om", "vi", "min",
+    "mitt", "ha", "hadde", "hun", "nå", "over", "da", "ved", "fra",
+    "du", "ut", "sin", "dem", "oss", "opp", "man", "kan", "hans",
+    "hvor", "eller", "hva", "skal", "selv", "sjøl", "her", "alle",
+    "vil", "bli", "ble", "blitt", "kunne", "inn", "når", "være",
+    "kom", "noen", "noe", "ville", "dere", "denne", "dette", "mitt",
+    "også", "under", "etter", "mange", "enn", "ingen", "mot",
+    "bli", "bare", "gå", "nå", "mellom", "før", "helt", "andre",
+    "fordi", "henne", "hennes", "sitt", "noen", "uten",
+    # Command verbs (Norwegian)
+    "vis", "finn", "søk", "hent", "vennligst",
+}
+
+# Combined stop words (both languages)
+STOP_WORDS = _STOP_WORDS_EN | _STOP_WORDS_NO
+
 ANALYTICS_HINT_WORDS = {
     "data",
     "dashboard",
@@ -156,18 +177,20 @@ ANALYTICS_HINT_WORDS = {
 
 def extract_keywords(query: str) -> List[str]:
     """Extract content-bearing keywords from a query, removing stop words."""
-    words = re.findall(r"[a-zA-Z0-9]+", query.lower())
+    words = re.findall(r"[\w]+", query.lower(), flags=re.UNICODE)
     return [w for w in words if w not in STOP_WORDS and len(w) >= 2]
 
 
 def _whole_word_in_text(word: str, text: str) -> bool:
-    """True if `word` appears as a whole token (word-boundary match) in `text`."""
+    """True if `word` appears as a whole token (word-boundary match) in `text`.
+    Uses Unicode-aware boundaries so that æ, ø, å are treated as word characters."""
     if not word or not text:
         return False
     try:
-        return re.search(rf"\b{re.escape(word.lower())}\b", text.lower()) is not None
+        # (?<![\w]) and (?![\w]) are Unicode-aware word boundaries
+        pattern = rf"(?<![\w]){re.escape(word.lower())}(?![\w])"
+        return re.search(pattern, text.lower(), flags=re.UNICODE) is not None
     except re.error:
-        # Extremely defensive: if regex fails for any reason, fallback to substring.
         return word.lower() in text.lower()
 
 
@@ -461,8 +484,8 @@ class SemanticSearchEngine:
             if abs(len(word) - len(query_term)) > 3:
                 continue
 
-            # Skip short words for fuzzy matching (less than 4 chars) unless exact
-            if len(query_term) < 4 and word != query_term:
+            # Skip very short words for fuzzy matching (less than 3 chars) unless exact
+            if len(query_term) < 3 and word != query_term:
                 continue
 
             score = SequenceMatcher(None, query_term, word).ratio()
@@ -982,7 +1005,7 @@ class SemanticSearchEngine:
                     ts.start_time,
                     ts.end_time,
                     ts.text AS result_text,
-                    ts_rank(to_tsvector('english', ts.text), websearch_to_tsquery('english', :query)) AS rank,
+                    ts_rank(to_tsvector('simple', ts.text), websearch_to_tsquery('simple', :query)) AS rank,
                     NULL AS ocr_text,
                     ve.keyframe_path,
                     'transcript' AS match_source
@@ -990,7 +1013,7 @@ class SemanticSearchEngine:
                 JOIN videos v ON ts.video_id = v.id
                 LEFT JOIN scenes s ON ts.scene_id = s.id
                 LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
-                WHERE to_tsvector('english', ts.text) @@ websearch_to_tsquery('english', :query)
+                WHERE to_tsvector('simple', ts.text) @@ websearch_to_tsquery('simple', :query)
                 {query_filter_ts}
 
                 UNION ALL
@@ -1004,7 +1027,7 @@ class SemanticSearchEngine:
                     s.start_time,
                     s.end_time,
                     '[OCR] ' || s.ocr_text AS result_text,
-                    ts_rank(to_tsvector('english', s.ocr_text), websearch_to_tsquery('english', :query)) AS rank,
+                    ts_rank(to_tsvector('simple', s.ocr_text), websearch_to_tsquery('simple', :query)) AS rank,
                     s.ocr_text,
                     COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
                     'ocr' AS match_source
@@ -1012,7 +1035,7 @@ class SemanticSearchEngine:
                 JOIN videos v ON s.video_id = v.id
                 LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
                 WHERE s.ocr_text IS NOT NULL
-                  AND to_tsvector('english', s.ocr_text) @@ websearch_to_tsquery('english', :query)
+                  AND to_tsvector('simple', s.ocr_text) @@ websearch_to_tsquery('simple', :query)
                 {query_filter_ocr}
 
                 UNION ALL
@@ -1029,10 +1052,10 @@ class SemanticSearchEngine:
                     '[Visual] ' || s.caption AS result_text,
                     -- Boost Visual rank 6x so richer descriptions surface clearly
                     ts_rank(
-                        to_tsvector('english',
+                        to_tsvector('simple',
                             s.caption || ' ' || COALESCE(s.object_labels::text, '[]')
                         ),
-                        websearch_to_tsquery('english', :query)
+                        websearch_to_tsquery('simple', :query)
                     ) * 6.0 AS rank,
                     NULL AS ocr_text,
                     COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
@@ -1041,9 +1064,9 @@ class SemanticSearchEngine:
                 JOIN videos v ON s.video_id = v.id
                 LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
                 WHERE s.caption IS NOT NULL
-                  AND to_tsvector('english',
+                  AND to_tsvector('simple',
                         s.caption || ' ' || COALESCE(s.object_labels::text, '[]')
-                      ) @@ websearch_to_tsquery('english', :query)
+                      ) @@ websearch_to_tsquery('simple', :query)
                 {query_filter_ocr}
             )
             SELECT * FROM combined

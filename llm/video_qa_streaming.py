@@ -36,6 +36,7 @@ class StreamingVideoQA(VideoQA):
         top_k: int = 5,
         request_id: Optional[str] = None,
         max_new_tokens: int = 512,
+        language: Optional[str] = None,
     ) -> Iterator[str]:
         """
         Generator that yields SSE data lines (already formatted as
@@ -104,7 +105,7 @@ class StreamingVideoQA(VideoQA):
         context_text = "\n\n".join(context_parts)
 
         # ── 3. Build prompt ─────────────────────────────────────────────
-        prompt = self._build_prompt(question, context_text)
+        prompt = self._build_prompt(question, context_text, language=language)
 
         # ── 4. Stream generation ────────────────────────────────────────
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
@@ -145,13 +146,14 @@ class StreamingVideoQA(VideoQA):
         question: str,
         video_filter: Optional[str] = None,
         top_k: int = 5,
+        language: Optional[str] = None,
     ) -> Dict:
         """
         Synchronous (non-streaming) version — aggregates the stream and
         returns an OpenAI-style complete response dict.
         """
         full_text = ""
-        for chunk in self.stream_ask(question, video_filter=video_filter, top_k=top_k):
+        for chunk in self.stream_ask(question, video_filter=video_filter, top_k=top_k, language=language):
             if chunk.startswith("data: [DONE]") or not chunk.startswith("data: "):
                 continue
             try:

@@ -48,12 +48,39 @@ document.addEventListener('DOMContentLoaded', () => {
     attachModalEventListeners();
     attachTabListeners();
     attachMainNavListeners();
+
+    // Refresh button in the Videos tab
+    const refreshBtn = document.getElementById('refreshVideosBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => loadVideos());
+    }
 });
 
 // Initialize App
 async function initializeApp() {
     await checkHealth();
     await loadVideos();
+    // Poll for new videos every 30 seconds to keep the count and grid fresh
+    setInterval(pollVideoCount, 30000);
+}
+
+// Poll video count — lightweight check; only re-renders grid if count changed
+async function pollVideoCount() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/videos`);
+        const freshVideos = await response.json();
+        if (freshVideos.length !== videos.length) {
+            videos = freshVideos;
+            videoCount.textContent = videos.length;
+            // Only re-render the grid if the Videos tab is currently visible
+            const videosTab = document.getElementById('videosTab');
+            if (videosTab && videosTab.style.display !== 'none') {
+                renderVideosGrid(videos);
+            }
+        }
+    } catch (_) {
+        // Silently ignore polling errors
+    }
 }
 
 // Check API Health
@@ -113,6 +140,8 @@ function attachMainNavListeners() {
             if (tab.dataset.tab === 'videos') {
                 mainContent.style.display = 'none';
                 videosTab.style.display = 'block';
+                // Re-fetch videos every time the tab is opened
+                loadVideos();
             } else {
                 mainContent.style.display = '';
                 videosTab.style.display = 'none';

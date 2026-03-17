@@ -169,6 +169,14 @@
             <div class="videos-tab-header">
                 <h2>All Videos</h2>
                 <span class="videos-tab-count" id="videoTabCount">0 videos</span>
+                <button class="refresh-videos-btn" id="refreshVideosBtn" title="Refresh videos">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                    Refresh
+                </button>
             </div>
             <div class="videos-grid" id="videosGrid"></div>
             <div class="videos-empty" id="videosEmpty" style="display:none;">
@@ -194,6 +202,15 @@
                     <span>ATLAS Assistant</span>
                 </div>
                 <div class="chat-window-actions">
+                    <select id="chatLangSelect" class="chat-lang-select" title="Response language">
+                        <option value="auto">🌐 Auto</option>
+                        <option value="English">🇬🇧 English</option>
+                        <option value="Norwegian">🇳🇴 Norsk</option>
+                        <option value="Spanish">🇪🇸 Español</option>
+                        <option value="French">🇫🇷 Français</option>
+                        <option value="German">🇩🇪 Deutsch</option>
+                        <option value="Arabic">🇸🇦 العربية</option>
+                    </select>
                     <button id="chatClearBtn" class="chat-header-btn" title="Clear chat">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M3 6H5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>

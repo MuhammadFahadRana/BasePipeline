@@ -47,7 +47,7 @@ def run_migration():
         # 4. GIN index for fast full-text search on captions
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_scenes_caption_fts
-            ON scenes USING GIN(to_tsvector('english', COALESCE(caption, '')));
+            ON scenes USING GIN(to_tsvector('simple', COALESCE(caption, '')));
         """))
         print("✓ GIN index on caption ready")
 

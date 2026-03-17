@@ -1,0 +1,12 @@
+{
+  "video": "Johan Sverdrup - System 13 - Stigerør og",
+  "ground_truth_transcript": [
+    "Her ser du system 13, Stigerør og brønn topside. Systemet 13 finnes kun på DP plattformen og består av 30 produksjonsbrønner med strømningsrør, 10 injeksjonsbrønner og 1 brønnhode kontrollpanel",
+"Brønnhodene og strømningsrørene er designet for å motta brønnstrømmene fra produksjonsbrønnene, og for å overføre olje, gass og vann via produksjons- og test manifoldene til 1 trinns separatorene og test separator på P1 og P2.",
+"Brønnvæsken strømmer fra reservoaret gjennom brønnen, via ventiltreet og så gjennom en strupeventil før den når manifolden. Hver produsent er knyttet opp mot 2 produksjonsmanifolder, enten manifold 1&2 eller manifold 3&4 og 1 en testmanifold. Manifold 3 er rutet til P2.  Injeksjonsbrønnene er knyttet mot 3 injeksjonsmanifolder, produsertvann, sjøvann og gass (WAG). Trykkutjevningsmanifold brukes til å utjevne trykket i strømningsrørene før oppstart. Løftegass injiseres via juletreet i ringrom  på produksjonsbrønnene. Alle produksjonsbrønnene er utstyrt med flerfasemåler, og sanddetektor, og er tilkoplet et prøvetakingskabinett. Brønnene er også utstyrt med injeksjonpunkter for avleiringshemmer.",
+"Produksjonsbrønnene har injeksjonspunkt i brønnhode og nedihulls, mens vanninjeksjonsbrønnene kun har i brønnhodeOg for MEG injeksjon både til produksjonsbrønner og til  injeksjonsbrønner."
+],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

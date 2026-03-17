@@ -513,6 +513,53 @@ class DataIngester:
         return stats
 
 
+    def verify(self) -> Dict:
+        """Print a summary of database contents and flag any gaps."""
+        total_videos = self.db.query(Video).count()
+        total_scenes = self.db.query(Scene).count()
+        total_segs = self.db.query(TranscriptSegment).count()
+        total_text_emb = self.db.query(Embedding).count()
+        total_vis_emb = self.db.query(VisualEmbedding).count()
+
+        print(f"\n{'='*60}")
+        print("DATABASE VERIFICATION")
+        print(f"{'='*60}")
+        print(f"Videos:              {total_videos}")
+        print(f"Scenes:              {total_scenes}")
+        print(f"Transcript segments: {total_segs}")
+        print(f"Text embeddings:     {total_text_emb}")
+        print(f"Visual embeddings:   {total_vis_emb}")
+
+        issues = []
+        videos = self.db.query(Video).all()
+        for v in videos:
+            scene_count = self.db.query(Scene).filter(Scene.video_id == v.id).count()
+            vis_emb = (
+                self.db.query(VisualEmbedding)
+                .join(Scene)
+                .filter(Scene.video_id == v.id)
+                .count()
+            )
+            if vis_emb == 0 and scene_count > 0 and not v.filename.endswith(".wav"):
+                issues.append(f"  [{v.id}] {v.filename}: {scene_count} scenes, 0 visual embeddings")
+
+        print("\nRemaining issues:")
+        if issues:
+            for issue in issues:
+                print(issue)
+        else:
+            print("  None! All videos are fully embedded.")
+
+        return {
+            "videos": total_videos,
+            "scenes": total_scenes,
+            "segments": total_segs,
+            "text_embeddings": total_text_emb,
+            "visual_embeddings": total_vis_emb,
+            "issues": len(issues),
+        }
+
+
 if __name__ == "__main__":
     from database.config import test_connection, init_db
 
@@ -531,5 +578,7 @@ if __name__ == "__main__":
             generate_embeddings=True,
             skip_existing=True,
         )
+        print(f"\nIngestion complete: {stats['success']} videos in database")
 
-    print(f"\nIngestion complete: {stats['success']} videos in database")
+        # Verify database state
+        ingester.verify()

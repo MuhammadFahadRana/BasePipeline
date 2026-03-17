@@ -1,0 +1,13 @@
+{
+  "video": "Johan Sverdrup - System 80 - Hovedkraft, HVDC,",
+  "ground_truth_transcript": [
+    "Ved utfall på Haugsneset vil ikke bare Johan Sverdrup miste kraft fra land. Da vil også Utsira Power Grid miste all kraft, og vil vil få en shut-down på samtlige plattformer tilknyttet områdeløsningen.",
+"Og på grunn av dette er det viktig å ha god oversikt over prosedyreverket, og dette finner du i SATOS.",
+"Her har vi samlet alle oppstartsprosedyrer, helt fra sjekk av UPS, normalisering av nødkraft, og start av essensiellgenerator og HVDC-anlegg.",
+"Øverst til høyre, på tap av hovedkraft, finner du også prosedyrer for innlegging av Utsira Power Grid.",
+"Alt dette styres av bemyndiget elektro og SKR. Sett deg gjerne inn i prosedyreverket for tap av hovedkraft, for å få en bedre innsikt om hvordan oppstart på Johan Sverdrup og Utsira Power Grid fungerer."
+  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

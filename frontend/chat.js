@@ -14,7 +14,7 @@ const ChatAssistant = (() => {
 
     // DOM refs
     let chatWidget, chatWindow, chatToggleBtn, chatCloseBtn;
-    let chatMessages, chatInput, chatSendBtn, chatClearBtn;
+    let chatMessages, chatInput, chatSendBtn, chatClearBtn, chatLangSelect;
 
     function init() {
         chatWidget = document.getElementById('chatWidget');
@@ -25,6 +25,7 @@ const ChatAssistant = (() => {
         chatInput = document.getElementById('chatInput');
         chatSendBtn = document.getElementById('chatSendBtn');
         chatClearBtn = document.getElementById('chatClearBtn');
+        chatLangSelect = document.getElementById('chatLangSelect');
 
         if (!chatWidget || !chatMessages) return;
 
@@ -137,6 +138,7 @@ const ChatAssistant = (() => {
                     messages: chatHistory,
                     stream: true,
                     max_tokens: 512,
+                    language: chatLangSelect ? chatLangSelect.value : 'auto',
                 }),
             });
 

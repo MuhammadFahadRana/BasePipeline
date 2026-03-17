@@ -1,0 +1,14 @@
+{
+  "video": "Johan Sverdrup - System 21 30 – Oljeeksport og",
+  "ground_truth_transcript": [
+    "Her ser du hele oljeeksport systemet på Johan Sverdrup som er lokalisert på følgende plattform: P1 P2 Og RP. Oljeeksport og målesystemene er plassert over disse to tre plattformene hvor oljen distribueres og måles på prosessplattformene P1 og P2, men eksporteres til Mongstad fra riser plattformen RP.",
+"På P1 pumpes den stabiliserte oljen fra 3.trinns separatorene pumpes med hver sin boosterpumpe der en pumpe er i drift og en er i standby pr oljetog. Oljen pumpes via oljeeksport målestasjon før den går videre til RP plattformen via boreplattformen DP. Målestasjonen består av to strømningsmålere i serie. I forkant av målestasjonen er det også et avtak til et prøvekabinettet som analyserer densitet og vanninnhold, og som inneholder et manuelt prøvepunkt. ",
+"Oljen pumpes over til RP der den kjøles ned i eksportkjølerne i forkant av eksport ledningen til Mongstad. Begge kjølerne skal være i drift, men det er mulig å ta en ut for vedlikehold ved bruk av en felles omløpslinje uten at det skal påvirke produksjonen. Det er viktig at oljen ikke kjøles for mye ned, da det kan føre til voksdannelse.",
+"Voksdannelse temperaturen er estimert til 37 °C, med en smeltetemperatur på 56 °C.", 
+"Ved lav produksjon kan boosterpumpene brukes til å eksportere oljen direkte til eksportmanifolden. I et slikt tilfelle skal omløpslinjen over eksportpumpene benyttes, samt at smøreolje og tetningssystemet til eksportpumpene må være i gang. Omløpslinjen har en kapasitet på 16 000 Sm3/d, som tilsvarer omtrent to eller tre brønner. På P2 pumpes den stabiliserte oljen fra 3.trinns separator med en av boosterpumpene der en pumpe er i drift og en er i reserve.",
+"Oljen blir ytterligere trykket opp av eksportpumpene før den går gjennom oljeeksport målestasjon og videre til RP. Målestasjonen består av en enkel strømningsmåler. I forkant av målestasjonen er det også et avtak til tetthetsmålestasjonen B-21JX002 som analyserer densitet og vanninnhold, og som også inneholder et manuelt prøvepunkt. Ved lav produksjon sirkuleres oljen fra eksportpumpene tilbake til 3. trinn separator gjennom resirkulasjonskjøleren. For å vedlikeholde rørledningen mot Mongstad, er det planlagt å sende pigg fra RP plattform til Mongstad ved behov. Piggslusen er plassert på RP og kan sende pigg under full oljeproduksjon. Trykk på neste for å gå videre."
+  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

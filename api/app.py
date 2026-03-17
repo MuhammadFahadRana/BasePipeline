@@ -44,6 +44,10 @@ class SearchRequest(BaseModel):
     text_weight: float = Field(0.3, description="Weight for text matching", ge=0, le=1)
     min_score: float = Field(0.1, description="Minimum score threshold", ge=0, le=1)
     video_filter: Optional[str] = Field(None, description="Filter by video filename")
+    language: Optional[str] = Field(
+        None,
+        description="Language hint for search (e.g. 'en', 'no'). Auto-detected if not set.",
+    )
 
 
 class MultiModalSearchRequest(BaseModel):
@@ -66,6 +70,10 @@ class MultiModalSearchRequest(BaseModel):
         True, description="Use LLM for intent parsing (disable for speed)"
     )
     video_filter: Optional[str] = Field(None, description="Filter by video filename")
+    language: Optional[str] = Field(
+        None,
+        description="Language hint for search (e.g. 'en', 'no'). Auto-detected if not set.",
+    )
 
 
 class SearchResponse(BaseModel):
@@ -1047,6 +1055,7 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = True
     max_tokens: int = Field(512, ge=1, le=2048)
     temperature: float = Field(0.1, ge=0.0, le=2.0)
+    language: Optional[str] = None  # e.g. "Norwegian", "English", or None for auto-detect
 
 
 @app.get("/v1/models")
@@ -1097,6 +1106,7 @@ async def chat_completions(
     # ── Check system prompt for video scoping directive ──────────────────
     # e.g. system: "video:AkerBP_2.mp4" → restricts search to that file
     video_filter: Optional[str] = None
+    language: Optional[str] = request.language
     for msg in request.messages:
         if msg.role == "system":
             import re
@@ -1104,7 +1114,12 @@ async def chat_completions(
             m = re.search(r"video:\s*([^\s]+)", msg.content, re.IGNORECASE)
             if m:
                 video_filter = m.group(1).strip()
-                break
+            # Also check for language directive in system message
+            if not language:
+                lang_m = re.search(r"language:\s*([^\n]+)", msg.content, re.IGNORECASE)
+                if lang_m:
+                    language = lang_m.group(1).strip()
+            break
 
     # ── Load StreamingVideoQA (singleton, lazy) ──────────────────────────
     try:
@@ -1123,6 +1138,7 @@ async def chat_completions(
                     question=user_question,
                     video_filter=video_filter,
                     max_new_tokens=request.max_tokens,
+                    language=language,
                 ):
                     yield chunk
                     # Small yield point so FastAPI can flush SSE chunks
@@ -1148,6 +1164,7 @@ async def chat_completions(
             question=user_question,
             video_filter=video_filter,
             top_k=5,
+            language=language,
         )
         return result
     except Exception as e:

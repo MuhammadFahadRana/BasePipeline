@@ -59,7 +59,8 @@ class VideoQA:
         print(f"✓ Video QA system ready ({model_name})")
 
     def ask(
-        self, question: str, video_filter: Optional[str] = None, top_k: int = 5
+        self, question: str, video_filter: Optional[str] = None, top_k: int = 5,
+        language: Optional[str] = None,
     ) -> Dict:
         """
         Answer a question about the video content.
@@ -68,6 +69,7 @@ class VideoQA:
             question: User's question
             video_filter: Optional specific video filename
             top_k: Number of context snippets to retrieve
+            language: Response language (e.g. 'Norwegian', 'English'). Auto-detect if None.
 
         Returns:
             Dict with 'answer', 'citations', and 'metadata'
@@ -105,7 +107,7 @@ class VideoQA:
         context_text = "\n\n".join(context_parts)
 
         # 3. Build prompt
-        prompt = self._build_prompt(question, context_text)
+        prompt = self._build_prompt(question, context_text, language=language)
 
         # 4. Generate answer
         # Always move inputs to the actual model device to avoid CPU/CUDA mismatches.
@@ -139,8 +141,13 @@ class VideoQA:
             },
         }
 
-    def _build_prompt(self, question: str, context: str) -> str:
+    def _build_prompt(self, question: str, context: str, language: Optional[str] = None) -> str:
         """Construct the RAG prompt."""
+        if language and language.lower() != "auto":
+            lang_instruction = f"5. You MUST respond in {language}. The entire answer must be written in {language}."
+        else:
+            lang_instruction = "5. Detect the language of the QUESTION and respond in that same language. If the question is in Norwegian, answer in Norwegian. If in English, answer in English. Always match the language of the question."
+
         return f"""You are ATLAS, a specialized Video Assistant. Your goal is to answer questions about video content based ONLY on the provided snippets (Transcripts, OCR text, and Visual descriptions).
 
 RULES:
@@ -148,6 +155,7 @@ RULES:
 2. If the answer isn't in the snippets, say you don't know based on the available data.
 3. Write the answer as a single clear, coherent paragraph in natural language (no bullet points, no headings, no emojis).
 4. You may mention source tags like [Source 1] inline when helpful, but DO NOT add a separate "Sources" section. The UI will show sources separately.
+{lang_instruction}
 
 CONTEXT SNIPPETS:
 {context}

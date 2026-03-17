@@ -1,0 +1,15 @@
+{
+  "video": "Johan Sverdrup - System 64 - Nitrogen",
+  "ground_truth_transcript": [
+    "Her ser du hele nitrogen systemet på Johan Sverdrup som er lokalisert på prosessplattformne: P1 Og P2",
+"Hensikten med nitrogen-systemet er å levere nitrogen til alle forbrukere i henhold til designbetingelsene. Nitrogen produseres og distribueres på P1 og P2. I tillegg distribueres den til LQ, DP og RP. Det er også en egen buffertank med høytrykksnitrogen, som er plassert på P1. ",
+"Normalt driftstrykk på nitrogensystemet er omkring 7,3 barg. Dette driftstrykket vil variere på grunn av den store utstrekningen på de fire fem plattformene.",
+"Nitrogen-systemet er delt inn i tre nettverk: sikkerhetskritisk, produksjonskritisk, og ikke-kritisk.",
+"På P1 er Ddet produksjonskritiske nettet er delt inn i to: Et normalt som blir driftet med 7,3 barg og et eget dedikert nett som blir driftet med 13 barg og som derfor blir kalt høytrykksnett. ", 
+"På P2 består det produksjonskritiske nettet kun av et som driftes med ca 7,3 barg.", 
+"Ved lavt trykk i systemet blir sikkerhetskritisk nett prioritert høyest, mens produksjonskritisk prioriteres før ikke-kritisk."
+  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

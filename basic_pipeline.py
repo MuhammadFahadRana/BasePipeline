@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-# ATLAS – AI-driven Temporal Linking and Search
+# ATLAS - AI-driven Temporal Linking and Search
 
 import hashlib
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, Optional, List
@@ -101,10 +102,10 @@ class BasicVideoPipeline:
         mp4_path = video_path.with_suffix(".mp4")
 
         if mp4_path.exists():
-            print(f"  ⏭  MP4 already exists: {mp4_path.name}")
+            print(f"  [skip] MP4 already exists: {mp4_path.name}")
             return mp4_path
 
-        print(f"  🔄 Converting {video_path.suffix} → .mp4: {video_path.name}")
+        print(f"  [convert] Converting {video_path.suffix} -> .mp4: {video_path.name}")
         cmd = [
             "ffmpeg",
             "-y",
@@ -126,7 +127,7 @@ class BasicVideoPipeline:
             )
             if result.returncode != 0:
                 err = result.stderr.decode("utf-8", errors="replace")[:300]
-                print(f"  ⚠  FFmpeg stream-copy failed, trying re-encode: {err}")
+                print(f"  [warn] FFmpeg stream-copy failed, trying re-encode: {err}")
                 # Fallback: re-encode (slower but handles incompatible codecs)
                 cmd_reencode = [
                     "ffmpeg",
@@ -153,15 +154,15 @@ class BasicVideoPipeline:
                 )
 
             size_mb = mp4_path.stat().st_size / (1024 * 1024)
-            print(f"  ✓  Converted: {mp4_path.name} ({size_mb:.1f} MB)")
+            print(f"  [ok] Converted: {mp4_path.name} ({size_mb:.1f} MB)")
             return mp4_path
 
         except FileNotFoundError:
-            print("  ✗  ffmpeg not found! Install it: https://ffmpeg.org/download.html")
+            print("  [error] ffmpeg not found! Install it: https://ffmpeg.org/download.html")
             print("      Continuing with original file (may cause issues)...")
             return video_path
         except subprocess.CalledProcessError as e:
-            print(f"  ✗  Conversion failed: {e}")
+            print(f"  [error] Conversion failed: {e}")
             print("      Continuing with original file (may cause issues)...")
             return video_path
 
@@ -209,6 +210,90 @@ class BasicVideoPipeline:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
+    def _configs_match(self, saved_cfg: Dict, current_cfg: Dict) -> bool:
+        """Compare only the core processing fields that would require reprocessing."""
+        core_keys = ("whisper_model", "scene_threshold")
+        return all(saved_cfg.get(k) == current_cfg.get(k) for k in core_keys)
+
+    # ---------------------------
+    # Legacy output migration
+    # ---------------------------
+    def _migrate_legacy_outputs(
+        self,
+        video_path: Path,
+        video_name: str,
+        video_output_dir: Path,
+        output_base: Path,
+        current_fp: Dict,
+        current_cfg: Dict,
+    ) -> bool:
+        """
+        Check for results produced by the older pipeline layout
+        (processed/results/{video}/ + processed/scenes/{video}/).
+        If found, copy them into the new unified layout and write a manifest.
+        Returns True if migration happened (caller can treat as cache hit).
+        """
+        legacy_results_dir = output_base / "results" / video_name
+        legacy_results_file = legacy_results_dir / "results.json"
+        if not legacy_results_file.exists():
+            return False
+
+        # Check legacy manifest fingerprint if available
+        legacy_manifest = self._load_manifest(legacy_results_dir / "manifest.json")
+        if legacy_manifest is not None:
+            if legacy_manifest.get("video_fingerprint") != current_fp:
+                return False  # video changed since legacy processing
+            saved_cfg = legacy_manifest.get("pipeline_config", {})
+            if not self._configs_match(saved_cfg, current_cfg):
+                return False  # core config changed
+
+        print(f"\n  Migrating legacy outputs for: {video_name}")
+        video_output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy results + report
+        for fname in ("results.json", "report.html"):
+            src = legacy_results_dir / fname
+            if src.exists():
+                shutil.copy2(src, video_output_dir / fname)
+
+        # Copy transcript from processed/transcripts/<model>/<video_name_normalised>/
+        model_name = getattr(self.transcriber, "model_name", "unknown")
+        normalised = video_name.replace(" ", "_")
+        legacy_transcript_dir = output_base / "transcripts" / model_name / normalised
+        for fname in ("transcript.json", "transcript.txt"):
+            src = legacy_transcript_dir / fname
+            if src.exists():
+                shutil.copy2(src, video_output_dir / fname)
+
+        # Copy scenes.json from processed/scenes/{video}/
+        legacy_scenes_dir = output_base / "scenes" / video_name
+        legacy_scenes_file = legacy_scenes_dir / f"{video_name}_scenes.json"
+        if legacy_scenes_file.exists():
+            shutil.copy2(legacy_scenes_file, video_output_dir / "scenes.json")
+            # Also copy the keyframe images subfolder so paths resolve
+            keyframe_subdir = video_output_dir / video_name
+            if not keyframe_subdir.exists() and legacy_scenes_dir.exists():
+                keyframe_subdir.mkdir(parents=True, exist_ok=True)
+                for img in legacy_scenes_dir.glob("*.jpg"):
+                    shutil.copy2(img, keyframe_subdir / img.name)
+                # Copy the scenes json into the subdir too (scene_detector cache)
+                shutil.copy2(legacy_scenes_file, keyframe_subdir / legacy_scenes_file.name)
+
+        # Write a manifest so future runs see a cache hit
+        manifest = {
+            "video_filename": video_path.name,
+            "video_path": str(video_path),
+            "video_fingerprint": current_fp,
+            "pipeline_config": current_cfg,
+            "ingested": False,
+            "migrated_from_legacy": True,
+            "saved_at_iso": datetime.now().isoformat(),
+            "use_hash": False,
+        }
+        self._save_manifest(video_output_dir / "manifest.json", manifest)
+        print(f"  [ok] Legacy outputs migrated to: {video_output_dir}")
+        return True
+
     # ---------------------------
     # Core pipeline
     # ---------------------------
@@ -219,6 +304,7 @@ class BasicVideoPipeline:
         use_hash: bool = False,
         force: bool = False,
         generate_embeddings: bool = True,
+        _ingester=None,
     ):
         video_path = Path(video_path)
         if not video_path.exists():
@@ -243,8 +329,6 @@ class BasicVideoPipeline:
         # Cache check
         current_fp = self._video_fingerprint(video_path, use_hash=use_hash)
 
-        # current_cfg
-        # TODO: Make this more dynamic
         current_cfg = {
             "whisper_model": getattr(self.transcriber, "model_name", "unknown"),
             "scene_threshold": self.scene_detector.config.threshold,
@@ -256,34 +340,42 @@ class BasicVideoPipeline:
         }
         manifest = self._load_manifest(manifest_path)
 
+        # If no manifest in the new layout, try migrating legacy outputs
+        if not force and manifest is None:
+            migrated = self._migrate_legacy_outputs(
+                video_path, video_name, video_output_dir, output_base,
+                current_fp, current_cfg,
+            )
+            if migrated:
+                manifest = self._load_manifest(manifest_path)
+
         cache_hit = (
             (not force)
             and (manifest is not None)
             and (manifest.get("video_fingerprint") == current_fp)
-            and (manifest.get("pipeline_config") == current_cfg)
+            and self._configs_match(manifest.get("pipeline_config", {}), current_cfg)
             and self._expected_outputs_exist(transcript_dir, scenes_dir, results_dir)
         )
 
         if cache_hit:
             results_file = results_dir / "results.json"
-            print(f"\n✓ Skipping (cached): {video_name}")
-            print(f"  Using existing results: {results_file}")
+            already_ingested = manifest.get("ingested", False)
+
+            if already_ingested:
+                print(f"\n[cached] Skipping (cached + ingested): {video_name}")
+            else:
+                print(f"\n[cached] Skipping (cached): {video_name}")
 
             try:
                 with open(results_file, "r", encoding="utf-8") as f:
                     results = json.load(f)
 
-                duration = results.get("processing_info", {}).get("processing_duration")
-                if duration is not None:
-                    is_estimated = results.get("processing_info", {}).get(
-                        "duration_is_estimated", False
-                    )
-                    est_str = " (estimated)" if is_estimated else ""
-                    print(f"  Processing time: {duration:.2f}s{est_str}")
-
-                # Still check if we need to ingest into DB if HAS_DB
-                if HAS_DB and not self.skip_ingest:
-                    self._ingest_results(results_file, generate_embeddings)
+                # Only ingest if not already done
+                if not already_ingested and HAS_DB and not self.skip_ingest:
+                    self._ingest_results(results_file, generate_embeddings, _ingester)
+                    # Mark ingestion complete in manifest
+                    manifest["ingested"] = True
+                    self._save_manifest(manifest_path, manifest)
 
                 return results
             except Exception as e:
@@ -380,8 +472,10 @@ class BasicVideoPipeline:
         results_file = results_dir / "results.json"
 
         # 5. Database Ingestion
+        ingested = False
         if HAS_DB and not self.skip_ingest:
-            self._ingest_results(results_file, generate_embeddings)
+            self._ingest_results(results_file, generate_embeddings, _ingester)
+            ingested = True
 
         # Save manifest for caching
         new_manifest = {
@@ -389,24 +483,38 @@ class BasicVideoPipeline:
             "video_path": str(video_path),
             "video_fingerprint": current_fp,
             "pipeline_config": current_cfg,
+            "ingested": ingested,
             "saved_at_iso": datetime.now().isoformat(),
             "use_hash": use_hash,
         }
         self._save_manifest(manifest_path, new_manifest)
-        print(f"✓ Manifest saved to: {manifest_path}")
+        print(f"[ok] Manifest saved to: {manifest_path}")
 
         return results
 
-    def _ingest_results(self, results_file: Path, generate_embeddings: bool = True):
+    def _ingest_results(
+        self,
+        results_file: Path,
+        generate_embeddings: bool = True,
+        ingester: "DataIngester | None" = None,
+    ):
         print("\n5. Ingesting into database...")
         try:
-            with DataIngester() as ingester:
+            if ingester is not None:
                 ingester.ingest_video(
                     results_file,
                     generate_embeddings=generate_embeddings,
                     generate_visual_embeddings=generate_embeddings,
                     update_existing=True,
                 )
+            else:
+                with DataIngester() as ing:
+                    ing.ingest_video(
+                        results_file,
+                        generate_embeddings=generate_embeddings,
+                        generate_visual_embeddings=generate_embeddings,
+                        update_existing=True,
+                    )
         except Exception as e:
             print(f"  ! Ingestion failed: {e}")
 
@@ -500,7 +608,7 @@ class BasicVideoPipeline:
         transcript_file = transcript_dir / "transcript.json"
         with open(transcript_file, "w", encoding="utf-8") as f:
             json.dump(transcript, f, indent=2, ensure_ascii=False)
-        print(f"✓ Transcript saved to: {transcript_file}")
+        print(f"[ok] Transcript saved to: {transcript_file}")
 
         # Save transcript.txt (human-readable with timestamps)
         text_file = transcript_dir / "transcript.txt"
@@ -511,19 +619,19 @@ class BasicVideoPipeline:
                 start = str(timedelta(seconds=seg["start"])).split(".")[0]
                 text = seg.get("text", "").strip()
                 f.write(f"[{start}] {text}\n")
-        print(f"✓ Transcript (text) saved to: {text_file}")
+        print(f"[ok] Transcript (text) saved to: {text_file}")
 
         # Save scenes.json
         scenes_file = scenes_dir / "scenes.json"
         with open(scenes_file, "w", encoding="utf-8") as f:
             json.dump(scenes, f, indent=2, ensure_ascii=False)
-        print(f"✓ Scenes saved to: {scenes_file}")
+        print(f"[ok] Scenes saved to: {scenes_file}")
 
         # Save results.json
         results_file = results_dir / "results.json"
         with open(results_file, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
-        print(f"✓ Full results saved to: {results_file}")
+        print(f"[ok] Full results saved to: {results_file}")
         print(f"  Processing time: {processing_duration:.2f}s")
 
         # Save HTML report
@@ -631,7 +739,7 @@ class BasicVideoPipeline:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(html_content)
 
-        print(f"✓ HTML report saved to: {output_file}")
+        print(f"[ok] HTML report saved to: {output_file}")
 
     def batch_process(
         self,
@@ -658,6 +766,15 @@ class BasicVideoPipeline:
         print(f"Starting batch processing of {len(videos)} videos")
         print(f"{'=' * 60}")
 
+        # Share a single DataIngester across the batch to avoid reloading
+        # embedding models for every video.
+        batch_ingester = None
+        if HAS_DB and not self.skip_ingest:
+            try:
+                batch_ingester = DataIngester()
+            except Exception as e:
+                print(f"  ! Could not initialise ingester: {e}")
+
         results = []
         batch_start_time = time.time()
         for i, video_path in enumerate(videos, 1):
@@ -669,6 +786,7 @@ class BasicVideoPipeline:
                     output_base=output_base,
                     use_hash=use_hash,
                     force=force,
+                    _ingester=batch_ingester,
                 )
                 video_elapsed = time.time() - video_start_time
                 processing_time = result.get("processing_info", {}).get(
@@ -693,6 +811,10 @@ class BasicVideoPipeline:
                         "wall_clock_time": video_elapsed,
                     }
                 )
+
+        # Close the shared ingester
+        if batch_ingester is not None:
+            batch_ingester.__exit__(None, None, None)
 
         batch_total_time = time.time() - batch_start_time
         self.create_batch_summary(

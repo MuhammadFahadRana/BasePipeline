@@ -1,0 +1,15 @@
+{
+  "video": "Johan Sverdrup - System 70 - Brann og",
+  "ground_truth_transcript": [
+    "Velkommen til denne testen introduksjonen som skal gi deg en bedre verifisere din teoretiske systemforståelse.",
+"Formålet med denne testen gjennomgangen er å bekrefte at du: Vet hensikten med systemet, Kjenner hovedutstyret og hvor det er plassert, Kjenner beskyttelses-funksjonene",
+"Trykk på “neste” for å få en kort system-introduksjon.",
+"Brann og gass systemet skal detektere en mulig brann eller gasslekkasje på en rask og pålitelig måte, og bringe plattformen til en sikker tilstand. Systemet skal gi alarm slik at nødvendige tiltak kan iverksettes manuelt, samt automatisk starte systemet for brannbekjempelse.",
+"Brann og gass systemet er en del av SAS systemet. Nodene til systemet initierer sikringsfunksjoner uavhengig av andre noder. Typiske sikkerhetsfunksjoner er: Initiere PA og generell  alarm, Starte brannvannspumper, Aktivere/utløse beskyttelsessystemer( vannoverrisling, vanntåke,skum), Signal til CCTV, Bro-signalisering",
+"Før testen skal du gjennomgå og forstå følgende dokumenter: Systembeskrivelsen", 
+"Dokumentene det henvises til i systembeskrivelsen finner du i STID, du skal gå gjennom disse også. Nå er du klar til testen. Lykke til!"
+],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

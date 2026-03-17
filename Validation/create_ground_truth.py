@@ -1,8 +1,10 @@
 """
-Auto-generate ground truth template files for all processed videos.
+Auto-generate ground truth template files for videos missing ground truth.
 
-Reads each video's results.json, extracts the transcript text,
-and saves a ground truth JSON file in the ground_truth/ folder.
+Scans processed/transcripts/Whisper-Large-v3 for video folders,
+checks ground_truth/ for existing files, and creates template JSON
+files for any missing videos using the Whisper transcript as placeholder.
+You can then manually correct the transcript in each _gt.json file.
 
 Usage:
     python Validation/create_ground_truth.py
@@ -13,49 +15,56 @@ import json
 from pathlib import Path
 
 
-RESULTS_DIR = Path("processed/results")
+WHISPER_DIR = Path("processed/transcripts/Whisper-Large-v3")
 OUTPUT_DIR = Path("ground_truth")
-TRANSCRIPTS_DIR = OUTPUT_DIR / "transcripts"
 
 
-def read_results(results_file: Path) -> dict | None:
-    """Read a results.json with encoding fallbacks."""
-    for encoding in ("utf-8", "utf-8-sig", "utf-16", "latin-1"):
-        try:
-            with open(results_file, "r", encoding=encoding) as f:
-                return json.load(f)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            continue
-    print(f"  ✗ Could not read {results_file} (encoding error)")
-    return None
+def folder_to_video_name(folder_name: str) -> str:
+    """Convert folder name (underscores) back to video name (spaces)."""
+    return folder_name.replace("_", " ")
 
 
-def create_ground_truth(video_name: str, results: dict, transcript_dir: Path) -> dict:
-    """
-    Build a ground truth template.
-    If {video_name}.txt exists in transcript_dir, use that as transcript.
-    Otherwise uses pipeline results.
-    """
-    txt_file = transcript_dir / f"{video_name}.txt"
-    
-    # 1. Create the text file if it doesn't exist (pre-fill with pipeline output)
-    pipeline_text = results.get("transcription", {}).get("text", "")
-    
-    if not txt_file.exists():
-        try:
-            with open(txt_file, "w", encoding="utf-8") as f:
-                f.write(pipeline_text)
-            print(f"  + Created transcript file: {txt_file.name}")
-        except Exception as e:
-            print(f"  ! Failed to create text file: {e}")
-            
-    # 2. Read the text file (user might have edited it)
+def get_existing_gt_video_names() -> set[str]:
+    """Collect video names that already have ground truth files."""
+    existing = set()
+    if not OUTPUT_DIR.exists():
+        return existing
+    for f in OUTPUT_DIR.glob("*.json"):
+        name = f.stem
+        # Handle both "VideoName_gt.json" and "VideoName.json" conventions
+        if name.endswith("_gt"):
+            existing.add(name[:-3])
+        else:
+            existing.add(name)
+    return existing
+
+
+def read_transcript(transcript_dir: Path) -> str:
+    """Read transcript text from a Whisper transcript folder."""
+    json_file = transcript_dir / "transcript.json"
+    txt_file = transcript_dir / "transcript.txt"
+
+    if json_file.exists():
+        for encoding in ("utf-8", "utf-8-sig", "utf-16", "latin-1"):
+            try:
+                with open(json_file, "r", encoding=encoding) as f:
+                    data = json.load(f)
+                return data.get("text", "").strip()
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+
     if txt_file.exists():
-        try:
-            transcript_text = txt_file.read_text(encoding="utf-8").strip()
-        except:
-            transcript_text = txt_file.read_text(encoding="latin-1").strip()
+        for encoding in ("utf-8", "utf-8-sig", "latin-1"):
+            try:
+                return txt_file.read_text(encoding=encoding).strip()
+            except UnicodeDecodeError:
+                continue
 
+    return ""
+
+
+def create_ground_truth_template(video_name: str, transcript_text: str) -> dict:
+    """Build a ground truth template JSON matching the existing format."""
     return {
         "video": video_name,
         "ground_truth_transcript": [transcript_text] if transcript_text else [""],
@@ -66,45 +75,41 @@ def create_ground_truth(video_name: str, results: dict, transcript_dir: Path) ->
 
 
 def main(force: bool = False):
-    if not RESULTS_DIR.exists():
-        print(f"No results directory found at: {RESULTS_DIR.absolute()}")
+    if not WHISPER_DIR.exists():
+        print(f"Whisper transcript directory not found: {WHISPER_DIR.absolute()}")
         return
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    video_dirs = sorted([d for d in RESULTS_DIR.iterdir() if d.is_dir()])
-    print(f"Found {len(video_dirs)} processed videos\n")
+    video_folders = sorted([d for d in WHISPER_DIR.iterdir() if d.is_dir()])
+    print(f"Found {len(video_folders)} videos in {WHISPER_DIR}\n")
+
+    existing_gt = get_existing_gt_video_names()
+    print(f"Found {len(existing_gt)} existing ground truth files in {OUTPUT_DIR}\n")
 
     created, skipped, failed = 0, 0, 0
 
-    for video_dir in video_dirs:
-        video_name = video_dir.name
+    for folder in video_folders:
+        video_name = folder_to_video_name(folder.name)
         output_file = OUTPUT_DIR / f"{video_name}_gt.json"
 
-        # Skip if already exists (unless --force)
-        if output_file.exists() and not force:
-            print(f"  ⏭ {video_name} — already exists, skipping")
+        if video_name in existing_gt and not force:
+            print(f"  ⏭ {video_name} — ground truth exists, skipping")
             skipped += 1
             continue
 
-        results_file = video_dir / "results.json"
-        if not results_file.exists():
-            print(f"  ✗ {video_name} — no results.json found")
+        transcript_text = read_transcript(folder)
+        if not transcript_text:
+            print(f"  ✗ {video_name} — no transcript found in {folder.name}/")
             failed += 1
             continue
 
-        results = read_results(results_file)
-        if results is None:
-            failed += 1
-            continue
-
-        gt = create_ground_truth(video_name, results, TRANSCRIPTS_DIR)
+        gt = create_ground_truth_template(video_name, transcript_text)
 
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(gt, f, indent=2, ensure_ascii=False)
 
-        word_count = len(gt["ground_truth_transcript"][0].split())
+        word_count = len(transcript_text.split())
         print(f"  ✓ {video_name} — {word_count} words")
         created += 1
 
@@ -115,7 +120,9 @@ def main(force: bool = False):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate ground truth files")
+    parser = argparse.ArgumentParser(
+        description="Generate ground truth template files from Whisper transcripts"
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
     args = parser.parse_args()
 

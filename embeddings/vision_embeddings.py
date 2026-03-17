@@ -77,8 +77,23 @@ class VisionEmbeddingGenerator:
         with torch.no_grad():
             image_features = self.model.get_image_features(**inputs)
 
+        # get_image_features can return a Tensor or a model output object
+        if not isinstance(image_features, torch.Tensor):
+            feats = getattr(image_features, "image_embeds", None)
+            if feats is None:
+                feats = getattr(image_features, "pooler_output", None)
+            if feats is None:
+                last_hidden = getattr(image_features, "last_hidden_state", None)
+                if last_hidden is not None:
+                    feats = last_hidden[:, 0, :]
+            if feats is None:
+                raise TypeError(
+                    f"Unexpected get_image_features output type: {type(image_features)}"
+                )
+            image_features = feats
+
         # Convert to numpy
-        embedding = image_features.cpu().numpy()[0]
+        embedding = image_features.detach().float().cpu().numpy()[0]
 
         # Normalize if requested
         if normalize:
@@ -131,8 +146,23 @@ class VisionEmbeddingGenerator:
             with torch.no_grad():
                 image_features = self.model.get_image_features(**inputs)
 
+            # get_image_features can return a Tensor or a model output object
+            if not isinstance(image_features, torch.Tensor):
+                feats = getattr(image_features, "image_embeds", None)
+                if feats is None:
+                    feats = getattr(image_features, "pooler_output", None)
+                if feats is None:
+                    last_hidden = getattr(image_features, "last_hidden_state", None)
+                    if last_hidden is not None:
+                        feats = last_hidden[:, 0, :]
+                if feats is None:
+                    raise TypeError(
+                        f"Unexpected get_image_features output type: {type(image_features)}"
+                    )
+                image_features = feats
+
             # Convert to numpy
-            batch_embeddings = image_features.cpu().numpy()
+            batch_embeddings = image_features.detach().float().cpu().numpy()
 
             # Normalize if requested
             if normalize:

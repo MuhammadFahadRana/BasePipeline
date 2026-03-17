@@ -1,0 +1,13 @@
+{
+  "video": "Johan Sverdrup - System 40 - Kjølemedium",
+  "ground_truth_transcript": [
+    "Her ser du hele kjølemedium systemet på Johan Sverdrup som er lokalisert på prosesslattformen (P1). Systemets primæroppgave er å sørge for kjøling av prosessen.",
+"Kjølemediet, som består av 30/70 vekt % TEG/vann, sirkuleres i en lukket sløyfe og kjøles i kjølerne med veksling av sjøvann. ",
+"Kjølemedium benyttes i innløp- og etterkjølere i gassbehandling. før injeksjon eller eksport. Fra forbrukerne går strømmen videre i returlinjen og tilbake til pumpene.",
+"Noe av det varme kjølemediet etter forbrukerne sirkuleres til oppvarming av temperert vann i system 54. Dette sørger for oppvarming av lokale HVAC systemer på alle plattformene når det er behov for det på Johan Sverdrup feltet.",
+"I tillegg er Kjølemedium brukt til å fjerne overskuddsvarme fra system 41 varmemedium. Dette vil da bli aktivert over A-41HA001 varmemedium dumpekjøler når behovet melder seg. Varmt kjølemedium blandes også inn oppstrøms gassbehandling innløpskjølere A-24HJ101/201 for å øke temperaturen og dermed unngå hydrater i nevnte kjølere."
+  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

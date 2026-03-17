@@ -1,0 +1,14 @@
+{
+  "video": "Johan Sverdrup - System 62 - Diesel",
+  "ground_truth_transcript": [
+    "Her ser du hele dieselsystemet på Johan Sverdrup.",
+"Dieselsystemet skal levere behandlet diesel til hele Johan Sverdrup feltsenter. Hovedutstyret ligger på LQ, mens P1, DP, RP og P2-plattformene kun har distribusjonsnett.",
+"Rådiesel bunkres til LQ-plattformen fra forsyningsfartøy, og føres inn på rådiesel lagertanker. Rådiesel pumpes så til dieselfilter- og vannfjerningspakke, hvor vann fjernes. Behandlet diesel går deretter til behandlet diesel lagertanker. Behandlet diesel går gjennom et behandlet dieselfilter før den distribueres til forbrukere på feltsenteret.",
+"Hovedforbrukere er diesel dagtanker for: Nødgeneratorer på LQ og P2 Brannpumper på LQ og RP Og, essensiell generator på RP",
+"Diesel leveres også til utilitystasjoner på feltsenteret, kjemikalieinjeksjonspakke på P1 og P2, og til wireline-operasjoner på DP.",
+"Livbåter på LQ, samt MOB-båtene på LQ, P1 og RP har strengere krav til dieselspesifikasjon enn øvrig utstyr. Disse fartøyene skal kun fylles med separat diesel fra egne totetanker."
+  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

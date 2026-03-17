@@ -1,0 +1,25 @@
+{
+  "video": "Johan Sverdrup - System 71 72 - Brannvann og",
+  "ground_truth_transcript": [
+    "Her ser du systemene for brannvann og brannslukking, som er lokalisert på samtlige av Johan Sverdrups plattformer;",
+"Begge systemene har en ringledning på hver plattform som distribuerer brannvann og skum. ",
+"Lokale sløyfer distribuerer brannvann og skum internt på hver plattform til blant annet hydranter, slangetromler, og kombislukkere.",
+"Brannvannsystemet har i hovedoppgave å levere brannvann til fastmonterte slukkesystem på alle installasjonene på Johan Sverdrup-feltet. Hensikten med fastmonterte slukkesystemet er å begrense skader på personell og utstyr i forbindelse med branntilløp ved å levere slukkemedium til kjøling og slukking.",
+"Brannvannsystemet forsynes med klorinert sjøvann fra 3 brannpumpesystemer på LQ og 2 på RP.",
+"Hvert av disse systemene består av en brannpumpekonteiner, som inneholder dieselmotor, generator, diesel dagtank, oljesirkuleringsenhet, sjøvanns kjølesystem og annet utstyr som er nødvendig for å operere brannpumpesystemet som en uavhengig enhet. ",
+"Brannpumpene pumper vann til en trykkutjevningstank og videre inn på systemet. Trykkutjevningstanken er utstyrt med en air release-ventil for å eliminere skadelige trykkstøt ved oppstart av pumpen. Tanken og ventilen hindrer også luft fra stigerøret til pumpen i å entre brannvannssystemet. ",
+"Brannvann jockeypumper og en hydrofórtank sørger for å opprettholde trykket i ringledningen.", 
+"Jockeypumpene er plassert på LQ og RP og er en del av system 50 – sjøvann, men er med på å holde ringledningen trykksatt. Pumpene er dimensjonert for å samtidig forsyne forbrukere uten at brannpumper skal starte. Forbrukere er: Over bord-drenering for frostbeskyttelse/sirkulering av klorinert sjøvann. Tilbakestrømming til brannpumpecaissonene, Forbruk opp til to brannhydranter", 
+"Hydrofortanksystemet er installert i brannvannsystemet, og skal forhindre kolonneseparasjon og påfølgende høye trykkpulser. Hydrofortanken sørger for at vann trykkes inn i brannvannsystemet, holder dette vannfylt og trykksatt i den tiden det tar for brannpumpene å starte opp.",
+"Brannslukkingssystemet leverer konsentrert brannskum til områder hvor brannvann alene ikke dekker behovet, - på grunn av utstyrstype eller forventet branntype. I tillegg leverer systemet også vanntåke på LQ, RP og P2.",
+"Vanntåkeanleggene er selvstendige enheter med vanntank for ferskvann, nitrogenflasker som drivmiddel og forstøvning av vann til vanntåke til rommene.",
+"Når vanntåke blir aktivert, vil nitrogen trykke opp vannet i tanken, samt distribuere nitrogen ut til dysene hvor vann og nitrogen blir mikset sammen.", 
+"Systemet for brannskum er et sentralisert system og består av to skumskid-enheter som er plassert på LQ og RP.",
+"Skumskidene består av en skumtank og to skumpumper. I tillegg er det en skum-jockeypumpe installert i hver skid, denne sørger for at trykket opprettholdes i skumringledningen.",
+"Deluge-, monitor-, og sprinklerskid leverer brannvann og skum til delugedyser, brannkanoner og sprinkler.",
+"Boligmodulen har også en «DIFFS» - Deck Integrated Fire Fighting System, som supplerer vann og skum til helidekket."
+  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

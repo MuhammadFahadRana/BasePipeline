@@ -22,7 +22,7 @@ class FrameOCR:
             use_gpu: Use GPU if available
         """
         if languages is None:
-            languages = ['en']
+            languages = ['en', 'no']
         
         self.languages = languages
         self.use_gpu = use_gpu

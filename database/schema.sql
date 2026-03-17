@@ -111,7 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_scenes_video_id ON scenes(video_id);
 CREATE INDEX IF NOT EXISTS idx_scenes_time_range ON scenes(video_id, start_time, end_time);
 CREATE INDEX IF NOT EXISTS idx_transcript_video_id ON transcript_segments(video_id);
 CREATE INDEX IF NOT EXISTS idx_transcript_time_range ON transcript_segments(video_id, start_time, end_time);
-CREATE INDEX IF NOT EXISTS idx_transcript_text_search ON transcript_segments USING GIN(to_tsvector('english', text));
+CREATE INDEX IF NOT EXISTS idx_transcript_text_search ON transcript_segments USING GIN(to_tsvector('simple', text));
 
 -- Vector similarity indexes (HNSW for fast approximate nearest-neighbor search)
 CREATE INDEX IF NOT EXISTS idx_embeddings_vector ON embeddings USING hnsw (embedding vector_cosine_ops)
@@ -191,9 +191,9 @@ BEGIN
     WITH text_scores AS (
         SELECT 
             ts.id,
-            ts_rank(to_tsvector('english', ts.text), plainto_tsquery('english', query_text)) AS text_score
+            ts_rank(to_tsvector('simple', ts.text), plainto_tsquery('simple', query_text)) AS text_score
         FROM transcript_segments ts
-        WHERE to_tsvector('english', ts.text) @@ plainto_tsquery('english', query_text)
+        WHERE to_tsvector('simple', ts.text) @@ plainto_tsquery('simple', query_text)
     ),
     semantic_scores AS (
         SELECT 
