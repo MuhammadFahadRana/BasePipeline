@@ -230,9 +230,62 @@ function captureFirstFrame(streamUrl, canvas, fallback, badgeEl) {
     document.body.appendChild(vid);
 }
 
+/**
+ * Derive an installation / category name from a video filename.
+ */
+function getVideoCategory(filename) {
+    if (filename.startsWith('Johan Sverdrup')) return 'Johan Sverdrup';
+    if (filename.startsWith('AkerBP'))         return 'AkerBP';
+    if (filename.endsWith('- TED Talk.mp4'))   return 'TED Talks';
+    return 'Other';
+}
+
+function buildVideoCard(video) {
+    const card = document.createElement('div');
+    card.className = 'video-browser-card';
+
+    const staticDur = formatDuration(video.duration_seconds);
+    let durHtml = `<span class="video-duration-badge" style="display: none;"></span>`;
+    if (staticDur) {
+        durHtml = `<span class="video-duration-badge">${staticDur}</span>`;
+    }
+    const streamUrl = `${API_BASE_URL}/video/stream/${video.id}`;
+
+    card.innerHTML = `
+        <div class="video-browser-thumb">
+            <canvas class="video-thumb-canvas"></canvas>
+            <div class="video-thumb-fallback">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="2" y="4" width="20" height="16" rx="3" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"/>
+                    <path d="M10 9L15 12L10 15V9Z" fill="rgba(255,255,255,0.25)"/>
+                </svg>
+            </div>
+            <div class="play-overlay">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M8 5.14v14l11-7-11-7z"/>
+                </svg>
+            </div>
+        </div>
+        <div class="video-browser-info">
+            <p class="video-browser-name" title="${escapeHtml(video.filename)}">${escapeHtml(video.filename)}</p>
+            <div class="video-browser-meta">
+                ${durHtml}
+            </div>
+        </div>
+    `;
+
+    const canvas  = card.querySelector('.video-thumb-canvas');
+    const fallback = card.querySelector('.video-thumb-fallback');
+    const badgeEl  = card.querySelector('.video-duration-badge');
+    captureFirstFrame(streamUrl, canvas, fallback, badgeEl);
+
+    card.addEventListener('click', () => openVideoFromBrowser(video));
+    return card;
+}
+
 function renderVideosGrid(videoList) {
-    const grid = document.getElementById('videosGrid');
-    const empty = document.getElementById('videosEmpty');
+    const grid    = document.getElementById('videosGrid');
+    const empty   = document.getElementById('videosEmpty');
     const countEl = document.getElementById('videoTabCount');
 
     grid.innerHTML = '';
@@ -244,49 +297,55 @@ function renderVideosGrid(videoList) {
     }
     empty.style.display = 'none';
 
-    videoList.forEach(video => {
-        const card = document.createElement('div');
-        card.className = 'video-browser-card';
+    // Group videos by category
+    const groups = {};
+    videoList.forEach(v => {
+        const cat = getVideoCategory(v.filename);
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(v);
+    });
 
-        const staticDur = formatDuration(video.duration_seconds);
-        // Start with the static DB duration, or a hidden empty badge
-        let durHtml = `<span class="video-duration-badge" style="display: none;"></span>`;
-        if (staticDur) {
-            durHtml = `<span class="video-duration-badge">${staticDur}</span>`;
-        }
-        const streamUrl = `${API_BASE_URL}/video/stream/${video.id}`;
+    // Render order: named installations first (alphabetical), "Other" last
+    const categoryOrder = Object.keys(groups).sort((a, b) => {
+        if (a === 'Other') return 1;
+        if (b === 'Other') return -1;
+        return a.localeCompare(b);
+    });
 
-        card.innerHTML = `
-            <div class="video-browser-thumb">
-                <canvas class="video-thumb-canvas"></canvas>
-                <div class="video-thumb-fallback">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="2" y="4" width="20" height="16" rx="3" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"/>
-                        <path d="M10 9L15 12L10 15V9Z" fill="rgba(255,255,255,0.25)"/>
-                    </svg>
-                </div>
-                <div class="play-overlay">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M8 5.14v14l11-7-11-7z"/>
-                    </svg>
-                </div>
-            </div>
-            <div class="video-browser-info">
-                <p class="video-browser-name" title="${escapeHtml(video.filename)}">${escapeHtml(video.filename)}</p>
-                <div class="video-browser-meta">
-                    ${durHtml}
-                </div>
-            </div>
+    categoryOrder.forEach(category => {
+        const section = document.createElement('div');
+        section.className = 'video-category';
+
+        const header = document.createElement('button');
+        header.className = 'video-category-header';
+        header.innerHTML = `
+            <span class="video-category-title">${escapeHtml(category)}</span>
+            <span class="video-category-count">${groups[category].length}</span>
+            <svg class="video-category-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"/>
+            </svg>
         `;
 
-        // Capture first frame into canvas and fetch real duration dynamically
-        const canvas = card.querySelector('.video-thumb-canvas');
-        const fallback = card.querySelector('.video-thumb-fallback');
-        const badgeEl = card.querySelector('.video-duration-badge');
-        captureFirstFrame(streamUrl, canvas, fallback, badgeEl);
+        const body = document.createElement('div');
+        body.className = 'video-category-body';
 
-        card.addEventListener('click', () => openVideoFromBrowser(video));
-        grid.appendChild(card);
+        const innerGrid = document.createElement('div');
+        innerGrid.className = 'videos-grid';
+
+        groups[category].forEach(video => {
+            innerGrid.appendChild(buildVideoCard(video));
+        });
+
+        body.appendChild(innerGrid);
+        section.appendChild(header);
+        section.appendChild(body);
+
+        // Toggle collapse
+        header.addEventListener('click', () => {
+            section.classList.toggle('collapsed');
+        });
+
+        grid.appendChild(section);
     });
 }
 

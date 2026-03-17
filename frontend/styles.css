@@ -1253,6 +1253,63 @@ select {
     gap: 1.25rem;
 }
 
+/* ---- Video Category Sections ---- */
+.video-category {
+    margin-bottom: 1.5rem;
+}
+
+.video-category-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 1rem;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: #f8fafc;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.video-category-header:hover {
+    background: #f1f5f9;
+}
+
+.video-category-count {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    background: #e2e8f0;
+    padding: 0.1rem 0.5rem;
+    border-radius: var(--radius-full);
+}
+
+.video-category-chevron {
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+.video-category.collapsed .video-category-chevron {
+    transform: rotate(-90deg);
+}
+
+.video-category-body {
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+    max-height: 2000px;
+}
+
+.video-category.collapsed .video-category-body {
+    max-height: 0;
+}
+/* ---- End Video Category Sections ---- */
+
 .video-browser-card {
     background: var(--bg-card);
     border: 1px solid var(--border-light);
