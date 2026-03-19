@@ -1,6 +1,19 @@
 -- Enable pgvector extension for vector similarity search
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- Video categories table: predefined categories for organising videos
+CREATE TABLE IF NOT EXISTS video_categories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seed default categories
+INSERT INTO video_categories (name) VALUES ('Oil & Gas') ON CONFLICT (name) DO NOTHING;
+INSERT INTO video_categories (name) VALUES ('Maintenance') ON CONFLICT (name) DO NOTHING;
+INSERT INTO video_categories (name) VALUES ('Installation') ON CONFLICT (name) DO NOTHING;
+INSERT INTO video_categories (name) VALUES ('Operations') ON CONFLICT (name) DO NOTHING;
+
 -- Videos table: Store video metadata
 CREATE TABLE IF NOT EXISTS videos (
     id SERIAL PRIMARY KEY,
@@ -12,6 +25,8 @@ CREATE TABLE IF NOT EXISTS videos (
     scene_threshold FLOAT,
     processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     video_fingerprint JSONB,  -- Store size, mtime, sha256
+    label VARCHAR(255),       -- Human-readable label, e.g. "Yggdrasil Installation"
+    category_id INTEGER REFERENCES video_categories(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

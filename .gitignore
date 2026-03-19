@@ -30,6 +30,7 @@ env/
 # Environment variables
 .env
 .env.local
+.jwt_secret
 
 # IDE
 .vscode/

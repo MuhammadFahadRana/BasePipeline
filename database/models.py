@@ -19,6 +19,22 @@ from pgvector.sqlalchemy import Vector
 Base = declarative_base()
 
 
+class VideoCategory(Base):
+    """Predefined video categories (e.g. Oil & Gas, Maintenance)."""
+
+    __tablename__ = "video_categories"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    videos = relationship("Video", back_populates="category_rel")
+
+    def __repr__(self):
+        return f"<VideoCategory(id={self.id}, name='{self.name}')>"
+
+
 class Video(Base):
     """Video metadata table."""
 
@@ -33,17 +49,20 @@ class Video(Base):
     scene_threshold = Column(Float)
     processed_at = Column(DateTime, default=datetime.utcnow)
     video_fingerprint = Column(JSON)  # {size_bytes, mtime, sha256}
+    label = Column(String(255))  # Human-readable label, e.g. "Yggdrasil Installation"
+    category_id = Column(Integer, ForeignKey("video_categories.id", ondelete="SET NULL"))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
+    category_rel = relationship("VideoCategory", back_populates="videos")
     scenes = relationship("Scene", back_populates="video", cascade="all, delete-orphan")
     transcript_segments = relationship(
         "TranscriptSegment", back_populates="video", cascade="all, delete-orphan"
     )
 
     def __repr__(self):
-        return f"<Video(id={self.id}, filename='{self.filename}')>"
+        return f"<Video(id={self.id}, filename='{self.filename}', label='{self.label}')>"
 
 
 class Scene(Base):
@@ -220,3 +239,43 @@ class SearchImageCache(Base):
 
     def __repr__(self):
         return f"<SearchImageCache(id={self.id}, file='{self.filename}', searches={self.search_count})>"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Access Control models
+# ──────────────────────────────────────────────────────────────────────────
+
+class User(Base):
+    """Application users with role-based access control."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default="viewer")  # "admin" | "viewer"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    category_access = relationship(
+        "UserCategoryAccess", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self):
+        return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
+
+
+class UserCategoryAccess(Base):
+    """Maps which video categories a non-admin user can access."""
+
+    __tablename__ = "user_category_access"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    category = Column(String(100), nullable=False)  # e.g. "Johan Sverdrup", "AkerBP"
+
+    user = relationship("User", back_populates="category_access")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", name="uq_user_category"),
+    )

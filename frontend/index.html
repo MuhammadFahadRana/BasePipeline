@@ -15,7 +15,21 @@
 </head>
 
 <body>
-    <div class="container">
+    <!-- Login Overlay -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-card">
+            <h2>ATLAS</h2>
+            <p class="login-subtitle">Sign in to continue</p>
+            <form id="loginForm" autocomplete="on">
+                <input type="text" id="loginUsername" placeholder="Username" autocomplete="username" required>
+                <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" required>
+                <button type="submit" class="login-btn">Sign In</button>
+                <p class="login-error" id="loginError"></p>
+            </form>
+        </div>
+    </div>
+
+    <div class="container" id="appContainer" style="display:none;">
         <!-- Header -->
         <header class="header">
             <div class="header-content">
@@ -32,6 +46,17 @@
                     <div class="stat-item">
                         <span class="stat-value status-indicator" id="statusIndicator">●</span>
                         <span class="stat-label" id="statusText">Connecting...</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item user-menu">
+                        <span class="stat-value" id="currentUsername">-</span>
+                        <button class="logout-btn" id="logoutBtn" title="Sign out">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                                <polyline points="16 17 21 12 16 7"/>
+                                <line x1="21" y1="12" x2="9" y2="12"/>
+                            </svg>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -51,6 +76,14 @@
                     <path d="M10 9L15 12L10 15V9Z" fill="currentColor"/>
                 </svg>
                 Videos
+            </button>
+            <button class="main-nav-tab" data-tab="admin" id="adminNavTab" style="display:none;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/>
+                    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                Controls
             </button>
         </nav>
 
@@ -85,6 +118,18 @@
                     </button>
                 </div>
 
+                <!-- Category Filter Chips -->
+                <div class="category-filter-row">
+                    <span class="category-filter-label">Categories:</span>
+                    <div id="searchCategoryFilter" class="category-chips-container"></div>
+                </div>
+
+                <!-- Site Filter Chips -->
+                <div class="category-filter-row">
+                    <span class="category-filter-label">Sites:</span>
+                    <div id="searchSiteFilter" class="category-chips-container"></div>
+                </div>
+
                 <!-- Search Options -->
                 <div class="search-options">
                     <div class="option-group">
@@ -112,7 +157,17 @@
             <section class="results-section" id="resultsSection" style="display: none;">
                 <div class="results-header">
                     <h2 id="resultsTitle">Search Results</h2>
-                    <span class="results-count" id="resultsCount">0 results</span>
+                    <div class="results-header-right">
+                        <div class="translate-toggle">
+                            <label for="translateLang">Language:</label>
+                            <select id="translateLang" class="select-input select-input-sm">
+                                <option value="">Original</option>
+                                <option value="en">English</option>
+                                <option value="no">Norwegian</option>
+                            </select>
+                        </div>
+                        <span class="results-count" id="resultsCount">0 results</span>
+                    </div>
                 </div>
                 <!-- AI Answer Panel (ChatGPT-style summary) -->
                 <div class="answer-panel" id="answerPanel" style="display: none;">
@@ -186,6 +241,174 @@
                 </svg>
                 <p>No videos found. Make sure the API is running.</p>
             </div>
+        </section>
+
+        <!-- Admin Panel (visible to admins only) -->
+        <section id="adminTab" class="admin-tab" style="display:none;">
+
+            <!-- Sub-navigation for admin sections -->
+            <div class="admin-sub-nav">
+                <button class="admin-sub-tab active" data-admin-tab="users">Users</button>
+                <button class="admin-sub-tab" data-admin-tab="video-labels">Video Labels</button>
+                <button class="admin-sub-tab" data-admin-tab="upload">Upload Video</button>
+                <button class="admin-sub-tab" data-admin-tab="ground-truth">Ground Truth</button>
+                <button class="admin-sub-tab" data-admin-tab="pipeline">Pipeline Config</button>
+            </div>
+
+            <!-- ── Users Section ──────────────────────────────────── -->
+            <div id="adminSectionUsers" class="admin-section">
+                <div class="admin-tab-header">
+                    <h2>User Management</h2>
+                    <button class="admin-add-btn" id="adminAddUserBtn">+ New User</button>
+                </div>
+                <div id="adminUserList" class="admin-user-list"></div>
+
+                <!-- Add / Edit User Form (hidden by default) -->
+                <div id="adminUserForm" class="admin-user-form" style="display:none;">
+                    <h3 id="adminFormTitle">New User</h3>
+                    <input type="hidden" id="adminFormUserId" value="">
+                    <label>Username
+                        <input type="text" id="adminFormUsername" placeholder="username" autocomplete="off">
+                    </label>
+                    <label>Password <small id="adminPwdHint"></small>
+                        <input type="password" id="adminFormPassword" placeholder="password" autocomplete="new-password">
+                    </label>
+                    <label>Role
+                        <select id="adminFormRole">
+                            <option value="viewer">Viewer</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </label>
+                    <fieldset id="adminCategoryFieldset">
+                        <legend>Video Categories</legend>
+                        <div id="adminCategoryChecks" class="admin-cat-checks"></div>
+                    </fieldset>
+                    <div class="admin-form-actions">
+                        <button class="admin-save-btn" id="adminFormSave">Save</button>
+                        <button class="admin-cancel-btn" id="adminFormCancel">Cancel</button>
+                    </div>
+                    <p class="admin-form-error" id="adminFormError"></p>
+                </div>
+            </div>
+
+            <!-- ── Video Labels & Categories Section ──────────── -->
+            <div id="adminSectionVideoLabels" class="admin-section" style="display:none;">
+                <div class="admin-tab-header">
+                    <h2>Video Labels &amp; Categories</h2>
+                </div>
+                <p class="admin-hint">Assign descriptive labels (e.g. "Yggdrasil Installation") and categories to videos so they can be found via search filters.</p>
+
+                <!-- Category management -->
+                <div class="video-labels-categories-mgmt">
+                    <h3>Categories</h3>
+                    <div id="videoCategoryList" class="video-category-tag-list"></div>
+                    <div class="category-select-row" style="margin-top:0.5rem;">
+                        <input type="text" id="newVideoCategoryInput" placeholder="New category name..." class="new-cat-input">
+                        <button class="admin-add-btn small" id="addVideoCategoryBtn">+ Add Category</button>
+                    </div>
+                </div>
+
+                <!-- Video label table -->
+                <div class="video-labels-table-wrap" style="margin-top:1.2rem;">
+                    <table class="video-labels-table">
+                        <thead>
+                            <tr>
+                                <th>Video Filename</th>
+                                <th>Label</th>
+                                <th>Category</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="videoLabelsTableBody">
+                            <tr><td colspan="4"><em>Loading...</em></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ── Upload Video Section ───────────────────────────── -->
+            <div id="adminSectionUpload" class="admin-section" style="display:none;">
+                <h2>Upload Video</h2>
+                <div class="admin-upload-area" id="videoDropZone">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p>Drag &amp; drop a video file here, or click to browse</p>
+                    <input type="file" id="videoFileInput" accept=".mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.ts,.m2ts" style="display:none;">
+                    <small>Supported: MP4, AVI, MKV, MOV, WebM, FLV, WMV, TS</small>
+                </div>
+                <div class="admin-upload-meta" id="uploadMetaSection" style="display:none;">
+                    <p class="upload-file-name" id="uploadFileName"></p>
+                    <label>Category
+                        <div class="category-select-row">
+                            <select id="uploadCategory">
+                                <option value="Other">Other</option>
+                            </select>
+                            <input type="text" id="newCategoryInput" placeholder="New category name..." class="new-cat-input">
+                            <button class="admin-add-btn small" id="addCategoryBtn">+ Add</button>
+                        </div>
+                    </label>
+                    <button class="admin-save-btn" id="uploadVideoBtn">Upload Video</button>
+                    <div class="upload-progress" id="uploadProgress" style="display:none;">
+                        <div class="progress-bar"><div class="progress-fill" id="uploadProgressFill"></div></div>
+                        <span id="uploadProgressText">Uploading...</span>
+                    </div>
+                    <p class="admin-form-error" id="uploadError"></p>
+                    <p class="admin-form-success" id="uploadSuccess" style="display:none;"></p>
+                </div>
+            </div>
+
+            <!-- ── Ground Truth Section ───────────────────────────── -->
+            <div id="adminSectionGroundTruth" class="admin-section" style="display:none;">
+                <h2>Ground Truth Files</h2>
+                <div class="admin-upload-area" id="gtDropZone">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="12" y1="18" x2="12" y2="12"/>
+                        <line x1="9" y1="15" x2="15" y2="15"/>
+                    </svg>
+                    <p>Drag &amp; drop a ground truth JSON file, or click to browse</p>
+                    <input type="file" id="gtFileInput" accept=".json" style="display:none;">
+                    <small>Format: {video_name}_gt.json</small>
+                </div>
+                <p class="admin-form-error" id="gtUploadError" style="display:none;"></p>
+                <p class="admin-form-success" id="gtUploadSuccess" style="display:none;"></p>
+                <h3 style="margin-top:1.2rem;">Existing Ground Truth Files</h3>
+                <div id="gtFileList" class="gt-file-list"><em>Loading...</em></div>
+            </div>
+
+            <!-- ── Pipeline Config Section ────────────────────────── -->
+            <div id="adminSectionPipeline" class="admin-section" style="display:none;">
+                <h2>Pipeline Configuration</h2>
+                <p class="admin-hint">Select models and run the pipeline on an uploaded video.</p>
+                <div class="pipeline-config-form">
+                    <label>Video
+                        <select id="pipelineVideo"></select>
+                    </label>
+                    <label>Transcription Model
+                        <select id="pipelineTranscription"></select>
+                    </label>
+                    <label>Scene Detection
+                        <select id="pipelineSceneDetection"></select>
+                    </label>
+                    <label>Scene Threshold
+                        <input type="number" id="pipelineSceneThreshold" value="30" min="1" max="100" step="1">
+                    </label>
+                    <label>Device
+                        <select id="pipelineDevice">
+                            <option value="auto">Auto</option>
+                            <option value="cuda">CUDA (GPU)</option>
+                            <option value="cpu">CPU</option>
+                        </select>
+                    </label>
+                    <button class="admin-save-btn" id="runPipelineBtn">Run Pipeline</button>
+                    <div id="pipelineStatus" class="pipeline-status" style="display:none;"></div>
+                </div>
+            </div>
+
         </section>
 
     </div>

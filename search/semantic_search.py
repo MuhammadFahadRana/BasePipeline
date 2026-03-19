@@ -236,6 +236,103 @@ def _facet_suggestions_for_query(query: str) -> List[Dict]:
     ]
 
 
+# ── Word-sense disambiguation dictionary ──────────────────────────────
+# Maps ambiguous words to a list of possible meanings.
+# Each meaning has: label (short chip text), phrase (search expansion),
+# description (tooltip).  The frontend renders these as clickable chips
+# similar to facet chips so the user can narrow the intent.
+_AMBIGUOUS_WORDS: Dict[str, List[Dict]] = {
+    "well": [
+        {"label": "Oil & gas well", "phrase": "oil and gas well", "description": "Wellhead, wellbore, well pressure, well operations"},
+        {"label": "Well (adverb)", "phrase": "well", "description": "General adverb usage — 'well done', 'as well as'"},
+    ],
+    "pipe": [
+        {"label": "Pipe / pipeline (oil & gas)", "phrase": "pipe pipeline oil gas", "description": "Flowline, subsea pipe, pipeline installation"},
+        {"label": "Pipe (computing)", "phrase": "pipe data stream", "description": "Data pipe, pipeline, streaming"},
+    ],
+    "platform": [
+        {"label": "Offshore platform", "phrase": "offshore platform oil gas", "description": "Fixed or floating offshore structures"},
+        {"label": "Software platform", "phrase": "software platform system", "description": "Technology or software platform"},
+    ],
+    "string": [
+        {"label": "Drill string", "phrase": "drill string toolstring", "description": "Drill pipe, BHA, tool string"},
+        {"label": "Text string", "phrase": "string text data", "description": "Character string, programming"},
+    ],
+    "log": [
+        {"label": "Well log", "phrase": "well log logging wireline", "description": "Wireline log, mud log, well logging"},
+        {"label": "System log", "phrase": "log file system data", "description": "Server log, activity log"},
+    ],
+    "casing": [
+        {"label": "Well casing", "phrase": "well casing cement", "description": "Casing string, casing shoe, cement"},
+        {"label": "Casing (enclosure)", "phrase": "casing housing enclosure", "description": "Equipment casing or housing"},
+    ],
+    "head": [
+        {"label": "Wellhead", "phrase": "wellhead christmas tree", "description": "Wellhead, Xmas tree, production head"},
+        {"label": "Head (general)", "phrase": "head", "description": "General usage — 'head of department', etc."},
+    ],
+    "jacket": [
+        {"label": "Platform jacket", "phrase": "jacket structure offshore platform", "description": "Offshore jacket structure, substructure"},
+        {"label": "Jacket (clothing)", "phrase": "jacket clothing", "description": "Clothing item"},
+    ],
+    "mud": [
+        {"label": "Drilling mud", "phrase": "drilling mud fluid", "description": "Drilling fluid, mud weight, mud pump"},
+        {"label": "Mud (general)", "phrase": "mud dirt", "description": "Dirt, soil"},
+    ],
+    "trip": [
+        {"label": "Tripping pipe", "phrase": "trip pipe tripping", "description": "Tripping in/out, round trip"},
+        {"label": "Trip (travel)", "phrase": "trip travel journey", "description": "Travel or journey"},
+    ],
+    "set": [
+        {"label": "Set casing / cement", "phrase": "set casing cement plug", "description": "Set casing, cement setting, plug"},
+        {"label": "Set (general)", "phrase": "set configure", "description": "General usage — settings, configure"},
+    ],
+    "flow": [
+        {"label": "Flow (oil & gas)", "phrase": "flow rate production oil gas", "description": "Production flow, flow rate, flowline"},
+        {"label": "Workflow / data flow", "phrase": "workflow data flow process", "description": "Process flow, workflow, data flow"},
+    ],
+    "pressure": [
+        {"label": "Well pressure", "phrase": "well pressure downhole", "description": "Downhole pressure, BHP, wellbore pressure"},
+        {"label": "Pressure (general)", "phrase": "pressure", "description": "General usage"},
+    ],
+    "tree": [
+        {"label": "Christmas tree (wellhead)", "phrase": "christmas tree wellhead subsea", "description": "Subsea or surface Xmas tree"},
+        {"label": "Tree (general)", "phrase": "tree", "description": "General usage — decision tree, data tree, etc."},
+    ],
+    "seal": [
+        {"label": "Seal (oil & gas)", "phrase": "seal packer BOP", "description": "BOP seal, packer seal, annular seal"},
+        {"label": "Seal (general)", "phrase": "seal", "description": "General usage"},
+    ],
+    "cap": [
+        {"label": "Cap rock / well cap", "phrase": "cap rock well", "description": "Caprock, well cap, capping"},
+        {"label": "Cap (general)", "phrase": "cap", "description": "General usage"},
+    ],
+    "rig": [
+        {"label": "Drilling rig", "phrase": "drilling rig offshore", "description": "Drilling rig, derrick, drillship"},
+        {"label": "Rig (general)", "phrase": "rig setup", "description": "To rig up, set up"},
+    ],
+}
+
+
+def _sense_suggestions(query: str) -> List[Dict]:
+    """Return word-sense suggestions for short/ambiguous queries.
+
+    Only triggers when the cleaned query (after stop-word removal) has 1-2
+    content words and at least one of them appears in the disambiguation
+    dictionary.  Returns a list of suggestion dicts (label, phrase,
+    description) that the frontend can render as clickable chips.
+    """
+    keywords = extract_keywords(query)
+    if not keywords or len(keywords) > 2:
+        return []
+
+    suggestions: List[Dict] = []
+    for kw in keywords:
+        if kw in _AMBIGUOUS_WORDS:
+            suggestions.extend(_AMBIGUOUS_WORDS[kw])
+
+    return suggestions
+
+
 def _expanded_queries(query: str, facet: str = "auto") -> List[Tuple[str, str]]:
     """Returns list of (subquery, facet_id) to run."""
     base = (query or "").strip()
@@ -711,6 +808,7 @@ class SemanticSearchEngine:
             "keywords_used": None,
             "facet_applied": (facet or "auto"),
             "facets": _facet_suggestions_for_query(query),
+            "sense_suggestions": _sense_suggestions(query),
         }
 
         # ── Query preprocessing: extract content keywords ──

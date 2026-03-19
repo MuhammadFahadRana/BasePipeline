@@ -42,22 +42,24 @@ class MultiModalSearchEngine:
         text_weight: float = 0.5,
         vision_weight: float = 0.5,
         vision_model: str = "google/siglip-base-patch16-224",
+        text_search: SemanticSearchEngine = None,
     ):
         """
         Initialize multi-modal search engine.
 
         Args:
             db: Database session
-            text_weight: Weight for text similarity (0-1)
-            vision_weight: Weight for vision similarity (0-1)
+            text_weight: Default weight for text similarity (0-1)
+            vision_weight: Default weight for vision similarity (0-1)
             vision_model: Vision model name (SigLIP)
+            text_search: Optional pre-existing SemanticSearchEngine singleton to reuse
         """
         self.db = db
         self.text_weight = text_weight
         self.vision_weight = vision_weight
 
-        # Text search engine
-        self.text_search = SemanticSearchEngine(db)
+        # Reuse provided text search engine or create a new one
+        self.text_search = text_search if text_search is not None else SemanticSearchEngine(db)
 
         # Lazy load vision model (only when needed)
         self._vision_gen = None
@@ -65,14 +67,17 @@ class MultiModalSearchEngine:
 
         # LLM Query Parser (lazy loaded)
         self.query_parser = None
-        # Only load if we are likely to use it (or make it standard)
-        # For now, let's load it on demand in search_with_fallback
 
         # Validate weights
         if not np.isclose(text_weight + vision_weight, 1.0):
             raise ValueError(
                 f"Weights must sum to 1.0, got {text_weight + vision_weight}"
             )
+
+    def update_db(self, db: Session):
+        """Update the database session (for singleton reuse across requests)."""
+        self.db = db
+        self.text_search.db = db
 
     @property
     def vision_gen(self):
@@ -207,6 +212,10 @@ class MultiModalSearchEngine:
         Returns:
             Dict with 'results', 'search_metadata'
         """
+        # Use local weight variables so we don't mutate singleton state
+        tw = self.text_weight
+        vw = self.vision_weight
+
         # 0. LLM Query Parsing (Intent Understanding)
         parsed_query = None
         search_query = query
@@ -226,17 +235,17 @@ class MultiModalSearchEngine:
                 and "transcript" not in parsed_query.targets
             ):
                 # Visual search intent (e.g. "orange robot") -> Boost vision
-                self.vision_weight = max(self.vision_weight, 0.6)
-                self.text_weight = 1.0 - self.vision_weight
+                vw = max(vw, 0.6)
+                tw = 1.0 - vw
             elif "ocr" in parsed_query.targets:
                 # OCR intent (e.g. "slide about X") -> Boost text (OCR is part of text search)
-                self.text_weight = max(self.text_weight, 0.7)
-                self.vision_weight = 1.0 - self.text_weight
+                tw = max(tw, 0.7)
+                vw = 1.0 - tw
 
         # 1. Get text results with fallback
         fallback_data = self.text_search.search_with_fallback(
             query=search_query,
-            top_k=top_k * 3 if self.vision_weight > 0 else top_k,
+            top_k=top_k * 3 if vw > 0 else top_k,
             video_filter=video_filter,
             facet=facet or "auto",
         )
@@ -249,7 +258,7 @@ class MultiModalSearchEngine:
         metadata = fallback_data["search_metadata"]
 
         # If no vision needed or no text results, return as-is
-        if self.vision_weight == 0 or not text_results:
+        if vw == 0 or not text_results:
             mm_results = [
                 MultiModalSearchResult(
                     **r.__dict__,
@@ -264,8 +273,8 @@ class MultiModalSearchEngine:
         # 2. Auto-adjust weights: if text results are weak, favor text more
         #    to avoid vision scores diluting already-weak text matches
         top_text_score = text_results[0].score if text_results else 0
-        effective_text_weight = self.text_weight
-        effective_vision_weight = self.vision_weight
+        effective_text_weight = tw
+        effective_vision_weight = vw
 
         if top_text_score < 0.3:
             # Low confidence text — go text-heavy to preserve what we found
