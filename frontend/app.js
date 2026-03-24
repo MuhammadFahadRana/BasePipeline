@@ -905,6 +905,40 @@ async function performSearch() {
 
         // Wait for search results first — display immediately
         const data = await searchPromise;
+
+        // ── Zero-result fallback: if semantic search returned nothing, check
+        //    whether the query mentions a known site and auto-browse it ──
+        const resultCount = (data && data.results) ? data.results.length : 0;
+        if (resultCount === 0 && query) {
+            try {
+                const sitesResp = await authFetch(`${API_BASE_URL}/auth/sites`);
+                if (sitesResp.ok) {
+                    const sitesArr = await sitesResp.json();
+                    const qLower = query.toLowerCase();
+                    // Find the longest matching site name in the query
+                    let bestSite = null;
+                    for (const s of sitesArr) {
+                        if (qLower.includes(s.toLowerCase())) {
+                            if (!bestSite || s.length > bestSite.length) bestSite = s;
+                        }
+                    }
+                    if (bestSite) {
+                        const browseParams = new URLSearchParams({ limit: parseInt(document.getElementById('searchLimit')?.value || 10) });
+                        browseParams.append('site', bestSite);
+                        const browseResp = await authFetch(`${API_BASE_URL}/search/browse?${browseParams}`);
+                        if (browseResp.ok) {
+                            const browseData = await browseResp.json();
+                            if (browseData.results && browseData.results.length > 0) {
+                                displayResults(browseData, null);
+                                // Skip garbage QA for pure site-browse fallback
+                                return;
+                            }
+                        }
+                    }
+                }
+            } catch (_) { /* fallback is best-effort */ }
+        }
+
         displayResults(data, null);
 
         // Then fill in QA answer when it arrives (non-blocking)
@@ -922,9 +956,31 @@ async function performSearch() {
     }
 }
 
+// Check if a QA answer is garbage / repetitive / unhelpful
+function _isGarbageAnswer(text) {
+    if (!text || text.length < 10) return true;
+    // Detect repetitive phrases: split into sentences and check for duplicates
+    const sentences = text.split(/[.!?]+/).map(s => s.trim().toLowerCase()).filter(s => s.length > 10);
+    if (sentences.length >= 2) {
+        const unique = new Set(sentences);
+        // If more than half the sentences are duplicates, it's garbage
+        if (unique.size <= sentences.length * 0.5) return true;
+    }
+    // Detect common LLM "I don't know" filler
+    const noInfoPatterns = /i do not have any information|i cannot provide|i don't have.*information|no relevant.*information|does not contain.*relevant/i;
+    if (noInfoPatterns.test(text)) return true;
+    return false;
+}
+
 // Display AI Answer separately (can be called async after search results are shown)
 function displayAiAnswer(qaData) {
     if (!qaData || !qaData.answer || !qaData.answer.trim()) return;
+
+    // Suppress garbage / repetitive / unhelpful answers
+    if (_isGarbageAnswer(qaData.answer)) {
+        if (answerPanel) answerPanel.style.display = 'none';
+        return;
+    }
 
     if (answerPanel) {
         answerPanel.style.display = 'block';
@@ -1199,6 +1255,9 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
         return;
     }
 
+    // Detect browse mode (no search query — just browsing by category/site)
+    const isBrowse = search_strategy === 'category_browse';
+
     // Render each video group
     groupedResults.forEach((group) => {
         const videoCard = document.createElement('div');
@@ -1208,6 +1267,11 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
         const count = occurrences.length;
         const topOcc = occurrences[0] || {};
         const bestScore = topOcc.combined_score || topOcc.score || 0;
+
+        // Build meta line: hide score in browse mode
+        const metaText = isBrowse
+            ? `${count} segment${count !== 1 ? 's' : ''}`
+            : `${count} occurrence${count !== 1 ? 's' : ''} &middot; Best score: ${bestScore.toFixed(3)}`;
 
         // Video group header
         const header = document.createElement('div');
@@ -1222,7 +1286,7 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
                 </div>
                 <div>
                     <div class="video-group-name">${escapeHtml(group.video_filename)}</div>
-                    <div class="video-group-meta">${count} occurrence${count !== 1 ? 's' : ''} &middot; Best score: ${bestScore.toFixed(3)}</div>
+                    <div class="video-group-meta">${metaText}</div>
                 </div>
             </div>
             <div class="video-group-toggle">
@@ -1249,12 +1313,16 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
             const highlightedText = highlightText(occ.text || '', currentQuery);
             const scoreVal = occ.combined_score || occ.score || 0;
 
+            const scoreHtml = isBrowse
+                ? ''
+                : `<span class="occurrence-score">Score: ${scoreVal.toFixed(3)}</span>`;
+
             row.innerHTML = `
                 ${thumbnailHtml}
                 <div class="occurrence-body">
                     <div class="occurrence-ts-row">
                         <span class="occurrence-timestamp">${escapeHtml(occ.timestamp || '00:00:00')}</span>
-                        <span class="occurrence-score">Score: ${scoreVal.toFixed(3)}</span>
+                        ${scoreHtml}
                     </div>
                     <div class="occurrence-text">${highlightedText}</div>
                 </div>
@@ -1269,7 +1337,8 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
             const moreBtn = document.createElement('button');
             moreBtn.type = 'button';
             moreBtn.className = 'occurrence-show-more';
-            moreBtn.textContent = `Show ${count - 2} more occurrence${count - 2 !== 1 ? 's' : ''}`;
+            const moreNoun = isBrowse ? 'segment' : 'occurrence';
+            moreBtn.textContent = `Show ${count - 2} more ${moreNoun}${count - 2 !== 1 ? 's' : ''}`;
             let expanded = false;
             moreBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1281,9 +1350,10 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
                         else el.classList.add('occurrence-hidden');
                     }
                 });
+                const moreLabel = isBrowse ? 'segment' : 'occurrence';
                 moreBtn.textContent = expanded
                     ? 'Show less'
-                    : `Show ${count - 2} more occurrence${count - 2 !== 1 ? 's' : ''}`;
+                    : `Show ${count - 2} more ${moreLabel}${count - 2 !== 1 ? 's' : ''}`;
             });
             occList.appendChild(moreBtn);
         }

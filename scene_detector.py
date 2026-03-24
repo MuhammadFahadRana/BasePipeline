@@ -30,6 +30,7 @@ def _ensure_torch():
     global _torch
     if _torch is None:
         import torch
+
         _torch = torch
     return _torch
 
@@ -38,6 +39,7 @@ def _ensure_open_clip():
     global _open_clip
     if _open_clip is None:
         import open_clip
+
         _open_clip = open_clip
     return _open_clip
 
@@ -48,15 +50,34 @@ def _ensure_open_clip():
 @dataclass
 class SceneConfig:
     """All scene-related settings in one place."""
-    # Detection
-    threshold: float = 30.0
+
+    # ── PySceneDetect Thresholds ──
+    # threshold: amount of pixel/intensity change required between frames to trigger a scene cut.
+    #   - Lower value (e.g., 15.0) = More sensitive, detects more subtle cuts (more scenes).
+    #   - Higher value (e.g., 27.0) = Less sensitive, detects only major visual changes (fewer scenes).
+    #   - It is an abstract intensity metric, NOT seconds. 20.0 is the recommended baseline.
+    threshold: float = 20.0
+
+    # min_scene_len: Minimum length of a valid scene before a new cut can be triggered.
+    #   - Measured in FRAMES (e.g., 15 frames = 0.5 seconds at 30fps).
+    #   - Prevents detecting micro-flashes or stutters as separate scenes.
     min_scene_len: int = 15
+
+    # max_scene_duration: Long scenes exceeding this value will be forcibly split.
+    #   - Measured in SECONDS.
+    #   - Ensures no scene is too long for downstream chunking or processing.
     max_scene_duration: float = 60.0  # split scenes longer than this (seconds)
 
-    # Semantic refinement
+    # ── Semantic Refinement via CLIP ──
     enable_refinement: bool = True
     clip_model: str = "ViT-B-32"
     clip_pretrained: str = "openai"
+
+    # clip_sim_merge_threshold: Cosine similarity threshold for merging two consecutive scenes.
+    #   - Represents visual similarity (from 0.0 to 1.0) between scene keyframes.
+    #   - 0.90 means if consecutive scenes are >=90% similar, they are merged back into one.
+    #   - Higher value (e.g., 0.95) = Stricter merging (fewer scenes merged).
+    #   - Lower value (e.g., 0.80) = Aggressive merging (more scenes are grouped together).
     clip_sim_merge_threshold: float = 0.90
 
     # Visual Enrichment (Qwen2-VL) — primary enrichment: captions, object labels, OCR
@@ -67,7 +88,15 @@ class SceneConfig:
     # Format conversion
     ffmpeg_path: str = "ffmpeg"  # assumes ffmpeg is on PATH
     compatible_extensions: Tuple[str, ...] = (".mp4", ".avi", ".mov")
-    audio_extensions: Tuple[str, ...] = (".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma")
+    audio_extensions: Tuple[str, ...] = (
+        ".mp3",
+        ".wav",
+        ".m4a",
+        ".flac",
+        ".ogg",
+        ".aac",
+        ".wma",
+    )
 
     # Device
     device: str = "auto"  # "auto", "cuda", "cpu"
@@ -122,18 +151,19 @@ class SceneDetector:
             self._clip_tokenizer = open_clip.get_tokenizer(self.config.clip_model)
         return self._clip_model, self._clip_preprocess
 
-
     def _ensure_qwen_vl(self):
         if self._qwen_vl is None:
             try:
                 from extract_visual_features import VisualFeatureExtractor
+
                 self._qwen_vl = VisualFeatureExtractor(
                     model_name=self.config.qwen_vl_model,
                     device=self.config.get_device(),
-                    load_in_4bit=self.config.qwen_vl_load_in_4bit
+                    load_in_4bit=self.config.qwen_vl_load_in_4bit,
                 )
             except Exception as e:
                 import traceback
+
                 print(f"Failed to load VisualFeatureExtractor: {e}")
                 traceback.print_exc()
                 print("Warning: Visual enrichment disabled.")
@@ -156,7 +186,7 @@ class SceneDetector:
         # Check ffmpeg is available
         ffmpeg = self.config.ffmpeg_path
         if not shutil.which(ffmpeg):
-            print(f"Warning: ffmpeg not found on PATH, proceeding with original file")
+            print("Warning: ffmpeg not found on PATH, proceeding with original file")
             return video_path, False
 
         # Convert to temp mp4
@@ -165,13 +195,20 @@ class SceneDetector:
 
         print(f"  Converting {video_path.suffix} → .mp4 (FFmpeg)...")
         cmd = [
-            ffmpeg, "-y",
-            "-i", str(video_path),
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "23",
-            "-c:a", "aac",
-            "-loglevel", "warning",
+            ffmpeg,
+            "-y",
+            "-i",
+            str(video_path),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-c:a",
+            "aac",
+            "-loglevel",
+            "warning",
             str(temp_path),
         ]
 
@@ -183,7 +220,9 @@ class SceneDetector:
                 shutil.rmtree(temp_dir, ignore_errors=True)
                 return video_path, False
 
-            print(f"  ✓ Converted successfully ({temp_path.stat().st_size / 1e6:.1f} MB)")
+            print(
+                f"  ✓ Converted successfully ({temp_path.stat().st_size / 1e6:.1f} MB)"
+            )
             return temp_path, True
 
         except subprocess.TimeoutExpired:
@@ -232,12 +271,16 @@ class SceneDetector:
 
         # Check if already processed
         if scene_file.exists() and not force_reprocess:
-            print(f"Scenes already detected for {video_path.name}. Skipping reprocessing.")
+            print(
+                f"Scenes already detected for {video_path.name}. Skipping reprocessing."
+            )
             try:
                 with open(scene_file, "r") as f:
                     return json.load(f)
             except json.JSONDecodeError:
-                print(f"Corrupt scene file found for {video_path.name}, reprocessing...")
+                print(
+                    f"Corrupt scene file found for {video_path.name}, reprocessing..."
+                )
 
         # Check for audio-only files
         if video_path.suffix.lower() in self.config.audio_extensions:
@@ -264,6 +307,29 @@ class SceneDetector:
             scene_manager.detect_scenes(frame_source=video)
             scene_list = scene_manager.get_scene_list()
 
+            # --- FALLBACK IF NO SCENES WERE RETURNED ---
+            if not scene_list:
+                print(f"  No scenes found by PySceneDetect. Creating a single scene for the entire video.")
+                try:
+                    cap = cv2.VideoCapture(str(working_path))
+                    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+                    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                    cap.release()
+                    duration = frame_count / fps if fps > 0 else 0.0
+                except Exception:
+                    duration = 0.0
+                
+                if duration > 0:
+                    class MockFrame:
+                        def __init__(self, s, f):
+                            self.s = s
+                            self.f = f
+                        def get_seconds(self): return self.s
+                        def get_frames(self): return self.f
+                    
+                    scene_list = [(MockFrame(0.0, 0), MockFrame(duration, int(frame_count)))]
+            # ---------------------------------------------
+
             # Post-process: split long scenes
             final_scenes = []
             current_scene_idx = 0
@@ -283,8 +349,11 @@ class SceneDetector:
 
                         # Use original video path for keyframe extraction
                         keyframe_path = self.extract_keyframe(
-                            working_path, sub_start, sub_end,
-                            output_dir, scene_idx=current_scene_idx,
+                            working_path,
+                            sub_start,
+                            sub_end,
+                            output_dir,
+                            scene_idx=current_scene_idx,
                         )
 
                         scene_data = {
@@ -292,7 +361,9 @@ class SceneDetector:
                             "start_time": sub_start,
                             "end_time": sub_end,
                             "duration": sub_end - sub_start,
-                            "keyframe_path": str(keyframe_path) if keyframe_path else None,
+                            "keyframe_path": str(keyframe_path)
+                            if keyframe_path
+                            else None,
                         }
                         final_scenes.append(scene_data)
                         print(
@@ -302,8 +373,11 @@ class SceneDetector:
                         current_scene_idx += 1
                 else:
                     keyframe_path = self.extract_keyframe(
-                        working_path, start_time, end_time,
-                        output_dir, scene_idx=current_scene_idx,
+                        working_path,
+                        start_time,
+                        end_time,
+                        output_dir,
+                        scene_idx=current_scene_idx,
                     )
 
                     scene_data = {
@@ -456,7 +530,9 @@ class SceneDetector:
 
         merge_count = len(scenes) - len(merged)
         if merge_count > 0:
-            print(f"  Merged {merge_count} similar consecutive scenes → {len(merged)} scenes")
+            print(
+                f"  Merged {merge_count} similar consecutive scenes → {len(merged)} scenes"
+            )
         else:
             print(f"  No scenes merged ({len(merged)} scenes)")
 
@@ -494,14 +570,18 @@ class SceneDetector:
 
             try:
                 result = qwen.analyze_image(kf)
-                scene.update({
-                    "caption": result.get("caption"),
-                    "object_labels": result.get("object_labels", []),
-                    "ocr_text": result.get("ocr_text"),
-                })
+                scene.update(
+                    {
+                        "caption": result.get("caption"),
+                        "object_labels": result.get("object_labels", []),
+                        "ocr_text": result.get("ocr_text"),
+                    }
+                )
                 count += 1
             except Exception as e:
-                print(f"    Visual enrichment failed for scene {scene.get('scene_id')}: {e}")
+                print(
+                    f"    Visual enrichment failed for scene {scene.get('scene_id')}: {e}"
+                )
                 scene.setdefault("caption", None)
                 scene.setdefault("object_labels", [])
                 scene.setdefault("ocr_text", None)
@@ -538,7 +618,11 @@ class SceneDetector:
         )
 
         # Refine (CLIP similarity merging)
-        do_refine = run_refinement if run_refinement is not None else self.config.enable_refinement
+        do_refine = (
+            run_refinement
+            if run_refinement is not None
+            else self.config.enable_refinement
+        )
         if do_refine and scenes:
             try:
                 scenes = self.refine_scenes(scenes)
@@ -563,9 +647,7 @@ class SceneDetector:
 
     # ── 6. Visualization ────────────────────────
 
-    def visualize_scenes(
-        self, video_path: str, scenes: list, output_file: str = None
-    ):
+    def visualize_scenes(self, video_path: str, scenes: list, output_file: str = None):
         """
         Create a visualization of scene boundaries.
         Generates a strip of thumbnails for each scene.
@@ -614,7 +696,11 @@ class SceneDetector:
 
         # Filter out non-video files
         skip_ext = {".json", ".txt", ".wav", ".mp3", ".srt", ".vtt", ".log"}
-        videos = [v for v in videos if v.suffix.lower() not in skip_ext and "test_audio" not in v.name]
+        videos = [
+            v
+            for v in videos
+            if v.suffix.lower() not in skip_ext and "test_audio" not in v.name
+        ]
 
         print(f"Found {len(videos)} videos for scene detection")
 
@@ -624,19 +710,23 @@ class SceneDetector:
 
             try:
                 scenes = self.detect_scenes(video_path)
-                all_scenes.append({
-                    "video": video_path.name,
-                    "scenes_file": f"processed/scenes/{video_path.stem}/{video_path.stem}_scenes.json",
-                    "num_scenes": len(scenes),
-                    "success": True,
-                })
+                all_scenes.append(
+                    {
+                        "video": video_path.name,
+                        "scenes_file": f"processed/scenes/{video_path.stem}/{video_path.stem}_scenes.json",
+                        "num_scenes": len(scenes),
+                        "success": True,
+                    }
+                )
             except Exception as e:
                 print(f"Failed to detect scenes in {video_path.name}: {str(e)}")
-                all_scenes.append({
-                    "video": video_path.name,
-                    "error": str(e),
-                    "success": False,
-                })
+                all_scenes.append(
+                    {
+                        "video": video_path.name,
+                        "error": str(e),
+                        "success": False,
+                    }
+                )
 
         return all_scenes
 

@@ -78,5 +78,5 @@ _benchmark_temp_*.wav
 # All the csv files
 *.csv
 
-# Docs folder
+# Docs folder and its contents
 docs/

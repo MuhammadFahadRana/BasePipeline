@@ -57,14 +57,6 @@ _CATEGORY_PATTERNS = [
 ]
 
 # ── Site (label) intent detection from natural-language queries ───────────
-_SITE_PATTERNS = [
-    # English: "show me Yggdrasil", "show me videos for Yggdrasil", "tell about Yggdrasil"
-    re.compile(r"(?:show|list|find|get|display|give)\s+(?:me\s+)?(?:all\s+)?(?:the\s+)?(?:videos?|results?)\s+(?:in|from|for|under|of|at|on)\s+(?:the\s+)?(?:site\s+)?[\"']?(.+?)[\"']?\s*(?:site)?\s*$", re.I),
-    re.compile(r"(?:show|find|get|tell|give)\s+(?:me\s+)?(?:about\s+)?[\"']?(.+?)[\"']?\s*$", re.I),
-    re.compile(r"(?:all\s+)?(?:videos?|results?)\s+(?:in|from|for|under|of|at|on)\s+(?:the\s+)?(?:site\s+)?[\"']?(.+?)[\"']?\s*(?:site)?\s*$", re.I),
-    # Norwegian: "vis meg Yggdrasil", "vis videoer fra Yggdrasil"
-    re.compile(r"(?:vis|finn|hent|søk)\s+(?:meg\s+)?(?:alle\s+)?(?:videoer?|resultater?)\s+(?:i|fra|for|under|på)\s+(?:site\s+)?[\"']?(.+?)[\"']?\s*$", re.I),
-]
 
 
 def _detect_category_intent(query: str, known_categories: set) -> Optional[str]:
@@ -84,17 +76,31 @@ def _detect_category_intent(query: str, known_categories: set) -> Optional[str]:
 
 
 def _detect_site_intent(query: str, known_sites: set) -> Optional[str]:
-    """If the query is a natural-language request to browse a site/label, return the site name."""
-    for pattern in _SITE_PATTERNS:
-        m = pattern.search(query.strip())
-        if m:
-            candidate = m.group(1).strip().strip('"\'')
-            for site in known_sites:
-                if site.lower() == candidate.lower():
-                    return site
-                if candidate.lower() in site.lower() or site.lower() in candidate.lower():
-                    return site
-    return None
+    """Detect if a query references a known site/label.
+
+    Uses direct substring matching rather than fragile regex patterns.
+    Handles: 'Yggdrasil', 'show me Yggdrasil', 'tell about Yggdrasil',
+    'Yggdrasil videos', 'vis meg Yggdrasil', etc.
+    """
+    q_lower = query.strip().lower()
+    if not q_lower:
+        return None
+
+    # 1) Exact match: query IS the site name
+    for site in known_sites:
+        if q_lower == site.lower():
+            return site
+
+    # 2) Site name appears as a substring of the query
+    #    Pick the longest match to avoid e.g. "Troll" matching inside "Trollfjord"
+    best_match = None
+    best_len = 0
+    for site in known_sites:
+        if site.lower() in q_lower and len(site) > best_len:
+            best_match = site
+            best_len = len(site)
+
+    return best_match
 
 
 def _get_allowed_filenames(user: User, db: Session) -> Optional[set]:
@@ -412,12 +418,9 @@ async def auth_me(user: User = Depends(get_current_user)):
 @app.get("/auth/categories")
 async def list_all_categories(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Return categories visible to the current user (admins see all, viewers see only allowed)."""
-    # DB-backed categories
+    # Only DB-backed categories (managed via the admin Category dropdown)
     db_cats = db.query(VideoCategory.name).order_by(VideoCategory.name).all()
     cats = {c.name for c in db_cats}
-    # Also include legacy filename-derived categories for backward compat
-    all_videos = db.query(Video.filename).all()
-    cats |= {get_video_category(v.filename) for v in all_videos}
     # Restrict to user's allowed categories (admins get None → all)
     allowed = get_user_allowed_categories(user)
     if allowed is not None:
@@ -449,11 +452,9 @@ async def detect_search_intent(
     or     {\"type\": \"site_browse\",     \"site\": \"Yggdrasil\"}
     or     {\"type\": \"search\"}.
     """
-    # Build set of known categories visible to this user
+    # Build set of known categories visible to this user (DB-backed only)
     db_cats = db.query(VideoCategory.name).all()
     cats = {c.name for c in db_cats}
-    all_videos = db.query(Video).all()
-    cats |= {get_video_category(v.filename) for v in all_videos}
     allowed = get_user_allowed_categories(user)
     if allowed is not None:
         cats = cats & allowed
@@ -463,6 +464,7 @@ async def detect_search_intent(
         return {"type": "category_browse", "category": matched}
 
     # Check for site (label) intent
+    all_videos = db.query(Video).all()
     acl_filenames = _get_allowed_filenames(user, db)
     label_videos = [v for v in all_videos if v.label]
     if acl_filenames is not None:

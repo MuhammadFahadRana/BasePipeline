@@ -3,7 +3,6 @@
 
 import hashlib
 import json
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, Optional, List
@@ -158,7 +157,9 @@ class BasicVideoPipeline:
             return mp4_path
 
         except FileNotFoundError:
-            print("  [error] ffmpeg not found! Install it: https://ffmpeg.org/download.html")
+            print(
+                "  [error] ffmpeg not found! Install it: https://ffmpeg.org/download.html"
+            )
             print("      Continuing with original file (may cause issues)...")
             return video_path
         except subprocess.CalledProcessError as e:
@@ -216,85 +217,6 @@ class BasicVideoPipeline:
         return all(saved_cfg.get(k) == current_cfg.get(k) for k in core_keys)
 
     # ---------------------------
-    # Legacy output migration
-    # ---------------------------
-    def _migrate_legacy_outputs(
-        self,
-        video_path: Path,
-        video_name: str,
-        video_output_dir: Path,
-        output_base: Path,
-        current_fp: Dict,
-        current_cfg: Dict,
-    ) -> bool:
-        """
-        Check for results produced by the older pipeline layout
-        (processed/results/{video}/ + processed/scenes/{video}/).
-        If found, copy them into the new unified layout and write a manifest.
-        Returns True if migration happened (caller can treat as cache hit).
-        """
-        legacy_results_dir = output_base / "results" / video_name
-        legacy_results_file = legacy_results_dir / "results.json"
-        if not legacy_results_file.exists():
-            return False
-
-        # Check legacy manifest fingerprint if available
-        legacy_manifest = self._load_manifest(legacy_results_dir / "manifest.json")
-        if legacy_manifest is not None:
-            if legacy_manifest.get("video_fingerprint") != current_fp:
-                return False  # video changed since legacy processing
-            saved_cfg = legacy_manifest.get("pipeline_config", {})
-            if not self._configs_match(saved_cfg, current_cfg):
-                return False  # core config changed
-
-        print(f"\n  Migrating legacy outputs for: {video_name}")
-        video_output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Copy results + report
-        for fname in ("results.json", "report.html"):
-            src = legacy_results_dir / fname
-            if src.exists():
-                shutil.copy2(src, video_output_dir / fname)
-
-        # Copy transcript from processed/transcripts/<model>/<video_name_normalised>/
-        model_name = getattr(self.transcriber, "model_name", "unknown")
-        normalised = video_name.replace(" ", "_")
-        legacy_transcript_dir = output_base / "transcripts" / model_name / normalised
-        for fname in ("transcript.json", "transcript.txt"):
-            src = legacy_transcript_dir / fname
-            if src.exists():
-                shutil.copy2(src, video_output_dir / fname)
-
-        # Copy scenes.json from processed/scenes/{video}/
-        legacy_scenes_dir = output_base / "scenes" / video_name
-        legacy_scenes_file = legacy_scenes_dir / f"{video_name}_scenes.json"
-        if legacy_scenes_file.exists():
-            shutil.copy2(legacy_scenes_file, video_output_dir / "scenes.json")
-            # Also copy the keyframe images subfolder so paths resolve
-            keyframe_subdir = video_output_dir / video_name
-            if not keyframe_subdir.exists() and legacy_scenes_dir.exists():
-                keyframe_subdir.mkdir(parents=True, exist_ok=True)
-                for img in legacy_scenes_dir.glob("*.jpg"):
-                    shutil.copy2(img, keyframe_subdir / img.name)
-                # Copy the scenes json into the subdir too (scene_detector cache)
-                shutil.copy2(legacy_scenes_file, keyframe_subdir / legacy_scenes_file.name)
-
-        # Write a manifest so future runs see a cache hit
-        manifest = {
-            "video_filename": video_path.name,
-            "video_path": str(video_path),
-            "video_fingerprint": current_fp,
-            "pipeline_config": current_cfg,
-            "ingested": False,
-            "migrated_from_legacy": True,
-            "saved_at_iso": datetime.now().isoformat(),
-            "use_hash": False,
-        }
-        self._save_manifest(video_output_dir / "manifest.json", manifest)
-        print(f"  [ok] Legacy outputs migrated to: {video_output_dir}")
-        return True
-
-    # ---------------------------
     # Core pipeline
     # ---------------------------
     def process_video(
@@ -319,12 +241,10 @@ class BasicVideoPipeline:
         video_name = video_path.stem
         model_name = getattr(self.transcriber, "model_name", "unknown")
 
-        # All outputs go under processed/<ModelName>/<VideoName>/
-        video_output_dir = output_base / model_name / video_name
-        transcript_dir = video_output_dir
-        scenes_dir = video_output_dir
-        results_dir = video_output_dir
-        manifest_path = video_output_dir / "manifest.json"
+        transcript_dir = output_base / "transcripts" / model_name / video_name
+        scenes_dir = output_base / "scenes" / video_name
+        results_dir = output_base / "results" / video_name
+        manifest_path = results_dir / "manifest.json"
 
         # Cache check
         current_fp = self._video_fingerprint(video_path, use_hash=use_hash)
@@ -339,15 +259,6 @@ class BasicVideoPipeline:
             "visual_enrichment_model": "Qwen/Qwen2-VL-7B-Instruct",
         }
         manifest = self._load_manifest(manifest_path)
-
-        # If no manifest in the new layout, try migrating legacy outputs
-        if not force and manifest is None:
-            migrated = self._migrate_legacy_outputs(
-                video_path, video_name, video_output_dir, output_base,
-                current_fp, current_cfg,
-            )
-            if migrated:
-                manifest = self._load_manifest(manifest_path)
 
         cache_hit = (
             (not force)
@@ -428,7 +339,7 @@ class BasicVideoPipeline:
         else:
             print("\n2. Detecting & refining scenes...")
             scenes = self.scene_detector.detect_scenes(
-                video_path, base_output_dir=str(video_output_dir)
+                video_path, base_output_dir=str(output_base / "scenes")
             )
 
             print("\n2b. Refining scenes (CLIP)...")
@@ -441,10 +352,7 @@ class BasicVideoPipeline:
             try:
                 scenes = self.scene_detector.enrich_with_visual_features(scenes)
                 # Re-save scenes cache with enrichment data included
-                scenes_cache = (
-                    video_output_dir
-                    / f"{video_path.stem}_scenes.json"
-                )
+                scenes_cache = scenes_dir / f"{video_path.stem}_scenes.json"
                 if scenes_cache.exists():
                     with open(scenes_cache, "w", encoding="utf-8") as f:
                         json.dump(scenes, f, indent=2, ensure_ascii=False)
@@ -961,8 +869,9 @@ if __name__ == "__main__":
         print("\nRunning Ingestion Only mode")
         if args.video:
             video_path = Path(args.video)
-            model_name = getattr(pipeline.transcriber, "model_name", "unknown")
-            results_file = Path("processed") / model_name / video_path.stem / "results.json"
+            results_file = (
+                Path("processed") / "results" / video_path.stem / "results.json"
+            )
             pipeline._ingest_results(results_file)
         else:
             # Batch ingest from processed/results
