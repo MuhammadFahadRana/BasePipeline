@@ -738,15 +738,22 @@ async function performImageSearch() {
 // Helper: fetch AI answer paragraph for the current query using Video QA
 async function fetchAiAnswer(query) {
     try {
+        // Keep QA non-blocking: if it takes too long, skip showing an answer.
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+
         const resp = await authFetch(`${API_BASE_URL}/qa/ask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
             body: JSON.stringify({
                 question: query,
                 video_filter: null,
-                top_k: 5
+                top_k: 3
             })
         });
+
+        clearTimeout(timeout);
 
         if (!resp.ok) {
             throw new Error(`QA failed: ${resp.statusText}`);
@@ -1593,6 +1600,10 @@ function openVideoPlayer(result) {
     videoModal.style.display = 'flex';
     document.body.style.overflow = 'hidden'; // Prevent background scrolling
 
+    // Reset handlers from any previous playback session.
+    videoPlayer.onloadedmetadata = null;
+    videoPlayer.onerror = null;
+
     // When video metadata is loaded, seek to timestamp
     videoPlayer.onloadedmetadata = () => {
         videoPlayer.currentTime = result.start_time;
@@ -1604,13 +1615,20 @@ function openVideoPlayer(result) {
 
     // Handle video errors
     videoPlayer.onerror = () => {
-        showNotification('Failed to load video. The file may not be accessible.', 'error');
+        // Avoid false alarms when video is already playable/running.
+        const hasPlayableData = videoPlayer.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
+        const alreadyPlaying = !videoPlayer.paused && !videoPlayer.ended;
+        if (!hasPlayableData && !alreadyPlaying) {
+            showNotification('Failed to load video. The file may not be accessible.', 'error');
+        }
     };
 }
 
 // Close Video Player
 function closeVideoPlayer() {
     videoPlayer.pause();
+    videoPlayer.onloadedmetadata = null;
+    videoPlayer.onerror = null;
     videoPlayer.src = ''; // Clear source to stop loading
     videoModal.style.display = 'none';
     document.body.style.overflow = ''; // Restore scrolling
@@ -1753,25 +1771,83 @@ document.head.appendChild(style);
 
 let adminCategories = []; // All known categories (fetched from API)
 
+function updateAdminSubTabCount(target, count) {
+    const countEls = {
+        users: document.getElementById('adminUsersTabCount'),
+        'video-labels': document.getElementById('adminVideoLabelsTabCount'),
+        'ground-truth': document.getElementById('adminGroundTruthTabCount'),
+    };
+
+    const el = countEls[target];
+    if (el) el.textContent = `(${count})`;
+}
+
 async function loadAdminPanel() {
-    // Fetch categories and users in parallel
-    const [catResp, usersResp] = await Promise.all([
-        authFetch(`${API_BASE_URL}/auth/categories`),
-        authFetch(`${API_BASE_URL}/admin/users`),
-    ]);
+    // Keep controls tab usable even if one endpoint fails.
+    try {
+        const [catRes, usersRes, videosRes, gtRes] = await Promise.allSettled([
+            authFetch(`${API_BASE_URL}/auth/categories`),
+            authFetch(`${API_BASE_URL}/admin/users`),
+            authFetch(`${API_BASE_URL}/videos`),
+            authFetch(`${API_BASE_URL}/admin/ground-truths`),
+        ]);
 
-    if (catResp.ok) adminCategories = await catResp.json();
-    if (!usersResp.ok) return;
+        // Categories for user forms/upload section
+        if (catRes.status === 'fulfilled' && catRes.value.ok) {
+            adminCategories = await catRes.value.json();
+        }
 
-    const users = await usersResp.json();
-    renderAdminUserList(users);
-    attachAdminFormListeners();
-    initAdminExtensions();
+        // Users section data
+        if (usersRes.status === 'fulfilled') {
+            const resp = usersRes.value;
+            if (resp.status === 401) {
+                showLogin();
+                return;
+            }
+            if (resp.ok) {
+                const users = await resp.json();
+                renderAdminUserList(users);
+                updateAdminSubTabCount('users', users.length);
+            } else {
+                const list = document.getElementById('adminUserList');
+                if (list) list.innerHTML = '<em>Failed to load users.</em>';
+            }
+        } else {
+            const list = document.getElementById('adminUserList');
+            if (list) list.innerHTML = '<em>Error loading users.</em>';
+        }
+
+        // Video count for Video Labels tab
+        if (videosRes.status === 'fulfilled' && videosRes.value.ok) {
+            const adminVideos = await videosRes.value.json();
+            updateAdminSubTabCount('video-labels', adminVideos.length);
+        }
+
+        // Ground truth count tab
+        if (gtRes.status === 'fulfilled' && gtRes.value.ok) {
+            const gtFiles = await gtRes.value.json();
+            updateAdminSubTabCount('ground-truth', gtFiles.length);
+        }
+
+        attachAdminFormListeners();
+        initAdminExtensions();
+    } catch (err) {
+        console.error('Failed to load admin panel:', err);
+        const list = document.getElementById('adminUserList');
+        if (list) list.innerHTML = '<em>Error loading admin data.</em>';
+        // Still attach listeners so tabs/forms remain interactive.
+        attachAdminFormListeners();
+        initAdminExtensions();
+    }
 }
 
 function renderAdminUserList(users) {
     const list = document.getElementById('adminUserList');
     list.innerHTML = '';
+    if (!users.length) {
+        list.innerHTML = '<em>No users found.</em>';
+        return;
+    }
     users.forEach(u => {
         const row = document.createElement('div');
         row.className = 'admin-user-row';
@@ -1993,6 +2069,7 @@ function renderVideoCategoryTags() {
 function renderVideoLabelsTable(videos) {
     const tbody = document.getElementById('videoLabelsTableBody');
     tbody.innerHTML = '';
+    updateAdminSubTabCount('video-labels', videos.length);
     if (!videos.length) {
         tbody.innerHTML = '<tr><td colspan="4"><em>No videos found.</em></td></tr>';
         return;
@@ -2270,6 +2347,7 @@ async function loadGroundTruths() {
         const resp = await authFetch(`${API_BASE_URL}/admin/ground-truths`);
         if (!resp.ok) { list.innerHTML = '<em>Failed to load</em>'; return; }
         const files = await resp.json();
+        updateAdminSubTabCount('ground-truth', files.length);
         if (!files.length) { list.innerHTML = '<em>No ground truth files found.</em>'; return; }
         list.innerHTML = files.map(f => `
             <div class="gt-file-row">

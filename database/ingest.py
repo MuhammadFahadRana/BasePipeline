@@ -443,18 +443,29 @@ class DataIngester:
         """
         Batch ingest all processed videos.
         """
-        processed_dir = Path(processed_dir)
+        processed_path = Path(processed_dir)
 
-        # Find all results.json under processed/<ModelName>/<VideoName>/results.json
-        results_files = list(processed_dir.glob("*/*/results.json"))
+        # Prefer canonical layout: processed/results/<VideoName>/results.json
+        # Fall back to legacy layout only when canonical results/ is absent.
+        canonical_results_dir = processed_path / "results"
+        if canonical_results_dir.exists():
+            results_files = sorted(canonical_results_dir.glob("*/results.json"))
+            source_hint = str(canonical_results_dir)
+        else:
+            results_files = sorted(processed_path.glob("*/*/results.json"))
+            source_hint = f"{processed_path} (legacy pattern */*/results.json)"
 
         if not results_files:
-            raise FileNotFoundError(f"No results.json found under: {processed_dir}")
+            raise FileNotFoundError(
+                f"No results.json found under canonical '{canonical_results_dir}' "
+                f"or legacy layout in '{processed_path}'"
+            )
 
         print(f"\n{'='*60}")
         print(f"BATCH INGESTION")
         print(f"{'='*60}")
         print(f"Found {len(results_files)} videos to ingest")
+        print(f"Source: {source_hint}")
         print(f"{'='*60}\n")
 
         stats = {

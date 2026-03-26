@@ -7,11 +7,81 @@ against manually created ground truth transcripts.
 import json
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
-import difflib
 import numpy as np
 
 
-def calculate_wer(reference: str, hypothesis: str) -> Tuple[float, dict]:
+def _levenshtein_counts(reference_tokens: List[str], hypothesis_tokens: List[str]) -> dict:
+    """Return exact Levenshtein counts (substitutions, deletions, insertions, matches)."""
+    n = len(reference_tokens)
+    m = len(hypothesis_tokens)
+
+    # DP matrix for edit distance and backpointer matrix for operation trace.
+    dp = [[0] * (m + 1) for _ in range(n + 1)]
+    parent: List[List[Optional[str]]] = [[None] * (m + 1) for _ in range(n + 1)]
+
+    for i in range(1, n + 1):
+        dp[i][0] = i
+        parent[i][0] = "delete"
+    for j in range(1, m + 1):
+        dp[0][j] = j
+        parent[0][j] = "insert"
+
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            if reference_tokens[i - 1] == hypothesis_tokens[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1]
+                parent[i][j] = "match"
+            else:
+                sub_cost = dp[i - 1][j - 1] + 1
+                del_cost = dp[i - 1][j] + 1
+                ins_cost = dp[i][j - 1] + 1
+                best = min(sub_cost, del_cost, ins_cost)
+                dp[i][j] = best
+
+                # Deterministic tie-break keeps counts stable across runs.
+                if best == sub_cost:
+                    parent[i][j] = "substitute"
+                elif best == del_cost:
+                    parent[i][j] = "delete"
+                else:
+                    parent[i][j] = "insert"
+
+    substitutions = 0
+    deletions = 0
+    insertions = 0
+    matches = 0
+
+    i, j = n, m
+    while i > 0 or j > 0:
+        op = parent[i][j]
+        if op in ("match", "substitute"):
+            if op == "match":
+                matches += 1
+            else:
+                substitutions += 1
+            i -= 1
+            j -= 1
+        elif op == "delete":
+            deletions += 1
+            i -= 1
+        elif op == "insert":
+            insertions += 1
+            j -= 1
+        else:
+            break
+
+    return {
+        "substitutions": substitutions,
+        "deletions": deletions,
+        "insertions": insertions,
+        "matches": matches,
+        "edit_distance": dp[n][m],
+        "reference_length": n,
+        "hypothesis_length": m,
+    }
+
+
+def calculate_wer(reference: str, hypothesis: str) -> dict:
     """
     Calculate Word Error Rate (WER).
 
@@ -22,60 +92,61 @@ def calculate_wer(reference: str, hypothesis: str) -> Tuple[float, dict]:
         hypothesis: Generated transcript
 
     Returns:
-        WER score and detailed metrics
+        A dict containing raw and normalized WER plus edit details
     """
     ref_words = reference.lower().split()
     hyp_words = hypothesis.lower().split()
 
-    # Use difflib to find edit operations
-    matcher = difflib.SequenceMatcher(None, ref_words, hyp_words)
+    counts = _levenshtein_counts(ref_words, hyp_words)
+    total_words = counts["reference_length"]
+    max_words = max(total_words, counts["hypothesis_length"], 1)
+    edits = counts["edit_distance"]
 
-    substitutions = 0
-    deletions = 0
-    insertions = 0
+    wer_ref = edits / total_words if total_words > 0 else 0.0
+    # Normalized by max length to keep score in [0, 1] for easier comparisons.
+    wer_norm = edits / max_words
 
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "replace":
-            substitutions += max(i2 - i1, j2 - j1)
-        elif tag == "delete":
-            deletions += i2 - i1
-        elif tag == "insert":
-            insertions += j2 - j1
-
-    total_words = len(ref_words)
-    wer = (
-        (substitutions + deletions + insertions) / total_words if total_words > 0 else 0
-    )
-
-    return wer, {
-        "substitutions": substitutions,
-        "deletions": deletions,
-        "insertions": insertions,
-        "total_words": total_words,
-        "correct_words": total_words - substitutions - deletions,
+    return {
+        "wer_ref": wer_ref,
+        "wer_norm": wer_norm,
+        "details": {
+            "substitutions": counts["substitutions"],
+            "deletions": counts["deletions"],
+            "insertions": counts["insertions"],
+            "total_words": total_words,
+            "hypothesis_words": counts["hypothesis_length"],
+            "correct_words": counts["matches"],
+            "edit_distance": edits,
+        },
     }
 
 
-def calculate_cer(reference: str, hypothesis: str) -> float:
-    """Calculate Character Error Rate (CER)."""
+def calculate_cer(reference: str, hypothesis: str) -> dict:
+    """Calculate character error rates (reference and normalized)."""
     ref_chars = list(reference.lower().replace(" ", ""))
     hyp_chars = list(hypothesis.lower().replace(" ", ""))
 
-    matcher = difflib.SequenceMatcher(None, ref_chars, hyp_chars)
+    counts = _levenshtein_counts(ref_chars, hyp_chars)
+    total_chars = counts["reference_length"]
+    max_chars = max(total_chars, counts["hypothesis_length"], 1)
+    edits = counts["edit_distance"]
 
-    errors = 0
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "replace":
-            errors += max(i2 - i1, j2 - j1)
-        elif tag == "delete":
-            errors += i2 - i1
-        elif tag == "insert":
-            errors += j2 - j1
+    cer_ref = edits / total_chars if total_chars > 0 else 0.0
+    cer_norm = edits / max_chars
 
-    total_chars = len(ref_chars)
-    cer = errors / total_chars if total_chars > 0 else 0
-
-    return cer
+    return {
+        "cer_ref": cer_ref,
+        "cer_norm": cer_norm,
+        "details": {
+            "substitutions": counts["substitutions"],
+            "deletions": counts["deletions"],
+            "insertions": counts["insertions"],
+            "total_chars": total_chars,
+            "hypothesis_chars": counts["hypothesis_length"],
+            "correct_chars": counts["matches"],
+            "edit_distance": edits,
+        },
+    }
 
 
 class GroundTruthEvaluator:
@@ -119,14 +190,38 @@ class GroundTruthEvaluator:
         if not self.ground_truth_dir.exists():
             return []
 
-        gt_files = list(self.ground_truth_dir.glob("*_gt.json"))
-        return [f.stem.replace("_gt", "") for f in gt_files]
+        videos = set()
+        for gt_file in self.ground_truth_dir.glob("*.json"):
+            try:
+                with open(gt_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                continue
+
+            if "ground_truth_transcript" not in data:
+                continue
+
+            if gt_file.stem.endswith("_gt"):
+                videos.add(gt_file.stem.replace("_gt", ""))
+            else:
+                videos.add(str(data.get("video", gt_file.stem)).strip())
+
+        return sorted(v for v in videos if v)
 
     def load_ground_truth(self, video_name: str) -> Optional[str]:
         """Load ground truth transcript for a video."""
-        gt_file = self.ground_truth_dir / f"{video_name}_gt.json"
+        candidate_files = [
+            self.ground_truth_dir / f"{video_name}_gt.json",
+            self.ground_truth_dir / f"{video_name}.json",
+        ]
 
-        if not gt_file.exists():
+        gt_file = None
+        for candidate in candidate_files:
+            if candidate.exists():
+                gt_file = candidate
+                break
+
+        if gt_file is None:
             return None
 
         try:
@@ -181,20 +276,26 @@ class GroundTruthEvaluator:
             return None
 
         # Calculate metrics
-        wer, wer_details = calculate_wer(ground_truth, hypothesis)
-        cer = calculate_cer(ground_truth, hypothesis)
+        wer_metrics = calculate_wer(ground_truth, hypothesis)
+        cer_metrics = calculate_cer(ground_truth, hypothesis)
+
+        wer = wer_metrics["wer_norm"]
+        cer = cer_metrics["cer_norm"]
 
         return {
             "model": model_name,
             "video": video_name,
             "wer": round(wer * 100, 2),
             "cer": round(cer * 100, 2),
+            "wer_ref": round(wer_metrics["wer_ref"] * 100, 2),
+            "cer_ref": round(cer_metrics["cer_ref"] * 100, 2),
             "accuracy": max(0.0, round((1 - wer) * 100, 2)),
-            "wer_details": wer_details,
+            "wer_details": wer_metrics["details"],
+            "cer_details": cer_metrics["details"],
             "hypothesis_text": hypothesis,
         }
 
-    def evaluate_video_all_models(self, video_name: str) -> Dict:
+    def evaluate_video_all_models(self, video_name: str) -> List[Dict]:
         """
         Evaluate all models' transcriptions for a single video.
 
@@ -212,7 +313,7 @@ class GroundTruthEvaluator:
             print(
                 f"   Create one at: {self.ground_truth_dir / f'{video_name}_gt.json'}"
             )
-            return {}
+            return []
 
         print(f"Ground truth loaded ({len(ground_truth.split())} words)\n")
 
@@ -220,7 +321,7 @@ class GroundTruthEvaluator:
         models = self.discover_models()
         if not models:
             print("No transcription models found!")
-            return {}
+            return []
 
         # Evaluate each model
         results = []
@@ -231,14 +332,14 @@ class GroundTruthEvaluator:
             if metrics:
                 results.append(metrics)
                 print(
-                    f"WER: {metrics['wer']:.1f}%, Accuracy: {metrics['accuracy']:.1f}%"
+                    f"WER: {metrics['wer']:.1f}%, CER: {metrics['cer']:.1f}%, Accuracy: {metrics['accuracy']:.1f}%"
                 )
             else:
                 print("Transcript not found")
 
         if not results:
             print("\nNo transcripts found for this video!")
-            return {}
+            return []
 
         # Sort by accuracy (best first)
         results.sort(key=lambda x: x["wer"])
@@ -365,12 +466,12 @@ class GroundTruthEvaluator:
         # Sort models by average accuracy
         sorted_models = sorted(model_averages.items(), key=lambda x: x[1]["avg_wer"])
 
-        print(f"{'Model':<30} {'Avg WER':<10} {'Avg Acc':<10} {'Videos':<8}")
+        print(f"{'Model':<30} {'Avg WER':<10} {'Avg CER':<10} {'Avg Acc':<10} {'Videos':<8}")
         print(f"{'-' * 60}")
 
         for model, metrics in sorted_models:
             print(
-                f"{model:<30} {metrics['avg_wer']:.1f}%    {metrics['avg_accuracy']:.1f}%    {metrics['evaluations']}"
+                f"{model:<30} {metrics['avg_wer']:.1f}%    {metrics['avg_cer']:.1f}%    {metrics['avg_accuracy']:.1f}%    {metrics['evaluations']}"
             )
 
         print(f"{'-' * 60}")

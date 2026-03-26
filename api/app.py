@@ -1529,7 +1529,7 @@ async def quick_multimodal_search(
         description="Search mode: balanced, text_heavy, vision_heavy, visual_only",
     ),
     use_llm: bool = Query(
-        True, description="Use LLM for intent parsing (disable for speed)"
+        False, description="Use LLM for intent parsing (disable for speed)"
     ),
     facet: str = Query(
         "auto",

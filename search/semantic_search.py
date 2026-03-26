@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from database.models import Video, TranscriptSegment, Embedding, SearchQuery
 from embeddings.text_embeddings import get_embedding_generator
 from search.reranker import get_reranker
+from search.norwegian_stemmer import stem_matches_in_text
 
 # Global vocabulary cache (built once from transcript data)
 _vocabulary: Optional[Set[str]] = None
@@ -599,8 +600,8 @@ class SemanticSearchEngine:
         self,
         query: str,
         top_k: int = 10,
-        semantic_weight: float = 0.85,
-        text_weight: float = 0.15,
+        semantic_weight: float = 0.65,
+        text_weight: float = 0.35,
         min_score: float = 0.15,
         video_filter: Optional[str] = None,
         log_query: bool = True,
@@ -689,6 +690,7 @@ class SemanticSearchEngine:
 
         # Combine and re-rank results
         combined_results = self._combine_results(
+            query,
             semantic_results,
             fuzzy_results,
             semantic_weight=semantic_weight,
@@ -715,19 +717,23 @@ class SemanticSearchEngine:
 
         # ── Keyword anchoring guardrail (prevents semantic overreach) ──
         # Apply AFTER reranking so the reranker cannot re-introduce unanchored hits.
+        # Uses Norwegian stem matching so "brønnstrømmer" anchors on "brønnstrømmen".
         keywords = extract_keywords(query)
         if keywords and not _is_analytics_intent(query):
             short_query = (len(keywords) <= 2) or (len(query.strip()) <= 14)
             anchored = []
             unanchored = []
             for r in combined_results:
-                has_anchor = any(_whole_word_in_text(k, r.text) for k in keywords)
+                has_anchor = any(
+                    _whole_word_in_text(k, r.text) or stem_matches_in_text(k, r.text)
+                    for k in keywords
+                )
                 if has_anchor:
                     anchored.append(r)
                 else:
                     unanchored.append(r)
 
-            penalty = 0.55 if short_query else 0.85
+            penalty = 0.35 if short_query else 0.65
             for r in unanchored:
                 r.score *= penalty
 
@@ -1060,6 +1066,20 @@ class SemanticSearchEngine:
 
         return semantic_scores
 
+    def _is_norwegian_query(self, query: str) -> bool:
+        """Heuristic: return True if the query looks Norwegian."""
+        norwegian_markers = {
+            'hva', 'er', 'og', 'på', 'som', 'til', 'fra', 'med',
+            'det', 'den', 'de', 'en', 'et', 'av', 'for', 'om',
+            'kan', 'har', 'var', 'vil', 'skal', 'hvor', 'når',
+            'ikke', 'eller', 'men', 'også', 'alle', 'denne',
+        }
+        words = set(re.findall(r'[\w]+', query.lower(), flags=re.UNICODE))
+        # Norwegian chars are a strong signal.
+        has_no_chars = bool(re.search(r'[æøå]', query.lower()))
+        marker_count = len(words & norwegian_markers)
+        return has_no_chars or marker_count >= 2
+
     def _fuzzy_text_search(
         self, query: str, top_k: int = 20, video_filter: Optional[str] = None
     ) -> Dict[int, Tuple[float, TranscriptSegment]]:
@@ -1091,6 +1111,10 @@ class SemanticSearchEngine:
         if not fuzzy_keywords:
             return {}
 
+        # Use Norwegian text-search config when query looks Norwegian
+        # ('norwegian' does proper stemming; 'simple' does none).
+        ts_cfg = "'norwegian'" if self._is_norwegian_query(query) else "'simple'"
+
         # UNION query: transcript matches + direct OCR scene matches
         sql_query = text(f"""
             WITH combined AS (
@@ -1103,7 +1127,7 @@ class SemanticSearchEngine:
                     ts.start_time,
                     ts.end_time,
                     ts.text AS result_text,
-                    ts_rank(to_tsvector('simple', ts.text), websearch_to_tsquery('simple', :query)) AS rank,
+                    ts_rank(to_tsvector({ts_cfg}, ts.text), websearch_to_tsquery({ts_cfg}, :query)) AS rank,
                     NULL AS ocr_text,
                     ve.keyframe_path,
                     'transcript' AS match_source
@@ -1111,7 +1135,7 @@ class SemanticSearchEngine:
                 JOIN videos v ON ts.video_id = v.id
                 LEFT JOIN scenes s ON ts.scene_id = s.id
                 LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
-                WHERE to_tsvector('simple', ts.text) @@ websearch_to_tsquery('simple', :query)
+                WHERE to_tsvector({ts_cfg}, ts.text) @@ websearch_to_tsquery({ts_cfg}, :query)
                 {query_filter_ts}
 
                 UNION ALL
@@ -1125,7 +1149,7 @@ class SemanticSearchEngine:
                     s.start_time,
                     s.end_time,
                     '[OCR] ' || s.ocr_text AS result_text,
-                    ts_rank(to_tsvector('simple', s.ocr_text), websearch_to_tsquery('simple', :query)) AS rank,
+                    ts_rank(to_tsvector({ts_cfg}, s.ocr_text), websearch_to_tsquery({ts_cfg}, :query)) AS rank,
                     s.ocr_text,
                     COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
                     'ocr' AS match_source
@@ -1133,7 +1157,7 @@ class SemanticSearchEngine:
                 JOIN videos v ON s.video_id = v.id
                 LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
                 WHERE s.ocr_text IS NOT NULL
-                  AND to_tsvector('simple', s.ocr_text) @@ websearch_to_tsquery('simple', :query)
+                  AND to_tsvector({ts_cfg}, s.ocr_text) @@ websearch_to_tsquery({ts_cfg}, :query)
                 {query_filter_ocr}
 
                 UNION ALL
@@ -1150,10 +1174,10 @@ class SemanticSearchEngine:
                     '[Visual] ' || s.caption AS result_text,
                     -- Boost Visual rank 6x so richer descriptions surface clearly
                     ts_rank(
-                        to_tsvector('simple',
+                        to_tsvector({ts_cfg},
                             s.caption || ' ' || COALESCE(s.object_labels::text, '[]')
                         ),
-                        websearch_to_tsquery('simple', :query)
+                        websearch_to_tsquery({ts_cfg}, :query)
                     ) * 6.0 AS rank,
                     NULL AS ocr_text,
                     COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
@@ -1162,9 +1186,9 @@ class SemanticSearchEngine:
                 JOIN videos v ON s.video_id = v.id
                 LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
                 WHERE s.caption IS NOT NULL
-                  AND to_tsvector('simple',
+                  AND to_tsvector({ts_cfg},
                         s.caption || ' ' || COALESCE(s.object_labels::text, '[]')
-                      ) @@ websearch_to_tsquery('simple', :query)
+                      ) @@ websearch_to_tsquery({ts_cfg}, :query)
                 {query_filter_ocr}
             )
             SELECT * FROM combined
@@ -1236,8 +1260,34 @@ class SemanticSearchEngine:
 
         return deduplicated
 
+    def _exact_keyword_boost(self, keywords: List[str], precompiled_regexes: Dict[str, re.Pattern], text: str) -> float:
+        """Compute boost for exact/stem keyword presence in text.
+
+        Returns a value in [0, 1] representing the fraction of query
+        keywords that appear (literally or via Norwegian stemming) in
+        the document text.
+        """
+        if not keywords:
+            return 0.0
+
+        text_lower = text.lower()
+        matches = 0
+        for kw in keywords:
+            # Exact whole-word match using precompiled regex
+            pattern = precompiled_regexes.get(kw)
+            if pattern and pattern.search(text_lower):
+                matches += 1
+                continue
+            
+            # Norwegian stem-based match
+            if stem_matches_in_text(kw, text_lower):
+                matches += 1
+
+        return matches / len(keywords)
+
     def _combine_results(
         self,
+        query: str,
         semantic_results: Dict,
         fuzzy_results: Dict,
         semantic_weight: float = 0.7,
@@ -1252,6 +1302,18 @@ class SemanticSearchEngine:
         for key in all_segment_ids:
             fuzzy_entry = fuzzy_results.get(key, (0, None, None))
             max_fuzzy = max(max_fuzzy, fuzzy_entry[0])
+
+        # Pre-compute query keywords and regex patterns for exact boosting (O(1) outside the loop)
+        clean_query = " ".join(extract_keywords(query)) if extract_keywords(query) else query
+        query_keywords = extract_keywords(clean_query)
+        
+        precompiled_regexes = {}
+        for kw in query_keywords:
+            try:
+                # (?<![\w]) and (?![\w]) are Unicode-aware word boundaries
+                precompiled_regexes[kw] = re.compile(rf"(?<![\w]){re.escape(kw.lower())}(?![\w])", flags=re.UNICODE)
+            except re.error:
+                precompiled_regexes[kw] = re.compile(re.escape(kw.lower()))
 
         combined = []
         for key in all_segment_ids:
@@ -1277,10 +1339,19 @@ class SemanticSearchEngine:
             # Normalize fuzzy score relative to best fuzzy match (rank-based)
             fuzzy_score_norm = (fuzzy_score / max_fuzzy) if max_fuzzy > 0 else 0.0
 
+            # Exact-keyword boost: up to +0.3 when all keywords are in text.
+            # Gated on semantic score to prevent boosting polysemous words 
+            # (e.g. "well done" instead of "oil well")
+            exact_boost_val = self._exact_keyword_boost(query_keywords, precompiled_regexes, segment.text)
+            exact_boost = 0.0
+            if exact_boost_val > 0:
+                if semantic_score > 0.12 or len(query_keywords) > 1:
+                    exact_boost = exact_boost_val * 0.3
+
             # Combined score
             combined_score = (
                 semantic_weight * semantic_score + text_weight * fuzzy_score_norm
-            )
+            ) + exact_boost
 
             # OCR-only matches (no semantic embedding) get a floor score
             # since exact text matches from keyframes are inherently high quality

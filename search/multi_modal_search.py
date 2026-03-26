@@ -404,18 +404,32 @@ class MultiModalSearchEngine:
 
             raw_vision_scores[key] = (current_v_score, current_keyframe)
 
-        # Min-max normalize vision scores to [0, 1] for fair combination with text
+        # Normalize vision scores to [0, 1] for fair combination with text
+        # critical fix: Do NOT min-max normalize if all scores are low noise!
         all_v = [v for v, _ in raw_vision_scores.values()]
         v_min = min(all_v) if all_v else 0
         v_max = max(all_v) if all_v else 0
-        v_range = v_max - v_min if v_max > v_min else 1.0
+        
+        # If the best vision score is very weak (under 0.22 typical SigLIP noise floor),
+        # don't scale it up to 1.0. Anchor the min to at least 0.20 to compress weak signals.
+        effective_v_min = max(0.20, v_min) if v_max < 0.3 else v_min
+        v_range = v_max - effective_v_min if v_max > effective_v_min else 1.0
 
         final_results = []
         for key, (t_score, _, base_result) in candidate_map.items():
             current_v_score, current_keyframe = raw_vision_scores[key]
 
-            # Apply min-max normalization
-            norm_v_score = (current_v_score - v_min) / v_range if v_range > 0 else 0.0
+            # Adjust normalization: if score is below noise floor, keep it near 0
+            if v_max < 0.22:
+                norm_v_score = max(0.0, current_v_score)  # keep raw weak score
+            else:
+                norm_v_score = (current_v_score - effective_v_min) / v_range if v_range > 0 else 0.0
+                norm_v_score = max(0.0, min(1.0, norm_v_score)) # clamp to 0-1
+
+            # Combined score: if text score is literally 0.0, heavily penalize the vision score
+            # to prevent purely visual (unrelated) matches from surfacing in exact-term searches
+            if t_score == 0.0:
+                norm_v_score *= 0.5  # 50% penalty for zero text relevance
 
             combined_score = (effective_text_weight * t_score) + (
                 effective_vision_weight * norm_v_score

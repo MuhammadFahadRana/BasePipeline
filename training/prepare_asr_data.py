@@ -26,6 +26,8 @@ import argparse
 import sys
 import subprocess
 import os
+import difflib
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -49,6 +51,7 @@ class ASRTrainingSample:
     duration: float          # chunk duration (seconds)
     language: str            # e.g. "en", "no"
     split: str               # "train" or "eval"
+    alignment_score: float = 1.0  # 0..1 similarity score for aligned mode
 
 
 # ──────────────────────────────────────────────
@@ -129,11 +132,29 @@ def normalize_text(text: str) -> str:
     return text
 
 
+def text_similarity(a: str, b: str) -> float:
+    """Compute robust similarity between two transcript snippets (0..1)."""
+    a_norm = normalize_text(a)
+    b_norm = normalize_text(b)
+
+    if not a_norm or not b_norm:
+        return 0.0
+
+    seq_ratio = difflib.SequenceMatcher(None, a_norm, b_norm).ratio()
+
+    a_words = set(a_norm.split())
+    b_words = set(b_norm.split())
+    overlap = len(a_words & b_words) / max(1, len(a_words | b_words))
+
+    # Sequence similarity catches ordering; overlap catches lexical agreement.
+    return 0.6 * seq_ratio + 0.4 * overlap
+
+
 def align_gt_to_segments(
     gt_text: str,
     whisper_segments: List[Dict],
     min_overlap_ratio: float = 0.3,
-) -> List[Tuple[Dict, str]]:
+) -> List[Tuple[Dict, str, float]]:
     """
     Align ground-truth transcript text to Whisper segment timestamps.
 
@@ -142,7 +163,7 @@ def align_gt_to_segments(
     Uses a sliding window approach on the normalized GT text.
 
     Returns:
-        List of (whisper_segment, gt_text_for_that_segment) pairs
+        List of (whisper_segment, gt_text_for_that_segment, similarity_score) tuples
     """
     if not whisper_segments:
         return []
@@ -173,47 +194,50 @@ def align_gt_to_segments(
         else:
             expected_words = seg_word_count
 
-        # Use a window around the expected size, with some flexibility
+        # Use a search window around the expected size.
         window_size = max(seg_word_count, expected_words, 3)
-
-        # Don't overshoot the end
-        end_idx = min(gt_word_cursor + window_size + 5, total_gt_words)
         start_idx = gt_word_cursor
+        end_idx = min(gt_word_cursor + window_size + 8, total_gt_words)
 
         if start_idx >= total_gt_words:
             # We've consumed all GT text
             break
 
-        # Take the best chunk of GT text for this segment
-        gt_chunk_words = gt_words[start_idx:end_idx]
-        gt_chunk = " ".join(gt_chunk_words)
+        best_text = ""
+        best_advance = 0
+        best_score = -1.0
 
-        # Find best overlap using normalized comparison
-        seg_norm = normalize_text(seg_text)
-        seg_norm_words = seg_norm.split()
+        min_advance = max(1, min(seg_word_count // 2, total_gt_words - start_idx))
+        max_advance = max(min_advance, end_idx - start_idx)
 
-        best_match_end = min(start_idx + window_size, total_gt_words)
+        for advance in range(min_advance, max_advance + 1):
+            candidate = " ".join(gt_words[start_idx : start_idx + advance])
+            score = text_similarity(seg_text, candidate)
+            if score > best_score:
+                best_score = score
+                best_text = candidate
+                best_advance = advance
 
-        # Simple approach: advance cursor by the proportional word count
-        advance = max(1, min(window_size, total_gt_words - gt_word_cursor))
-        gt_for_segment = " ".join(gt_words[gt_word_cursor : gt_word_cursor + advance])
-
-        aligned_pairs.append((seg, gt_for_segment))
-        gt_word_cursor += advance
+        if best_score >= min_overlap_ratio and best_text.strip():
+            aligned_pairs.append((seg, best_text, round(best_score, 4)))
+            gt_word_cursor += best_advance
+        else:
+            # Skip low-confidence alignment and move cursor conservatively.
+            gt_word_cursor += max(1, min(seg_word_count, total_gt_words - gt_word_cursor))
 
     return aligned_pairs
 
 
 def merge_short_segments(
-    aligned_pairs: List[Tuple[Dict, str]],
+    aligned_pairs: List[Tuple[Dict, str, float]],
     min_duration: float = 1.0,
     max_duration: float = 30.0,
-) -> List[Tuple[float, float, str]]:
+) -> List[Tuple[float, float, str, float]]:
     """
     Merge very short aligned segments into longer chunks and split very long ones.
 
     Returns:
-        List of (start_time, end_time, merged_gt_text) tuples
+        List of (start_time, end_time, merged_gt_text, merged_alignment_score) tuples
     """
     if not aligned_pairs:
         return []
@@ -222,32 +246,45 @@ def merge_short_segments(
     current_start = aligned_pairs[0][0].get("start", 0)
     current_end = aligned_pairs[0][0].get("end", 0)
     current_text_parts = [aligned_pairs[0][1]]
+    current_scores = [aligned_pairs[0][2]]
 
-    for seg, gt_text in aligned_pairs[1:]:
+    for seg, gt_text, score in aligned_pairs[1:]:
         seg_start = seg.get("start", 0)
         seg_end = seg.get("end", 0)
         current_duration = current_end - current_start
 
         # If adding this segment would exceed max_duration, flush current
         if current_duration + (seg_end - seg_start) > max_duration:
-            merged.append((current_start, current_end, " ".join(current_text_parts)))
+            merged.append((
+                current_start,
+                current_end,
+                " ".join(current_text_parts),
+                sum(current_scores) / max(1, len(current_scores)),
+            ))
             current_start = seg_start
             current_end = seg_end
             current_text_parts = [gt_text]
+            current_scores = [score]
         else:
             current_end = seg_end
             current_text_parts.append(gt_text)
+            current_scores.append(score)
 
     # Flush remaining
     if current_text_parts:
-        merged.append((current_start, current_end, " ".join(current_text_parts)))
+        merged.append((
+            current_start,
+            current_end,
+            " ".join(current_text_parts),
+            sum(current_scores) / max(1, len(current_scores)),
+        ))
 
     # Post-merge: split any remaining oversized chunks
     final = []
-    for start, end, text in merged:
+    for start, end, text, score in merged:
         duration = end - start
         if duration <= max_duration:
-            final.append((start, end, text))
+            final.append((start, end, text, score))
         else:
             # Split into roughly equal parts
             n_parts = int(duration / max_duration) + 1
@@ -260,7 +297,7 @@ def merge_short_segments(
                 part_end = start + (i + 1) * time_per_part
                 part_words = words[i * words_per_part : (i + 1) * words_per_part]
                 if part_words:
-                    final.append((part_start, part_end, " ".join(part_words)))
+                    final.append((part_start, part_end, " ".join(part_words), score))
 
     return final
 
@@ -298,6 +335,9 @@ def build_asr_dataset(
     max_chunk_sec: float = 30.0,
     min_chunk_sec: float = 1.0,
     eval_ratio: float = 0.15,
+    min_alignment_similarity: float = 0.35,
+    min_words_per_second: float = 0.8,
+    max_words_per_second: float = 6.0,
     dry_run: bool = False,
 ) -> Dict:
     """
@@ -353,6 +393,8 @@ def build_asr_dataset(
         "processed": 0,
         "skipped_no_video": 0,
         "skipped_no_segments": 0,
+        "skipped_low_alignment": 0,
+        "skipped_bad_speaking_rate": 0,
         "total_samples": 0,
         "total_duration_sec": 0,
     }
@@ -414,7 +456,11 @@ def build_asr_dataset(
             language = _detect_language(video_name, processed_dir)
 
             # Align GT text to Whisper segment timestamps
-            aligned = align_gt_to_segments(gt_text, whisper_segments)
+            aligned = align_gt_to_segments(
+                gt_text,
+                whisper_segments,
+                min_overlap_ratio=min_alignment_similarity,
+            )
             print(f"    -> Aligned {len(aligned)} segments")
 
             # Merge short segments and split long ones
@@ -426,12 +472,22 @@ def build_asr_dataset(
             print(f"    -> {len(chunks)} chunks after merging "
                   f"({min_chunk_sec}–{max_chunk_sec}s)")
 
-            for i, (start, end, chunk_text) in enumerate(chunks):
+            for i, (start, end, chunk_text, alignment_score) in enumerate(chunks):
                 if not chunk_text.strip():
                     continue
 
                 duration = end - start
                 if duration < min_chunk_sec:
+                    continue
+
+                if alignment_score < min_alignment_similarity:
+                    stats["skipped_low_alignment"] += 1
+                    continue
+
+                words = len(chunk_text.split())
+                wps = words / max(duration, 1e-6)
+                if wps < min_words_per_second or wps > max_words_per_second:
+                    stats["skipped_bad_speaking_rate"] += 1
                     continue
 
                 chunk_audio = output_dir / "audio" / f"{video_name}_chunk_{i:04d}.wav"
@@ -450,6 +506,7 @@ def build_asr_dataset(
                     duration=round(duration, 3),
                     language=language,
                     split="train",
+                    alignment_score=round(alignment_score, 4),
                 )
                 all_samples.append(sample)
                 stats["total_duration_sec"] += duration
@@ -508,6 +565,8 @@ def build_asr_dataset(
     print(f"  Videos processed: {stats['processed']}")
     print(f"  Videos skipped (no file):     {stats['skipped_no_video']}")
     print(f"  Videos skipped (no segments): {stats['skipped_no_segments']}")
+    print(f"  Chunks skipped (low align):   {stats['skipped_low_alignment']}")
+    print(f"  Chunks skipped (bad WPS):     {stats['skipped_bad_speaking_rate']}")
     print(f"  Total samples:    {stats['total_samples']}")
     print(f"  Train samples:    {stats.get('train_samples', 0)}")
     print(f"  Eval samples:     {stats.get('eval_samples', 0)}")
@@ -615,6 +674,18 @@ def main():
         help="Fraction of samples for evaluation"
     )
     parser.add_argument(
+        "--min-alignment-similarity", type=float, default=0.35,
+        help="Minimum alignment similarity (0..1) to keep a chunk"
+    )
+    parser.add_argument(
+        "--min-wps", type=float, default=0.8,
+        help="Minimum words-per-second threshold for chunk quality"
+    )
+    parser.add_argument(
+        "--max-wps", type=float, default=6.0,
+        help="Maximum words-per-second threshold for chunk quality"
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Preview statistics without writing audio files"
     )
@@ -629,6 +700,9 @@ def main():
         max_chunk_sec=args.max_chunk_sec,
         min_chunk_sec=args.min_chunk_sec,
         eval_ratio=args.eval_ratio,
+        min_alignment_similarity=args.min_alignment_similarity,
+        min_words_per_second=args.min_wps,
+        max_words_per_second=args.max_wps,
         dry_run=args.dry_run,
     )
 

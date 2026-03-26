@@ -9,7 +9,7 @@ Training flow (correct):
 
 Usage:
     python -m training.train_asr                                    # train with defaults
-    python -m training.train_asr --model openai/whisper-base        # specific model
+    python -m training.train_asr --model openai/whisper-large-v3    # specific model
     python -m training.train_asr --data-dir training/asr_data       # custom data path
     python -m training.train_asr --max-samples 50 --epochs 1        # quick test
 """
@@ -17,8 +17,9 @@ Usage:
 import json
 import argparse
 import sys
+import math
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from datetime import datetime
 from dataclasses import dataclass
 
@@ -35,7 +36,7 @@ import torch
 class ASRTrainingConfig:
     """Configuration for Whisper fine-tuning."""
     # Model
-    model_name: str = "openai/whisper-base"
+    model_name: str = "openai/whisper-large-v3"
     language: str = "en"
     task: str = "transcribe"
     use_lora: bool = True
@@ -55,6 +56,8 @@ class ASRTrainingConfig:
     # Data
     data_dir: str = "training/asr_data"
     output_dir: str = "training/asr_checkpoints"
+    train_file: Optional[str] = None
+    eval_file: Optional[str] = None
 
     # Evaluation
     eval_steps: int = 100
@@ -142,8 +145,9 @@ class WhisperASRDataset(torch.utils.data.Dataset):
         input_features = self.processor.feature_extractor(
             audio,
             sampling_rate=16000,
+            return_attention_mask=True,
             return_tensors="pt",
-        ).input_features[0]
+        )
 
         # Process text -> token IDs (these are the labels / targets)
         labels = self.processor.tokenizer(
@@ -155,7 +159,8 @@ class WhisperASRDataset(torch.utils.data.Dataset):
         ).input_ids[0]
 
         return {
-            "input_features": input_features,
+            "input_features": input_features.input_features[0],
+            "attention_mask": input_features.attention_mask[0],
             "labels": labels,
         }
 
@@ -171,16 +176,20 @@ class WhisperDataCollator:
     - Pads input features to the same length
     - Pads labels and replaces padding with -100 (ignored by loss)
     """
-    processor: object
+    processor: Any
 
     def __call__(self, features):
         # Separate input features and labels
         input_features = [f["input_features"] for f in features]
+        input_attention_masks = [f["attention_mask"] for f in features]
         label_features = [f["labels"] for f in features]
 
         # Pad input features (mel spectrograms)
         batch = self.processor.feature_extractor.pad(
-            {"input_features": input_features},
+            {
+                "input_features": input_features,
+                "attention_mask": input_attention_masks,
+            },
             return_tensors="pt",
         )
 
@@ -209,14 +218,54 @@ class WhisperDataCollator:
 
 def compute_wer_metric(pred, processor):
     """Compute WER for evaluation during training."""
+    def _word_error_rate(predictions, references):
+        def _edit_distance(a_words, b_words):
+            rows = len(a_words) + 1
+            cols = len(b_words) + 1
+            dp = [[0] * cols for _ in range(rows)]
+
+            for i in range(rows):
+                dp[i][0] = i
+            for j in range(cols):
+                dp[0][j] = j
+
+            for i in range(1, rows):
+                for j in range(1, cols):
+                    cost = 0 if a_words[i - 1] == b_words[j - 1] else 1
+                    dp[i][j] = min(
+                        dp[i - 1][j] + 1,
+                        dp[i][j - 1] + 1,
+                        dp[i - 1][j - 1] + cost,
+                    )
+
+            return dp[-1][-1]
+
+        total_words = 0
+        total_errors = 0
+
+        for hyp, ref in zip(predictions, references):
+            ref_words = ref.split()
+            hyp_words = hyp.split()
+
+            total_words += len(ref_words)
+            total_errors += _edit_distance(ref_words, hyp_words)
+
+        if total_words == 0:
+            return 0.0
+
+        return total_errors / total_words
+
     try:
-        import evaluate
+        import importlib
+        evaluate = importlib.import_module("evaluate")
         wer_metric = evaluate.load("wer")
+        has_evaluate = True
     except ImportError:
-        print("  Warning: 'evaluate' package not installed. Skipping WER computation.")
-        return {"wer": -1}
+        has_evaluate = False
 
     pred_ids = pred.predictions
+    if isinstance(pred_ids, tuple):
+        pred_ids = pred_ids[0]
     label_ids = pred.label_ids
 
     # Replace -100 with pad token id
@@ -226,7 +275,11 @@ def compute_wer_metric(pred, processor):
     pred_str = processor.tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
     label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
-    wer = wer_metric.compute(predictions=pred_str, references=label_str)
+    if has_evaluate:
+        wer = wer_metric.compute(predictions=pred_str, references=label_str)
+    else:
+        wer = _word_error_rate(pred_str, label_str)
+
     return {"wer": round(wer * 100, 2)}
 
 
@@ -271,11 +324,14 @@ def train(config: ASRTrainingConfig, max_samples: Optional[int] = None):
     processor = WhisperProcessor.from_pretrained(config.model_name)
     model = WhisperForConditionalGeneration.from_pretrained(config.model_name)
 
-    # Set forced decoder IDs for language and task
-    model.config.forced_decoder_ids = processor.get_decoder_prompt_ids(
-        language=config.language, task=config.task
+    # Set generation behavior via modern language/task flags to avoid deprecated config mutations.
+    model.generation_config.update(
+        language=config.language,
+        task=config.task,
+        forced_decoder_ids=None,
+        suppress_tokens=None,
+        begin_suppress_tokens=None,
     )
-    model.config.suppress_tokens = []
 
     # 2. Apply LoRA if configured
     if config.use_lora:
@@ -302,8 +358,8 @@ def train(config: ASRTrainingConfig, max_samples: Optional[int] = None):
 
     # 3. Load datasets
     data_dir = Path(config.data_dir)
-    train_jsonl = data_dir / "train.jsonl"
-    eval_jsonl = data_dir / "eval.jsonl"
+    train_jsonl = Path(config.train_file) if config.train_file else data_dir / "train.jsonl"
+    eval_jsonl = Path(config.eval_file) if config.eval_file else data_dir / "eval.jsonl"
 
     if not train_jsonl.exists():
         print(f"ERROR: Training data not found at {train_jsonl}")
@@ -329,6 +385,16 @@ def train(config: ASRTrainingConfig, max_samples: Optional[int] = None):
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    effective_batch_size = config.batch_size * config.gradient_accumulation_steps
+    steps_per_epoch = max(1, math.ceil(len(train_dataset) / effective_batch_size))
+    total_train_steps = max(1, int(steps_per_epoch * config.epochs))
+    warmup_steps = max(0, int(total_train_steps * config.warmup_ratio))
+
+    print(
+        f"Warmup: {warmup_steps} steps "
+        f"(~{config.warmup_ratio:.0%} of {total_train_steps} total steps)"
+    )
+
     training_args = Seq2SeqTrainingArguments(
         output_dir=str(output_dir),
         num_train_epochs=config.epochs,
@@ -336,7 +402,7 @@ def train(config: ASRTrainingConfig, max_samples: Optional[int] = None):
         per_device_eval_batch_size=config.batch_size,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
         learning_rate=config.learning_rate,
-        warmup_ratio=config.warmup_ratio,
+        warmup_steps=warmup_steps,
         weight_decay=config.weight_decay,
         fp16=config.fp16 and device == "cuda",
         eval_strategy="steps" if eval_dataset else "no",
@@ -357,6 +423,10 @@ def train(config: ASRTrainingConfig, max_samples: Optional[int] = None):
     # 5. Data collator
     data_collator = WhisperDataCollator(processor=processor)
 
+    compute_metrics_fn = (
+        (lambda pred: compute_wer_metric(pred, processor)) if eval_dataset else None
+    )
+
     # 6. Trainer
     trainer = Seq2SeqTrainer(
         model=model,
@@ -364,9 +434,8 @@ def train(config: ASRTrainingConfig, max_samples: Optional[int] = None):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         data_collator=data_collator,
-        processing_class=processor.feature_extractor,
-        compute_metrics=lambda pred: compute_wer_metric(pred, processor)
-            if eval_dataset else None,
+        processing_class=processor,
+        compute_metrics=compute_metrics_fn,
     )
 
     # 7. Train!
@@ -437,12 +506,20 @@ def main():
         description="Fine-tune Whisper ASR on domain-specific audio"
     )
     parser.add_argument(
-        "--model", default="openai/whisper-base",
+        "--model", default="openai/whisper-large-v3",
         help="Whisper model to fine-tune"
     )
     parser.add_argument(
         "--data-dir", default="training/asr_data",
         help="Path to prepared ASR data (from prepare_asr_data.py)"
+    )
+    parser.add_argument(
+        "--train-file", default=None,
+        help="Optional explicit path to train JSONL (overrides --data-dir/train.jsonl)"
+    )
+    parser.add_argument(
+        "--eval-file", default=None,
+        help="Optional explicit path to eval JSONL (overrides --data-dir/eval.jsonl)"
     )
     parser.add_argument(
         "--output", default="training/asr_checkpoints",
@@ -478,6 +555,8 @@ def main():
         model_name=args.model,
         data_dir=args.data_dir,
         output_dir=args.output,
+        train_file=args.train_file,
+        eval_file=args.eval_file,
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.lr,

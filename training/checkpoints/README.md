@@ -4,45 +4,47 @@ tags:
 - sentence-similarity
 - feature-extraction
 - generated_from_trainer
-- dataset_size:1093
+- dataset_size:561
 - loss:MultipleNegativesRankingLoss
 base_model: Qwen/Qwen3-Embedding-0.6B
 widget:
-- source_sentence: med høytryksnitrogen som er
+- source_sentence: where do they talk about It's more tangible than world?
   sentences:
-  - Det er også en egen buffertank med høytryksnitrogen som er plassert på P1.
-  - Would you pay $10 a month to have a watch that has to be recharged every night,
-    like your cell phone, and stops working when you leave your area code?
-  - they gradually redesigned it and redesigned it and redesigned it.
-- source_sentence: UPS, normalisering av nødkraft
+  - The base was made of three steel structures, each with a stand, a roof and various
+    equipment modules on top of the roof.
+  - I think it's been really valuable to have people from Cognite, Microsoft and Acura
+    Solutions on the team with us at this hackathon,
+  - It's more tangible than world peace and it's certainly more immediate. But, um,
+    it's, yeah, it's the day it's, it would be
+- source_sentence: where do they talk about This million people gathering banks?
   sentences:
-  - Her har vi samlet alle oppstartsprosedyre, helt ifra sjekk av UPS, normalisering
-    av nødkraft og start av essensiell generator og HVDC-anlegg.
-  - It's occasionally hitting me that our spacecraft is going to be up there in the
-    heavens, right, on its way.
-  - But we also decided to sprinkle, for no apparent reason, letters within these
-    words.
-- source_sentence: such as the tsunami
+  - This is a million people gathering on the banks of the Ganges in 2001.
+  - So they, in the morning, will do something in arena, then they'll do something
+    in proscenium and so forth.
+  - With the upgrades made for the AKBP contract, Dipsy Stavanger has become an even
+    sharper drilling machine.
+- source_sentence: within the confines of
   sentences:
-  - Ved lavt trykk i systemet blir sikkerhetskritisk nett prioritert høyest.
-  - And we've been involved in a lot of issues such as the tsunami and also things
-    like Hurricane Katrina.
+  - So they're not forced to always work within the confines of a contemporary gallery
+    space.
+  - we're going to introduce a whole new generation of people to computing with kind
+    of this standard
+  - This is a nationwide policy agenda I'm trying to build, and as you all know, politics
+    are personal.
+- source_sentence: where do they talk about Even with modern shielding, spacecraft?
+  sentences:
+  - Even with modern shielding, a spacecraft within the radiation belts would only
+    survive for around three months.
+  - with tea towels on their heads and they put these boxes down. The first boy said,
+    I bring you gold.
+  - Til oppstart av nye brønner kan oljen sendes direkte til oljeeksport, mens når
+    den brukes til brønntesting blir oljen ledet inn i prosessen.
+- source_sentence: so eloquently last night
+  sentences:
+  - And so they needed to be able to quickly transform between different theater organizations.
+  - Like global warming, as we heard so eloquently last night from Al Gore.
   - And somewhere in those links, by the way, not at the top, somewhere in those links
     is a button that makes you a new document.
-- source_sentence: plane until during the
-  sentences:
-  - I forkant av målestasjonen er det også et avtak til et prøvekabinett som analyserer
-    densitet og vanninnhold, og som inneholder et manuelt prøvepunkt.
-  - heard of phantom limb pain? This was a rented Ford Taurus. It was dinner time
-    and we started
-  - to fly back home. I fell asleep on the plane until during the middle of the night
-    we landed
-- source_sentence: og testseparator på P1
-  sentences:
-  - Cognite and Microsoft, our service provider Teato Avery, Acura Solutions and people
-    across departments in Acura PPE
-  - Formålet med denne gjennomgangen er at du
-  - Brønnvesken strømmer fra reservoaret gjennom brønn og testseparator på P1 og P2.
 pipeline_tag: sentence-similarity
 library_name: sentence-transformers
 ---
@@ -97,9 +99,9 @@ from sentence_transformers import SentenceTransformer
 model = SentenceTransformer("sentence_transformers_model_id")
 # Run inference
 sentences = [
-    'og testseparator på P1',
-    'Brønnvesken strømmer fra reservoaret gjennom brønn og testseparator på P1 og P2.',
-    'Cognite and Microsoft, our service provider Teato Avery, Acura Solutions and people across departments in Acura PPE',
+    'so eloquently last night',
+    'Like global warming, as we heard so eloquently last night from Al Gore.',
+    'And somewhere in those links, by the way, not at the top, somewhere in those links is a button that makes you a new document.',
 ]
 embeddings = model.encode(sentences)
 print(embeddings.shape)
@@ -154,19 +156,19 @@ You can finetune this model on your own dataset.
 #### Unnamed Dataset
 
 
-* Size: 1,093 training samples
+* Size: 561 training samples
 * Columns: <code>sentence_0</code> and <code>sentence_1</code>
-* Approximate statistics based on the first 1000 samples:
+* Approximate statistics based on the first 561 samples:
   |         | sentence_0                                                                        | sentence_1                                                                        |
   |:--------|:----------------------------------------------------------------------------------|:----------------------------------------------------------------------------------|
   | type    | string                                                                            | string                                                                            |
-  | details | <ul><li>min: 5 tokens</li><li>mean: 11.55 tokens</li><li>max: 40 tokens</li></ul> | <ul><li>min: 4 tokens</li><li>mean: 26.64 tokens</li><li>max: 80 tokens</li></ul> |
+  | details | <ul><li>min: 5 tokens</li><li>mean: 11.57 tokens</li><li>max: 31 tokens</li></ul> | <ul><li>min: 9 tokens</li><li>mean: 29.38 tokens</li><li>max: 80 tokens</li></ul> |
 * Samples:
-  | sentence_0                                                                                  | sentence_1                                                                                                                    |
-  |:--------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------|
-  | <code>where do they talk about acres better utilized parkland, affordable?</code>           | <code>28 acres can be better utilized for parkland, affordable housing, and local economic development.</code>                |
-  | <code>changes in capacitance allow</code>                                                   | <code>And since displacement is proportional to acceleration, changes in capacitance allow us to measure acceleration.</code> |
-  | <code>where do they talk about Rådiesel pumpes dieselfilter vannfjerningspakke hvor?</code> | <code>Rådiesel pumpes så til dieselfilter og vannfjerningspakke hvor vann fjernes.</code>                                     |
+  | sentence_0                                                                   | sentence_1                                                                                                                                                |
+  |:-----------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------|
+  | <code>where do they talk about oppstart brønner oljen sendes direkte?</code> | <code>Til oppstart av nye brønner kan oljen sendes direkte til oljeeksport, mens når den brukes til brønntesting blir oljen ledet inn i prosessen.</code> |
+  | <code>get letters to form</code>                                             | <code>I don't know when, but we decided to get letters to form words so we can communicate.</code>                                                        |
+  | <code>made a different decision,</code>                                      | <code>haven't there been some decisions you've made that if you made a different decision, your life would be completely different?</code>                |
 * Loss: [<code>MultipleNegativesRankingLoss</code>](https://sbert.net/docs/package_reference/sentence_transformer/losses.html#multiplenegativesrankingloss) with these parameters:
   ```json
   {
@@ -193,7 +195,7 @@ You can finetune this model on your own dataset.
 - `lr_scheduler_type`: linear
 - `lr_scheduler_kwargs`: None
 - `warmup_steps`: 0
-- `optim`: adamw_torch_fused
+- `optim`: adamw_torch
 - `optim_args`: None
 - `weight_decay`: 0.0
 - `adam_beta1`: 0.9
@@ -287,8 +289,8 @@ You can finetune this model on your own dataset.
 ### Framework Versions
 - Python: 3.11.9
 - Sentence Transformers: 3.3.1
-- Transformers: 5.2.0
-- PyTorch: 2.10.0+cu128
+- Transformers: 5.3.0
+- PyTorch: 2.6.0+cu124
 - Accelerate: 1.12.0
 - Datasets: 4.5.0
 - Tokenizers: 0.22.2

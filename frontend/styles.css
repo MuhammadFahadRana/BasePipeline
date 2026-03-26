@@ -299,7 +299,7 @@ select {
 
 /* Site chips use a teal accent when active */
 .site-chip.active {
-    background: #e5e7eb;
+    background: #111827;
     border-color: #e5e7eb;
     color: #fff;
 }

@@ -4,6 +4,9 @@ import torch
 import warnings
 from pathlib import Path
 
+from transformers import SpeechT5Processor, SpeechT5ForSpeechToText
+import soundfile as sf
+
 # Fix for broken torchcodec on Windows
 # We try to prevent it from being imported or used by transformers
 try:
@@ -20,6 +23,7 @@ from transcriber_utils import (
     extract_audio_to_wav, load_audio_array, save_results, get_device, hf_auth, ALL_MEDIA
 )
 
+
 class SpeechT5Transcriber:
     def __init__(self, model_size="large", device="auto"):
         if device == "auto": device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -28,10 +32,13 @@ class SpeechT5Transcriber:
         # Authenticate
         token = hf_auth()
         
-        from transformers import pipeline, SpeechT5Processor, SpeechT5ForConditionalGeneration
+        from transformers import pipeline, SpeechT5Processor, SpeechT5ForSpeechToText
         print(f"Loading microsoft/speecht5_asr on {device}...")
+
+        model_name = "microsoft/speecht5_asr"
+
         self.processor = SpeechT5Processor.from_pretrained("microsoft/speecht5_asr", token=token)
-        self.model = SpeechT5ForConditionalGeneration.from_pretrained("microsoft/speecht5_asr", token=token).to(device)
+        self.model = SpeechT5ForSpeechToText.from_pretrained(model_name)
         self.pipe = pipeline(
             "automatic-speech-recognition",
             model=self.model,

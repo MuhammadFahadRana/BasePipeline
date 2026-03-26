@@ -118,7 +118,7 @@ class VideoQA:
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=512,
+                max_new_tokens=192,
                 temperature=0.1,  # Keep it factual
                 do_sample=False,
                 repetition_penalty=1.1,
