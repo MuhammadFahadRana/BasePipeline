@@ -1,7 +1,7 @@
 {
   "video": "Johan Sverdrup - System 44 - Produsert vann",
   "ground_truth_transcript": [
-    "Produsertvann system 44 finnes på P1, DP, RP og P2-plattformene, med hovedutstyr og -innhold på P1 og P2.",
+    "Produsertvann system 44 finnes på P1, DP, RP og P2-plattformene, med hovedutstyr og innhold på P1 og P2.",
     "Produsert vann systemet har som hovedoppgave å fjerne olje fra det produserte vannet. ",
     "I tillegg skal Systemet skal også skille ut sandpartikler. Sanden som blir skilt ut fra vannet skal i hovedsak sendes til land. ",
     "I tillegg skal systemet skal også levere jettevann for å fjerne sand i separatorene.",
@@ -13,12 +13,12 @@
     "For å sikre god rensing av vannet er det flere rensetrinn. Den aller største vannmengden kommer fra 1. trinns separatorer og testseparator, og må renses i tre trinn; Hydrosykloner, Compact Flotation Unit og Avgasser.",
     "Vannet som kommer fra 2. trinns separatorer og elektrostatisk vannutskiller inneholder mindre olje, og renses bare to ganger. Dette vannet går gjennom CFU og Avgasser.",
     "Her ser du produsert vann systemet som er lokalisert på prosessplattform P2",
-    "Oppbyggingen av systemet er veldig likt P1, men pga. det bare er ett produsertvann tog på P2, er det noen utstyrs- og kapasitetsforskjeller.",
+    "Oppbyggingen av systemet er veldig likt P1, men pga. det bare er ett produsertvann tog på P2, er det noen utstyrs og kapasitetsforskjeller.",
     "De viktigste forskjellene er: ",
-    "-	P1 har to hydrosyklonpakker, P2 har bare 1",
-    "-	Testseparator på P1 har egen hydrosyklon, mens for P2 pumpes produsertvann fra testseparator til oppstrøms 1.trinnseparator ",
-    "-	P2 har 2/3 kapasitet av P1 system.",
-    "-	Pga. utstyrsplassering og kapasitetsbehov på P2 har en kunnet fjernet noe av utstyret og redundansen",
+    "P1 har to hydrosyklonpakker, P2 har bare 1",
+    "Testseparator på P1 har egen hydrosyklon, mens for P2 pumpes produsertvann fra testseparator til oppstrøms 1.trinnseparator ",
+    "P2 har 2/3 kapasitet av P1 system.",
+    "Pga. utstyrsplassering og kapasitetsbehov på P2 har en kunnet fjernet noe av utstyret og redundansen",
 "Systemet består av hydrosykloner fra 1.trinns separator. Deretter går vannet til 2 Compact Flotation Units, eller CFUer, for videre rensing før det går til avgassingstanken.",
 "For å sikre god rensing av vannet er det flere rensetrinn. Den aller største vannmengden kommer fra 1. trinns separator og må renses i tre trinn; Hydrosykloner, Compact Flotation Unit og Avgasser.",
 "Vannet som kommer fra 2. trinns separator og elektrostatisk vannutskiller inneholder mindre olje, og renses bare to ganger. Dette vannet går gjennom CFU og Avgasser."

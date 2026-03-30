@@ -13,16 +13,16 @@
     "Kjemikaliene som blir distribuert fra RP er H2S-fjerner, avleirings-hemmer, emulsjonsbryter, biocid, korrosjonshemmer og pH-regulator.",
     "H2S fjerner blir overført til P1 og P2, men blir injisert med egne pumper fra egne tanker på disse plattformene.",
     "Kjemikaliene og deres egenskaper:",
-    "•	H2S fjerner tilsettes for å redusere H2S innhold i gassen.",
-    "•	Emulsjonsbryter tilsettes for å løse opp en emulsjon som dannes i sjiktet mellom olje og vann i separatorene. ",
-    "•	Skumdemper, olje og vannbasert, brukes for å fjerne skum som kan dannes i separatorene og i vannsystem.",
-    "•	Biocid tilsettes for å drepe biologisk vekst.",
-    "•	Flokkulant tilsettes for å samle oljedråper sammen for å bedre separasjonen og vannkvaliteten.",
-    "•	Avleiringshemmer tilsettes for å hindre at avleiring setter seg på uønskede steder.",
-    "•	pH-regulator tilsettes i væskeutløpet på gass væskeutskillere for å redusere pH og unngå avleiringer. Det er injeksjonen av H2S-fjerner i gassutløpene som fører til økt pH i skrubbere og separatorer.",
-    "•	Oksygenfjerner tilsettes for å fjerne resterende oksygen fra sjøvann, for vanninjeksjon etter mekanisk oksygenfjerning i de-aerator."
-    "•	Korrosjonshemmer tilsettes for å hindre korrosjon i rørledningen. ",
-    "•	Filter aid fungerer som en flokkulant, og er med på å slå sammen partikler til større partikler, slik at det filtreres bedre."
+    "H2S fjerner tilsettes for å redusere H2S innhold i gassen.",
+    "Emulsjonsbryter tilsettes for å løse opp en emulsjon som dannes i sjiktet mellom olje og vann i separatorene. ",
+    "Skumdemper, olje og vannbasert, brukes for å fjerne skum som kan dannes i separatorene og i vannsystem.",
+    "Biocid tilsettes for å drepe biologisk vekst.",
+    "Flokkulant tilsettes for å samle oljedråper sammen for å bedre separasjonen og vannkvaliteten.",
+    "Avleiringshemmer tilsettes for å hindre at avleiring setter seg på uønskede steder.",
+    "pH-regulator tilsettes i væskeutløpet på gass væskeutskillere for å redusere pH og unngå avleiringer. Det er injeksjonen av H2S-fjerner i gassutløpene som fører til økt pH i skrubbere og separatorer.",
+    "Oksygenfjerner tilsettes for å fjerne resterende oksygen fra sjøvann, for vanninjeksjon etter mekanisk oksygenfjerning i de-aerator."
+    "Korrosjonshemmer tilsettes for å hindre korrosjon i rørledningen. ",
+    "Filter aid fungerer som en flokkulant, og er med på å slå sammen partikler til større partikler, slik at det filtreres bedre."
     ],
   "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
   "scene_annotations": [],
