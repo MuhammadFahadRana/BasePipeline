@@ -96,11 +96,14 @@ def hf_auth():
     if token:
         print(f"Applying HF_TOKEN from .env...")
         try:
-            from huggingface_hub import login
-            login(token=token, add_to_git_credential=True)
+            # NOTE: on some HPC systems, huggingface_hub.login() can cause segfaults
+            # Use direct environment variable instead to avoid CLI calls
+            os.environ["HF_TOKEN"] = token
+            os.environ["HUGGING_FACE_HUB_TOKEN"] = token
+            print("Token set via environment variables (avoiding login() which can segfault on HPC)")
             return token
         except Exception as e:
-            print(f"Warning: Hugging Face login failed with .env token: {e}")
+            print(f"Warning: Hugging Face setup failed: {e}")
     else:
         print("Note: HF_TOKEN not found in .env. Using cached credentials from 'hf auth login' if any.")
     

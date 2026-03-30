@@ -3,17 +3,10 @@ import time
 import torch
 import warnings
 from pathlib import Path
+from typing import Any
 
 from transformers import SpeechT5Processor, SpeechT5ForSpeechToText
 import soundfile as sf
-
-# Fix for broken torchcodec on Windows
-# We try to prevent it from being imported or used by transformers
-try:
-    import sys
-    sys.modules['torchcodec'] = None
-except Exception:
-    pass
 
 # Suppress "You seem to be using the pipelines sequentially on GPU" warning
 import logging
@@ -30,24 +23,47 @@ class SpeechT5Transcriber:
         self.device = device
         
         # Authenticate
+        print("Authenticating with Hugging Face...")
         token = hf_auth()
         
-        from transformers import pipeline, SpeechT5Processor, SpeechT5ForSpeechToText
         print(f"Loading microsoft/speecht5_asr on {device}...")
 
         model_name = "microsoft/speecht5_asr"
+        
+        try:
+            print("Loading processor...")
+            self.processor = SpeechT5Processor.from_pretrained("microsoft/speecht5_asr", token=token)
+            print("Processor loaded successfully")
+            
+            print("Loading model...")
+            self.model = SpeechT5ForSpeechToText.from_pretrained(model_name, token=token)
+            model_any: Any = self.model
+            model_any.to(torch.device(self.device))
+            self.model.eval()
+            print("Model loaded successfully")
+            self.model_name = "SpeechT5-ASR"
+        except Exception as e:
+            print(f"ERROR during model initialization: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
-        self.processor = SpeechT5Processor.from_pretrained("microsoft/speecht5_asr", token=token)
-        self.model = SpeechT5ForSpeechToText.from_pretrained(model_name)
-        self.pipe = pipeline(
-            "automatic-speech-recognition",
-            model=self.model,
-            tokenizer=self.processor.tokenizer,
-            feature_extractor=self.processor.feature_extractor,
-            device=0 if device == "cuda" else -1,
-            token=token
+    def _transcribe_chunk(self, chunk_audio):
+        """Run SpeechT5 directly to avoid transformers pipeline torchcodec path."""
+        inputs = self.processor(
+            audio=chunk_audio,
+            sampling_rate=16000,
+            return_tensors="pt"
         )
-        self.model_name = "SpeechT5-ASR"
+        if inputs is None:
+            return ""
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            predicted_ids = self.model.generate(**inputs)
+
+        text = self.processor.batch_decode(predicted_ids, skip_special_tokens=True)
+        return text[0].strip() if text else ""
 
     def _create_batch_summary(self, results, output_dir, batch_total_time):
         import csv
@@ -110,8 +126,7 @@ class SpeechT5Transcriber:
                 if len(chunk) < 1600: # 0.1s
                     break
                     
-                res = self.pipe(chunk)
-                chunk_text = res.get("text", "").strip()
+                chunk_text = self._transcribe_chunk(chunk)
                 
                 if chunk_text:
                     full_text.append(chunk_text)

@@ -1,0 +1,17 @@
+{
+  "video": "Johan Sverdrup - System 41 - Varmemedium",
+  "ground_truth_transcript": [
+    "Her ser du hele varmemedium systemet på Johan Sverdrup som er lokalisert på prosessplattformenene P1 og P2.",
+    "Systemets primæroppgave er å overføre varme til dedikert prosessutstyr.",
+    "Det er installert et separat varmemediumsystem på hver av plattformene. På P1 sirkuleres TEG og demineralisert vann som består av 30/70 vekt% TEG/vann, mens på P2 sirkuleres 100% demineralisert vann.",
+    "På P1 blir varmemediet varmet opp av tre gassfyrte varmere, mens på P2 benyttes to elektrodekjeler.",
+    "P2 opererer med varm ekspansjonstank som betyr at hele returstrømningen rutes gjennom tanken. Dette er for å fange opp eventuelle gasslekkasjer før elektrodekjele, som ligger i et ikke-klassifisert område.",
+    "For P1 er det ingen strømning gjennom ekspansjonstanken. ",
+    "I sløyfen på P1 er det installert en dumpekjøler som har i oppgave å fjerne overskuddsvarme/energi ved lav belastning.",
+    "På P2 er det ingen behov for dumpekjøler, fordi elektrodekjelene klarer hurtig å regulere varmepådraget og har derfor ingen restvarme som må fraktes bort.",
+    "Dersom det er behov for å øke temperaturen på gassbehandling, kan varmen hentes via vekslere for gassbehandling. Hovedbruken av varmemedium er oppvarming av råolje ved behov, for å sikre at råoljen til enhver tid har nok varme for stabiliseringen."
+    ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

@@ -1,0 +1,19 @@
+{
+  "video": "Johan Sverdrup - System 26 Gassløft",
+  "ground_truth_transcript": [
+    "Det finnes to gassløft systemer på Johan Sverdrup, et på DP for tørre brønner og et på RP mot subsea. Her ser du gassløftsystemet for tørre brønner lokalisert på DP. Gassløftsystemet er koblet mot gasseksport røret som går fra P1 til RP.",
+    "Hensikten med systemet er å forsyne gass til gassløftsystemet på produksjonsbrønnene. Injeksjon av gass i brønnstrømmen reduserer tettheten og dermed tyngden av mediet i brønnen. ",
+    "System 26 er designet slik at en kan injisere gass i brønn 9 og 10 hvis gasseksportrøret til Kårstø ikke er tilgjengelig.",
+    "I system 26 reduseres gasstrykket til under 202 barg, da dette er maksimalt trykk som tetningen mot reservoaret i Annulus A tåler. ",
+    "Gassløftsystem er designet for 30 produksjonsbrønner, men innmaten i trykkontroll ventilene må skiftes før fase 2 av JS.",
+    "Det er installert utstyr for måling av total mengde gass som brukes til gassløft og mengde gass som brukes til gassløft i hver brønn.",
+    "Her ser du gassløftsystemet for Subsea brønnene lokalisert på RP.",
+    "Gassen kommer over bro fra P2 og ledes til gasseksport og/eller gassløft/gassinjeksjonsmanifold",
+    "Gassløftsystemet på RP er et kombinert gassløft og gassinjeksjons system som leverer gass fra RP til subsea via 3 stk rørledninger. ",
+    "Fra gassløft/ gassinjeksjonsmanifold, blir gassen rutet til de tre gassrørledningene som går mot subsea. Hver av disse linjene er utstyrt med trykkontrollventiler som enten kan opprettholde trykket i manifold eller styre trykket i rørledningen.",
+    "Det er laget til et system som gjør det mulig å hente gass fra gassrørledningen som går til brønnramme O/P/Q, som kan brukes til trykkutligning av gass eksport stengeventil.",
+    "Det er også tilrettelagt for temporære sluser som can både sende og motta pigger, dersom det skulle bli behov."  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

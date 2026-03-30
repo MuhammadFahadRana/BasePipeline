@@ -1,0 +1,27 @@
+{
+  "video": "Johan Sverdrup - System 43 - Fakkel",
+  "ground_truth_transcript": [
+    "Her ser du hele fakkelsystemet på Johan Sverdrup som er lokalisert på plattformene:",
+    "•	P1",
+    "•	P2",
+    "•	DP",
+    "•	RP",
+    "I tillegg har alle disse plattformene lokasjonene et atmosfærisk vent nettverk, som skal sørge for en sikker ventilering av hydrokarbongasser fra prosessutstyr.",
+    "Fakkelsystemet skal sørge for en sikker håndtering av hydrokarbongass- og væske fra sikkerhets-, nødtrykkavlastnings- og trykkavlastningsventiler.",
+    "•	Systemet på P1 består av et høytrykks og et lavtrykksnettverk. Høytrykksnettverket består igjen av et varmt/vått og et kaldt/tørt nettverk. varm, våt - og kald, tørr fakkelnettverk og et lavtrykksfakkelnettverk. Høytrykks- og lavtrykksystemene går til hver sin fakkel væskeutskiller som er forbundet til hver sin fakkeltipp.",
+    "•	Systemet på P2 består av et høytrykksnettverk. Høytrykksnettverket består igjen av et varmt/vått, et kaldt/tørt og ett vannholdig nettverk. Høytrykk nettverkene går til en felles væskeutskiller som er forbundet til en fakkeltipp",
+    "•	Systemet på DP består av høytrykk varm våt og kald tørr fakkelnettverk. Dette nettverket går til lokale fakkel væskeutskiller på DP.",
+    "•	Videre er det en egen væskeutskiller på RP som mottar gass fra DP sin væskeutskiller og deretter sender til sin egen fakkel tipp.",
+    "•	Systemet på RP består av varm våt og kald tørr fakkel nettverk. Dette nettverket går til RP sin fakkel væskeutskiller som har sin egen fakkel tipp. ",
+    "Oppsamlet væske i hver av fakkel væskeutskillerne kan dreneres til lukket avløpstanker. Væske fra HT-fakkel væskeutskiller på P1 kan i tillegg også pumpes direkte inn i prosessen.",
+    "Under normal drift av anlegget går gassen som kommer inn på HT-væskeutskiller på P1 og P2 tilbake til 1.trinn kompressor. De andre væskeutskillerne mottar ikke noe særlig gass under normale forhold.",
+    "Plattformene P1, P2 og RP er de plattformene som har fakkelbommer med fakkeltipper. ",
+    "Hver fakkeltipp har to tenningssystemer; et høytrykks ballistisk system hvor pellets skytes mot en gnistplate og et system hvor brenngasspiloter brukes. Faklene er normalt ikke tent og tennes automatisk ved behov. ",
+    "Det er også installert en målepakke på hvert fakkelrør som måler gassen for beregning av Co2-avgift."
+    "På P2 er det installert et felles O2 analyseskap for overvåking av O2 innhold i henholdsvis HT fakkel og atm vent."
+    "I tillegg er det installert en HC analysator på atmosfærisk vent header. Denne brukes for beregning av CO2 avgift."
+    ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

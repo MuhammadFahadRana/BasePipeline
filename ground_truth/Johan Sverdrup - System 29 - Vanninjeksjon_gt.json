@@ -1,0 +1,18 @@
+{
+  "video": "Johan Sverdrup - System 29 - Vanninjeksjon",
+  "ground_truth_transcript": [
+    "Her ser du hele vanninjeksjonssystemet på Johan Sverdrup, som er lokalisert på plattformen RP:",
+    "Hensikten med vanninjeksjonssystemet er å: Forbedre utvinning av olje og gass ved å gi trykkstøtte til reservoaret. Redusere utslipp av olje til sjø ved å reinjisere produsert vann",
+    "Vanninjeksjonssystemet er fordelt mellom DP pga. injeksjonsbrønnene, og RP. Oksygenfritt sjøvann fra system 50 og behandlet produsert vann fra system 44 tilføres fra P1 og P2 for å mate vanninjeksjonssystem på RP.",
+    "Vanninjeksjonssystemet består av to deler: en del som håndterer vann fra P1 og en del som håndterer vann fra P2",
+    "De to delene har en mulighet for sammenkobling nedstrøms injeksjonspumpene. Oppstrøms er de to delene av systemet uavhengige.",
+    "Pumper og distribusjonsmanifolder er plassert på RP.",
+    "Det er en sjøvannsmanifold og en produsertvannsmanifold som distribuerer vannet for injeksjon på DP og i tillegg subsea brønner i havbunnsrammene E, F, og G, H, P og Q.",
+    "Vanninjeksjonssystemet er ikke sikkerhetskritisk, men det er kritisk for reservoarutvinning. Det er svært viktig å opprettholde god oppetid på disse pumpene for å sikre at planlagte årlige volumer av olje og gass blir utvunnet.",
+    "Oksygenfritt sjøvann benyttes også til fracking i av reservoaret nær brønnen for å få mer effektiv  injeksjon av vannet. ",
+    "Fracking utføres ved hjelp av en Multi purpose pumpe (MPP), lokalisert på DP."
+    ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

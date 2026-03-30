@@ -1,0 +1,23 @@
+{
+  "video": "Johan Sverdrup – System 46 67 – MEG-injeksjon og",
+  "ground_truth_transcript": [
+    "Her ser du hele MEG-Lagrings og injeksjonssystemet på Johan Sverdrup. Alt hovedutstyr er lokalisert på RP, mens DP, P1 og P2 kun har distribusjonsnett.",
+    "MEG lagring, system 67.  Består av to like lagertanker som er integrert i dekket på RP. Tankene bunkres med ferdigblandet MEG med 90%MEG og 10% vann.",
+    "Systemet for MEG-injeksjon, system 46 består av tre pumpepakker og ei boosterpumpe. Hver av pakkene inneholder to pumper og nødvendige kontrollfunksjoner. Hovedforskjellen på de tre pakkene er leveransetrykk og mengde samt leveransested.",
+    "Systemet på RP har to hoveddeler der MEG-injeksjon pumpepakke topside opererer som en selvstendig enhet og leverer MEG til DP og P1",
+    "Boosterpumpe og MEG injeksjons pumpepakke for DP og pumpepakke for lave rater kan operere som ett felles eller to separate systemer, avhengig av posisjonen på crossover ventilen nedstrøms pumpene.",
+    "Når pumpepakkene operer som et system har det en kapasitet på 20 m3/t. Denne mengden trengs til subsea injeksjon ved skifte mellom gass og vanninjeksjon.",
+    "MEG booster pumpe har som funksjon å gi tilstrekkelig sugetrykk til MEG injeksjonspakke DP og pumpepakke for lave rater.", 
+    "Begge disse pakkene kan levere til brønner på DP og på havbunner, til anlegget på RP og til P2 ved bruk av crossoveren.",
+    "På Johan Sverdrup brukes MEG i forbindelse med:",
+    "•	Hydrater; først og fremst preventivt men også for å løse en eventuell hydratplugg",
+    "•	Fylling av utstyr og rørsystem",
+    "•	Opptrykking og trykkutligning",
+    "•	Omlegging av WAG-brønner.",
+    "Bruk av MEG er sporadisk og systemet er derved ikke i kontinuerlig bruk, men tilgjengelig ved behov.",
+    "Det er viktig å merke seg at MEG kan føre til forurensning av produkt til Mongstad, så det må vises omtanke til hvor produktet brukes i prosessen."
+  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

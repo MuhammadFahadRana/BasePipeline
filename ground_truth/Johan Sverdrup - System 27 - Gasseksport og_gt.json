@@ -1,0 +1,18 @@
+{
+  "video": "Johan Sverdrup - System 27 - Gasseksport og",
+  "ground_truth_transcript": [
+    "Her ser du hele gasseksport- systemet på Johan Sverdrup som er lokalisert på plattformen: RP",
+    "Systemet er hovedsaklig delt inn i eksport av gass til Kårstø, og import av gass fra eksportrørledningen for opptrykking av anleggene. ",
+    "Gassen for eksport komprimeres i 4.trinns kompressor på P1, før det går videre til RP via DP. Tilsvarende kommer det gass fra kompressoren på P2 over til RP.",
+    "Noe av gassen vil bli tatt ut til bruk av gassinjeksjon eller gassløft på DP og eller subsea via RP, mens overskuddet eksporteres til Kårstø via eksportrørledingen som er knyttet opp mot Statpipe. ",
+    "Systemet er utstyrt med en fiskal målestasjon.",
+    "Her måles og analyseres gassen for å sikre at gasskvaliteten er i henhold til eksportspesifikasjonene.",
+    "For å trykke opp Johan Sverdrup feltet i forbindelse med oppstart av trykkavlastet plattform, er det mulig å importere gass fra eksportrørledningen til både P1 og P2. ",
+    "Den importerte gassen må gjennom en fiskal målestasjon som måler mengden som importeres tilbake, da denne gassen allerede er solgt og må betales for. ",
+    "Under opptrykking vil det oppstå lave temperaturer og det er derfor behov å varme opp gassen. Gassen varmes opp ved hjelp av importgassvarmer.",
+    "Rørledningen er utstyrt med en Sub surface isolasjonsventil som står på havbunnen ca 100m fra plattformen. Isolasjonsventilen skal stenge og beskytte plattformen mot tilbakestrømning av gass ved brudd i stigerøret.",
+    "Systemet har også en piggsluse som benyttes for vedlikehold av stigerør og gasseksport rørledningen. Det er ikke planlagt regelmessig pigging av gasseksportrørledningen. Et typisk intervall for inspeksjonspigging vil være 10-15 år."  ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}

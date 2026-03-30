@@ -1,0 +1,30 @@
+{
+  "video": "Johan Sverdrup - System 42 - Kjemikalieinjeksjon",
+  "ground_truth_transcript": [
+    "Her ser du hele kjemikalie systemet på Johan Sverdrup.",
+    "Hovedlagring og distribusjon for kjemikalier er på P1, P2 og RP. Kjemikalier som blir brukt i stort volum blir fordelt fra RP, da det er lagt opp til bunkring fra båt. ",
+    "De mer spesifikke prosess kjemikaliene av mindre volum blir fordelt fra faste tanker på P1 og P2.",
+    "Fylling skjer fra totetank som blir leverert ut til Johan Sverdrup med supplybåt.",
+    "Fra P1 distribueres følgende kjemikalier.",
+    "Flokkulant, Skumdemper (oljebasert) , Filter Aid, skumdemper for vanninjeksjon og oksygenfjerner.",
+    "Disse kjemikaliene lastes fra totetank direkte til P1.",
+    "P2 har totetankområdet sitt på RP. Kjemikalier lastes fra totetank til RP og overføres til P2 med overføringspumper. De kjemikaliene dette gjelder er Skumdemper, flokkulant, skumdemper for vanninjeksjon, oksygenfjerner, H2s-fjerner og TEG.",
+    "På DP er det installert en tank for avleiringshemmer som blir fylt fra RP, tanken forsyner brønnene på DP og subsea. Tanken er utstyrt med et varmeelement som sørge for at væsken har en jevn viskositet.",
+    "Kjemikaliene som blir distribuert fra RP er H2S-fjerner, avleirings-hemmer, emulsjonsbryter, biocid, korrosjonshemmer og pH-regulator.",
+    "H2S fjerner blir overført til P1 og P2, men blir injisert med egne pumper fra egne tanker på disse plattformene.",
+    "Kjemikaliene og deres egenskaper:",
+    "•	H2S fjerner tilsettes for å redusere H2S innhold i gassen.",
+    "•	Emulsjonsbryter tilsettes for å løse opp en emulsjon som dannes i sjiktet mellom olje og vann i separatorene. ",
+    "•	Skumdemper, olje og vannbasert, brukes for å fjerne skum som kan dannes i separatorene og i vannsystem.",
+    "•	Biocid tilsettes for å drepe biologisk vekst.",
+    "•	Flokkulant tilsettes for å samle oljedråper sammen for å bedre separasjonen og vannkvaliteten.",
+    "•	Avleiringshemmer tilsettes for å hindre at avleiring setter seg på uønskede steder.",
+    "•	pH-regulator tilsettes i væskeutløpet på gass væskeutskillere for å redusere pH og unngå avleiringer. Det er injeksjonen av H2S-fjerner i gassutløpene som fører til økt pH i skrubbere og separatorer.",
+    "•	Oksygenfjerner tilsettes for å fjerne resterende oksygen fra sjøvann, for vanninjeksjon etter mekanisk oksygenfjerning i de-aerator."
+    "•	Korrosjonshemmer tilsettes for å hindre korrosjon i rørledningen. ",
+    "•	Filter aid fungerer som en flokkulant, og er med på å slå sammen partikler til større partikler, slik at det filtreres bedre."
+    ],
+  "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",
+  "scene_annotations": [],
+  "scene_annotation_instructions": "Mark scene changes with timestamps (seconds) and scene id in the format: [scene_id] [timestamp]"
+}
