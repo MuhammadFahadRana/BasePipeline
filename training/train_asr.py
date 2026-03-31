@@ -410,17 +410,13 @@ def train(config: ASRTrainingConfig, max_samples: Optional[int] = None):
     # 1. Load model and processor
     print(f"\nLoading Whisper: {config.model_name}")
     processor = WhisperProcessor.from_pretrained(config.model_name)
-    
-    # Load with "auto" dtype (usually float16 for large-v3)
-    model = WhisperForConditionalGeneration.from_pretrained(
-        config.model_name,
-        torch_dtype="auto",
-        low_cpu_mem_usage=True
-    )
 
-    # If on CPU, we must use float32 to avoid dtype mismatches with input data
-    if device == "cpu":
-        model = model.float()
+    # Load in float32 — the Trainer's bf16/fp16 autocast handles mixed precision
+    # during both training AND evaluation/generate(). Loading in float16 directly
+    # causes dtype mismatches when generate() runs outside autocast during eval.
+    model = WhisperForConditionalGeneration.from_pretrained(
+        config.model_name, torch_dtype=torch.float32, low_cpu_mem_usage=True
+    )
 
     model.generation_config.update(
         language=config.language,
