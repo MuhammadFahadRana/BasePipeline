@@ -28,7 +28,7 @@ training:
 data:
   dataset_path: "training/retrieval_dataset.json"
   eval_split: 0.15                # hold out ~15% of queries for evaluation
-  enrichment_mode: "transcript_only"  # transcript_only | transcript+ocr | transcript+caption+ocr
+  enrichment_mode: "transcript+caption+ocr"  # transcript_only | transcript+ocr | transcript+caption+ocr
 
   # Negative sampling tier distribution
   negatives:

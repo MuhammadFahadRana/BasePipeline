@@ -405,7 +405,9 @@ def build_asr_dataset(
 
         video_name = gt_data.get("video", gt_file.stem.replace("_gt", ""))
         gt_transcript_parts = gt_data.get("ground_truth_transcript", [])
-        gt_text = " ".join(gt_transcript_parts).strip()
+        # Collapse all newlines and multiple spaces into a single space
+        gt_text = " ".join(gt_transcript_parts)
+        gt_text = re.sub(r"\s+", " ", gt_text).strip()
 
         if not gt_text:
             print(f"  [{video_name}] No transcript text, skipping")
