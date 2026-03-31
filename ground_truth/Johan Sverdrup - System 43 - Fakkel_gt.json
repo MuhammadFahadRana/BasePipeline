@@ -17,8 +17,8 @@
     "Under normal drift av anlegget går gassen som kommer inn på HT-væskeutskiller på P1 og P2 tilbake til 1.trinn kompressor. De andre væskeutskillerne mottar ikke noe særlig gass under normale forhold.",
     "Plattformene P1, P2 og RP er de plattformene som har fakkelbommer med fakkeltipper. ",
     "Hver fakkeltipp har to tenningssystemer; et høytrykks ballistisk system hvor pellets skytes mot en gnistplate og et system hvor brenngasspiloter brukes. Faklene er normalt ikke tent og tennes automatisk ved behov. ",
-    "Det er også installert en målepakke på hvert fakkelrør som måler gassen for beregning av Co2-avgift."
-    "På P2 er det installert et felles O2 analyseskap for overvåking av O2 innhold i henholdsvis HT fakkel og atm vent."
+    "Det er også installert en målepakke på hvert fakkelrør som måler gassen for beregning av Co2-avgift.",
+    "På P2 er det installert et felles O2 analyseskap for overvåking av O2 innhold i henholdsvis HT fakkel og atm vent.",
     "I tillegg er det installert en HC analysator på atmosfærisk vent header. Denne brukes for beregning av CO2 avgift."
     ],
   "instructions": "Manually transcribe the video audio exactly as spoken, including filler words.",

@@ -400,8 +400,12 @@ def build_asr_dataset(
     }
 
     for gt_file in gt_files:
-        with open(gt_file, "r", encoding="utf-8") as f:
-            gt_data = json.load(f)
+        try:
+            with open(gt_file, "r", encoding="utf-8") as f:
+                gt_data = json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"  [{gt_file.stem}] Invalid JSON, skipping: {e}")
+            continue
 
         video_name = gt_data.get("video", gt_file.stem.replace("_gt", ""))
         gt_transcript_parts = gt_data.get("ground_truth_transcript", [])
