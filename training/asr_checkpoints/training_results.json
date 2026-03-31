@@ -1,22 +1,24 @@
 {
-  "timestamp": "2026-03-24T12:12:06.432979",
+  "timestamp": "2026-03-31T10:49:48.362885",
   "config": {
-    "model": "openai/whisper-base",
+    "model": "openai/whisper-large-v3",
     "use_lora": true,
-    "epochs": 1,
-    "batch_size": 1,
+    "epochs": 3,
+    "batch_size": 8,
     "learning_rate": 1e-05,
-    "language": "en"
+    "language": "en",
+    "bf16": true,
+    "fp16": false
   },
-  "train_samples": 1,
+  "train_samples": 679,
   "eval_samples": 119,
-  "train_loss": 2.162341594696045,
+  "train_loss": 7.0796138260715695,
   "final_metrics": {
-    "eval_loss": 5.0925445556640625,
-    "eval_wer": 89.78,
-    "eval_runtime": 108.3363,
-    "eval_samples_per_second": 1.098,
-    "eval_steps_per_second": 1.098,
-    "epoch": 1.0
+    "eval_loss": 3.510671854019165,
+    "eval_wer": 86.46,
+    "eval_runtime": 87.6486,
+    "eval_samples_per_second": 1.358,
+    "eval_steps_per_second": 0.171,
+    "epoch": 3.0
   }
 }
