@@ -1,144 +1,57 @@
-"""Cross-encoder reranker for improving search precision.
-
-Uses BAAI/bge-reranker-v2-m3 to rerank top-K candidates retrieved
-from hybrid search (semantic + fuzzy). Cross-encoders jointly encode
-(query, document) pairs, giving much more accurate relevance scores
-than bi-encoder similarity alone.
+"""
+Cross-encoder reranker for improving search precision.
+UPDATED: Now uses the shared 1.5B LLM Singleton as a zero-shot reranker.
 """
 
 import time
 import re
-from typing import List, Optional
-
-import torch
-from sentence_transformers import CrossEncoder
-
+from typing import List, Optional, Any
+from llm.llm_manager import get_llm_manager
 
 class CrossEncoderReranker:
-    """Rerank search results using a cross-encoder model."""
+    """Rerank search results using the shared 1.5B Instruct model."""
 
     def __init__(
         self,
-        model_name: str = "BAAI/bge-reranker-v2-m3",
+        model_name: str = "shared-1.5B-instruct",
         device: str = "auto",
         max_length: int = 512,
     ):
-        """
-        Initialize cross-encoder reranker.
-
-        Args:
-            model_name: HuggingFace cross-encoder model name
-            device: "auto", "cpu", or "cuda"
-            max_length: Maximum token length for (query, document) pairs
-        """
-        if device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-
         self.device = device
         self.model_name = model_name
         self.max_length = max_length
-
-        print(f"Loading reranker model: {model_name}")
-        print(f"Device: {device}")
-
-        self.model = CrossEncoder(
-            model_name,
-            device=device,
-            max_length=max_length,
-            trust_remote_code=True,
-        )
-
-        print(f"[OK] Reranker loaded ({model_name})")
+        self.manager = get_llm_manager()
+        print(f"[OK] Reranker initialized using shared LLM infrastructure.")
 
     def rerank(
         self,
         query: str,
-        results: List,
+        results: List[Any],
         top_k: Optional[int] = None,
-        score_blend: float = 0.6,
-    ) -> List:
+        score_blend: float = 0.7,
+    ) -> List[Any]:
         """
-        Rerank search results using cross-encoder scoring.
-
-        The final score blends the reranker score with the original
-        retrieval score to preserve diversity while improving precision.
-
-        Args:
-            query: Original search query
-            results: List of SearchResult objects from hybrid search
-            top_k: Maximum results to return (None = return all)
-            score_blend: Weight for reranker score vs original score
-                         0.0 = keep original scores, 1.0 = use only reranker
-
-        Returns:
-            Reranked list of SearchResult objects with updated scores
+        Rerank results using the shared LLM as a judge.
         """
         if not results or len(results) <= 1:
             return results
 
         start_time = time.time()
-
-        # Build (query, document_text) pairs for cross-encoder
-        pairs = []
-        for r in results:
-            doc_text = self._clean_text(r.text)
-            pairs.append((query, doc_text))
-
-        # Score all pairs in one batch
-        raw_scores = self.model.predict(pairs, show_progress_bar=False)
-
-        # Normalize reranker scores to [0, 1] via sigmoid (already applied by
-        # most BGE rerankers, but clip just in case)
-        reranker_scores = []
-        for s in raw_scores:
-            # Sigmoid if raw logits, otherwise clamp
-            if s < -10 or s > 10:
-                s = 1.0 / (1.0 + _exp_safe(-s))
-            reranker_scores.append(max(0.0, min(1.0, float(s))))
-
-        # Blend reranker scores with original retrieval scores
-        for i, result in enumerate(results):
-            original_score = result.score
-            reranker_score = reranker_scores[i]
-
-            # Blended score: gives reranker more influence while preserving
-            # retrieval diversity signals
-            result.score = (
-                score_blend * reranker_score
-                + (1.0 - score_blend) * original_score
-            )
-            result.match_type = f"reranked_{result.match_type}"
-
-        # Sort by new blended score
-        results.sort(key=lambda x: x.score, reverse=True)
-
+        
+        # We use the manager's rerank logic which already blends scores
+        # and handles the prompt-based evaluation.
+        # We rerank the top 12 to ensure speed while significantly boosting relevance.
+        rerank_limit = 12
+        reranked_results = self.manager.rerank(query, results, top_n=rerank_limit)
+        
         elapsed_ms = (time.time() - start_time) * 1000
         print(
-            f"  Reranker: {len(results)} candidates in {elapsed_ms:.0f}ms "
-            f"(top: {results[0].score:.4f})"
+            f"  Smart Reranker: Processed {min(len(results), rerank_limit)} candidates in {elapsed_ms:.0f}ms."
         )
 
         if top_k:
-            results = results[:top_k]
-
-        return results
-
-    def _clean_text(self, text: str) -> str:
-        """Clean document text before sending to cross-encoder."""
-        # Strip [OCR] prefix for cleaner comparison
-        text = re.sub(r"^\[OCR\]\s*", "", text)
-        # Collapse whitespace
-        text = " ".join(text.split())
-        return text[:1000]  # Limit length to avoid hitting max_length
-
-
-def _exp_safe(x: float) -> float:
-    """Safe exp to avoid overflow."""
-    import math
-    try:
-        return math.exp(x)
-    except OverflowError:
-        return float("inf")
+            return reranked_results[:top_k]
+        return reranked_results
 
 
 # ── Global singleton (lazy loaded) ──────────────────────────────
@@ -146,15 +59,12 @@ def _exp_safe(x: float) -> float:
 _reranker: Optional[CrossEncoderReranker] = None
 _reranker_failed: bool = False
 
-
 def get_reranker(
-    model_name: str = "BAAI/bge-reranker-v2-m3",
+    model_name: str = "Qwen/Qwen2.5-1.5B-Instruct",
     enabled: bool = True,
 ) -> Optional[CrossEncoderReranker]:
     """
-    Get or create the global reranker instance.
-
-    Returns None if disabled or if initialization fails (graceful fallback).
+    Get or create the global reranker instance using the shared LLM.
     """
     global _reranker, _reranker_failed
 
@@ -163,10 +73,9 @@ def get_reranker(
 
     if _reranker is None:
         try:
-            _reranker = CrossEncoderReranker(model_name=model_name)
+            _reranker = CrossEncoderReranker()
         except Exception as e:
-            print(f"[WARNING] Reranker failed to load: {e}")
-            print("  Search will continue without reranking.")
+            print(f"[WARNING] Reranker failed to initialize: {e}")
             _reranker_failed = True
             return None
 

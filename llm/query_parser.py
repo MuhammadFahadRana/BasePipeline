@@ -13,6 +13,7 @@ from functools import lru_cache
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from llm.llm_manager import get_shared_llm
 
 
 @dataclass
@@ -57,21 +58,11 @@ class QueryParser:
         print(f"Device: {device}")
 
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                model_name, trust_remote_code=True
-            )
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                device_map=device,
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                trust_remote_code=True,
-                low_cpu_mem_usage=True,
-            )
-            self.model.eval()
-            print(f"[OK] Query Parser loaded ({model_name})")
+            self.model, self.tokenizer = get_shared_llm()
             self._loaded = True
+            print(f"[OK] Query Parser using shared model")
         except Exception as e:
-            print(f"[ERROR] Failed to load Query Parser: {e}")
+            print(f"[ERROR] Failed to load Query Parser via shared LLM: {e}")
             self._loaded = False
 
         # In-memory cache for parsed queries

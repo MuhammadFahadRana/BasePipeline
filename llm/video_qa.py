@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 import torch
 
 from search.semantic_search import SemanticSearchEngine, SearchResult
+from llm.llm_manager import get_shared_llm
 
 
 class VideoQA:
@@ -71,63 +72,16 @@ class VideoQA:
         else:
             self.device = device
 
-        print(f"Loading QA LLM: {model_name}...")
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name,
-            trust_remote_code=True,
-        )
-
-        if self.tokenizer.pad_token is None and self.tokenizer.eos_token is not None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        model_kwargs = {
-            "trust_remote_code": True,
-            "low_cpu_mem_usage": True,
-            "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
-        }
-
-        # For bigger models, let Transformers place weights automatically.
-        if self.device == "cuda" and self.use_device_map_auto:
-            model_kwargs["device_map"] = "auto"
-
+        print(f"Connecting to shared QA LLM: {model_name}...")
+        
         try:
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                **model_kwargs,
-            )
+            self.model, self.tokenizer = get_shared_llm()
+            print(f"✓ Video QA system connected (shared {model_name})")
         except Exception as e:
-            if self.device == "cuda":
-                print(f"  Warning: Loading {model_name} on CUDA failed: {e}")
-                print("  Retrying on CPU (this will be slower)...")
-                self.device = "cpu"
-                model_kwargs["torch_dtype"] = torch.float32
-                if "device_map" in model_kwargs:
-                    del model_kwargs["device_map"]
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    **model_kwargs,
-                )
-            else:
-                raise e
+            print(f"[ERROR] Failed to connect to shared LLM in VideoQA: {e}")
+            raise e
 
-        # Only move manually when not using device_map="auto"
-        if not (self.device == "cuda" and self.use_device_map_auto):
-            try:
-                self.model = self.model.to(self.device)
-            except Exception as e:
-                if self.device == "cuda":
-                    print(
-                        f"  Warning: Moving model to CUDA failed: {e}. Falling back to CPU."
-                    )
-                    self.device = "cpu"
-                    self.model = self.model.to("cpu")
-                else:
-                    raise e
-
-        self.model.eval()
-
+        # Set up token limits after connecting to the model
         inferred_limit = self._infer_model_context_limit(default=max_input_tokens)
         self.max_input_tokens = min(max_input_tokens, inferred_limit)
 
@@ -138,7 +92,7 @@ class VideoQA:
         self.max_context_tokens = min(self.max_context_tokens, safe_context_ceiling)
 
         print(
-            f"✓ Video QA system ready ({model_name}) | device={self.device} | "
+            f"✓ Video QA parameters set | "
             f"max_input_tokens={self.max_input_tokens} | "
             f"max_context_tokens={self.max_context_tokens}"
         )
