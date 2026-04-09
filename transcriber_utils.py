@@ -110,6 +110,16 @@ def hf_auth():
     return token
 
 def get_device():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
-    return device
+    """Get best available device with a functional test for CUDA."""
+    if torch.cuda.is_available():
+        try:
+            # Sometimes CUDA is reported as available but fails on first allocation
+            torch.cuda.empty_cache()
+            _ = torch.tensor([0.0]).cuda()
+            print("CUDA device verified and ready.")
+            return "cuda"
+        except Exception as e:
+            print(f"Warning: CUDA detected but failed to initialize ({e}). Falling back to CPU.")
+    
+    print("Using CPU device.")
+    return "cpu"

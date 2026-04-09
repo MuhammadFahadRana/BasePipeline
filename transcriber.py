@@ -73,10 +73,28 @@ class SimpleTranscriber:
         print(f"Initializing {self.backend} with model: {self.model_size}")
 
         if self.backend == "whisper":
-            # OpenAI Whisper
+            # OpenAI Whisper or HF Whisper (if LoRA)
             self.model_name = f"Whisper-{self.model_size.capitalize()}"
             print(f"Loading {self.model_name} on {device}")
-            self.model = whisper.load_model(self.model_size, device=device)
+            
+            lora_path = os.getenv("ASR_LORA_PATH")
+            if lora_path and os.path.exists(lora_path):
+                print(f"Loading HuggingFace Whisper with LoRA from {lora_path}")
+                from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+                from peft import PeftModel
+                model_id = f"openai/whisper-{self.model_size}"
+                self.processor = AutoProcessor.from_pretrained(model_id)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                    model_id,
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    use_safetensors=True,
+                ).to(device)
+                self.model = PeftModel.from_pretrained(base_model, lora_path)
+                print(f"[OK] LoRA adapter successfully loaded")
+                self._backend_type = "hf_whisper"
+            else:
+                self.model = whisper.load_model(self.model_size, device=device)
+                self._backend_type = "openai_whisper"
 
         elif self.backend == "whisperx":
             # WhisperX
@@ -172,11 +190,14 @@ class SimpleTranscriber:
         try:
             # Route to appropriate backend
             if self.backend == "whisper":
-                result = self._transcribe_whisper(audio_path)
+                if getattr(self, "_backend_type", "openai_whisper") == "hf_whisper":
+                    result = self._transcribe_hf_model(audio_path)
+                else:
+                    result = self._transcribe_whisper(audio_path)
             elif self.backend == "whisperx":
                 result = self._transcribe_whisperx(audio_path)
             elif self.backend == "distil-whisper":
-                result = self._transcribe_distil_whisper(audio_path)
+                result = self._transcribe_hf_model(audio_path)
             else:
                 raise ValueError(f"Unknown ASR backend: {self.backend}")
 
@@ -239,9 +260,9 @@ class SimpleTranscriber:
                 "language": result.get("language", "en"),
             }
 
-    def _transcribe_distil_whisper(self, audio_path: Path):
+    def _transcribe_hf_model(self, audio_path: Path):
         """
-        Distil-Whisper transcription (6x faster than standard Whisper).
+        HuggingFace model transcription (for Distil-Whisper or standard Whisper with LoRA).
         Note: Returns only full transcript, no segment-level timestamps.
         """
         import soundfile as sf

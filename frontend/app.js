@@ -4,8 +4,8 @@ const API_BASE_URL = 'http://localhost:8000';
 // ============================================
 // AUTH STATE
 // ============================================
-let authToken = localStorage.getItem('atlas_token');
-let currentUser = JSON.parse(localStorage.getItem('atlas_user') || 'null');
+let authToken = sessionStorage.getItem('atlas_token');
+let currentUser = JSON.parse(sessionStorage.getItem('atlas_user') || 'null');
 
 /** Wrapper around fetch() that injects the JWT Authorization header. */
 function authFetch(url, opts = {}) {
@@ -17,15 +17,15 @@ function authFetch(url, opts = {}) {
 function saveAuth(token, user) {
     authToken = token;
     currentUser = user;
-    localStorage.setItem('atlas_token', token);
-    localStorage.setItem('atlas_user', JSON.stringify(user));
+    sessionStorage.setItem('atlas_token', token);
+    sessionStorage.setItem('atlas_user', JSON.stringify(user));
 }
 
 function clearAuth() {
     authToken = null;
     currentUser = null;
-    localStorage.removeItem('atlas_token');
-    localStorage.removeItem('atlas_user');
+    sessionStorage.removeItem('atlas_token');
+    sessionStorage.removeItem('atlas_user');
 }
 
 function showApp() {
@@ -735,33 +735,90 @@ async function performImageSearch() {
     }
 }
 
-// Helper: fetch AI answer paragraph for the current query using Video QA
+// Helper: fetch AI answer using the streaming chat completions endpoint.
+// Shows the answer panel immediately and streams tokens as they arrive.
 async function fetchAiAnswer(query) {
+    // Show the answer panel immediately with a loading indicator
+    if (answerPanel) {
+        answerPanel.style.display = 'block';
+    }
+    if (answerBody) {
+        answerBody.innerHTML = '<p class="answer-loading"><span class="typing-dots"><span>.</span><span>.</span><span>.</span></span> ATLAS Thinking…</p>';
+    }
+
     try {
-        // Keep QA non-blocking: if it takes too long, skip showing an answer.
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
+        const headers = { 'Content-Type': 'application/json' };
+        if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
-        const resp = await authFetch(`${API_BASE_URL}/qa/ask`, {
+        const resp = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
+            headers,
             body: JSON.stringify({
-                question: query,
-                video_filter: null,
-                top_k: 3
-            })
+                model: 'ATLAS',
+                messages: [{ role: 'user', content: query }],
+                stream: true,
+                max_tokens: 256,
+            }),
         });
-
-        clearTimeout(timeout);
 
         if (!resp.ok) {
             throw new Error(`QA failed: ${resp.statusText}`);
         }
 
-        return await resp.json(); // expected shape: { answer, citations, metadata }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let fullAnswer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || !trimmed.startsWith('data: ')) continue;
+                const payload = trimmed.slice(6);
+                if (payload === '[DONE]') continue;
+                try {
+                    const data = JSON.parse(payload);
+                    const token = data.choices?.[0]?.delta?.content;
+                    if (token) {
+                        fullAnswer += token;
+                    }
+                } catch (_) { /* skip malformed chunk */ }
+            }
+
+            // Update the panel with what we have so far
+            if (fullAnswer && answerBody) {
+                answerBody.innerHTML = renderModernAiAnswer(fullAnswer);
+            }
+        }
+
+        if (!fullAnswer.trim()) {
+            // No answer generated
+            if (answerPanel) answerPanel.style.display = 'none';
+            if (answerBody) answerBody.innerHTML = '';
+            return null;
+        }
+
+        // Check for garbage answers
+        if (_isGarbageAnswer(fullAnswer)) {
+            if (answerPanel) answerPanel.style.display = 'none';
+            if (answerBody) answerBody.innerHTML = '';
+            return null;
+        }
+
+        // Return a structure compatible with displayAiAnswer
+        return { answer: fullAnswer, citations: [] };
     } catch (err) {
         console.error('AI answer fetch error:', err);
+        // Hide the panel on error
+        if (answerPanel) answerPanel.style.display = 'none';
+        if (answerBody) answerBody.innerHTML = '';
         return null;
     }
 }
@@ -963,6 +1020,95 @@ async function performSearch() {
     }
 }
 
+// Helper: Convert basic markdown (**bold**, *italic*) to HTML
+function renderMarkdown(text) {
+    if (!text) return '';
+    return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br/>');
+}
+
+// Modern AI Answer Renderer
+function renderModernAiAnswer(text, citations = []) {
+    if (!text) return '';
+    
+    // Split text into Answer and Sources if LLM generated a sources section
+    let answerPart = text;
+    let extractedSources = [];
+    
+    // Detect delimiters like "---", "Sources:", "**Sources**", "📹 Sources"
+    const sourceDelimiters = [/---/, /\nSources:/i, /\n\*\*📹 Sources\*\*/, /\n\*\*Sources\*\*/];
+    let splitIndex = -1;
+    
+    for (const delim of sourceDelimiters) {
+        const match = text.match(delim);
+        if (match) {
+            splitIndex = match.index;
+            break;
+        }
+    }
+    
+    if (splitIndex !== -1) {
+        answerPart = text.substring(0, splitIndex).trim();
+        const sourcesPart = text.substring(splitIndex).trim();
+        
+        // Try to parse LLM-generated sources (e.g., "1. **File** @ timestamp > snippet")
+        const sourceRegex = /\d+\.\s+\*\*(.*?)\*\*\s+@\s+(.*?)\s+\((.*?)\)\s+>\s+(.*)/g;
+        let match;
+        while ((match = sourceRegex.exec(sourcesPart)) !== null) {
+            extractedSources.push({
+                video_filename: match[1],
+                timestamp: match[2],
+                score: match[3],
+                text: match[4]
+            });
+        }
+    }
+
+    // Combine with backend citations if provided and not already extracted
+    const allSources = [...extractedSources];
+    if (Array.isArray(citations)) {
+        citations.forEach(c => {
+            if (!allSources.find(s => s.video_filename === c.video_filename && s.timestamp === c.timestamp)) {
+                allSources.push(c);
+            }
+        });
+    }
+
+    // Clean up answerPart from stray citation markers like [Source 1]
+    answerPart = answerPart.replace(/\[Source\s*\d+\]/gi, '').replace(/\bReference\(s\):\s*\[[^\]]+\](?:\s*,\s*\[[^\]]+\])*\s*\.?/gi, '').trim();
+
+    let html = `<div class="answer-panel-body"><p>${renderMarkdown(answerPart)}</p></div>`;
+
+    if (allSources.length > 0) {
+        const sourceItems = allSources.slice(0, 4).map(s => {
+            const scoreLabel = s.score ? (s.score.includes('%') ? s.score : `${Math.round(parseFloat(s.score) * 100)}% match`) : '';
+            return `
+                <li>
+                    <div class="source-meta">
+                        @ ${escapeHtml(s.timestamp)} ${scoreLabel ? '• ' + scoreLabel : ''}
+                    </div>
+                    <strong>${escapeHtml(s.video_filename)}</strong>
+                    <span class="source-snippet">${escapeHtml(s.text || '')}</span>
+                </li>
+            `;
+        }).join('');
+
+        html += `
+            <div class="answer-sources">
+                <div class="answer-sources-title">Verified Sources</div>
+                <ul class="answer-sources-list">
+                    ${sourceItems}
+                </ul>
+            </div>
+        `;
+    }
+
+    return html;
+}
+
 // Check if a QA answer is garbage / repetitive / unhelpful
 function _isGarbageAnswer(text) {
     if (!text || text.length < 10) return true;
@@ -983,7 +1129,7 @@ function _isGarbageAnswer(text) {
 function displayAiAnswer(qaData) {
     if (!qaData || !qaData.answer || !qaData.answer.trim()) return;
 
-    // Suppress garbage / repetitive / unhelpful answers
+    // Suppress garbage answers
     if (_isGarbageAnswer(qaData.answer)) {
         if (answerPanel) answerPanel.style.display = 'none';
         return;
@@ -993,44 +1139,7 @@ function displayAiAnswer(qaData) {
         answerPanel.style.display = 'block';
     }
     if (answerBody) {
-        // Remove inline reference boilerplate like:
-        // "Reference(s): [Source 1], [Source 2]" and any stray "[Source N]" tags.
-        let cleanedAnswer = (qaData.answer || '').trim();
-        cleanedAnswer = cleanedAnswer.replace(/\bReference\(s\):\s*\[[^\]]+\](?:\s*,\s*\[[^\]]+\])*\s*\.?/gi, '').trim();
-        cleanedAnswer = cleanedAnswer.replace(/\[Source\s*\d+\]/gi, '').replace(/\s{2,}/g, ' ').trim();
-
-        const safeAnswer = escapeHtml(cleanedAnswer);
-
-        // Build a compact "Sources" section from citations (if present)
-        let sourcesHtml = '';
-        if (Array.isArray(qaData.citations) && qaData.citations.length > 0) {
-            const items = qaData.citations.slice(0, 4).map((c) => {
-                const ts = c.timestamp || '';
-                const file = c.video_filename || '';
-                const snippet = (c.text || '').trim();
-                const score = typeof c.score === 'number' ? ` (${Math.round(c.score * 100)}% match)` : '';
-                return `
-                    <li>
-                        <strong>${escapeHtml(file)}</strong> @ ${escapeHtml(ts)}${score}<br/>
-                        <span class="source-snippet">${escapeHtml(snippet)}</span>
-                    </li>
-                `;
-            }).join('');
-
-            sourcesHtml = `
-                <div class="answer-sources">
-                    <div class="answer-sources-title">Sources</div>
-                    <ul class="answer-sources-list">
-                        ${items}
-                    </ul>
-                </div>
-            `;
-        }
-
-        answerBody.innerHTML = `
-            <p>${safeAnswer}</p>
-            ${sourcesHtml}
-        `;
+        answerBody.innerHTML = renderModernAiAnswer(qaData.answer, qaData.citations);
     }
 }
 
@@ -1050,16 +1159,10 @@ function displayResults(data, qaData = null) {
 
     resultsTitle.textContent = `Results for "${query}"`;
 
-    // Hide AI answer panel initially (will be filled async by displayAiAnswer)
+    // Show AI answer if provided synchronously; otherwise leave the panel
+    // alone — the streaming fetchAiAnswer manages its own visibility.
     if (qaData && qaData.answer && qaData.answer.trim()) {
         displayAiAnswer(qaData);
-    } else {
-        if (answerPanel) {
-            answerPanel.style.display = 'none';
-        }
-        if (answerBody) {
-            answerBody.innerHTML = '';
-        }
     }
 
     // Display count and search time (like Google)

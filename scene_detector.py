@@ -103,8 +103,8 @@ class SceneConfig:
 
     def get_device(self) -> str:
         if self.device == "auto":
-            torch = _ensure_torch()
-            return "cuda" if torch.cuda.is_available() else "cpu"
+            from transcriber_utils import get_device
+            return get_device()
         return self.device
 
 
@@ -139,14 +139,21 @@ class SceneDetector:
 
     def _ensure_clip(self):
         if self._clip_model is None:
-            torch = _ensure_torch()
+            _ensure_torch()
             open_clip = _ensure_open_clip()
             device = self.config.get_device()
 
             model, _, preprocess = open_clip.create_model_and_transforms(
                 self.config.clip_model, pretrained=self.config.clip_pretrained
             )
-            self._clip_model = model.to(device).eval()
+            try:
+                self._clip_model = model.to(device).eval()
+            except Exception as e:
+                if "cuda" in device.lower():
+                    print(f"  Warning: CLIP model failed on CUDA: {e}. Falling back to CPU.")
+                    self._clip_model = model.to("cpu").eval()
+                else:
+                    raise e
             self._clip_preprocess = preprocess
             self._clip_tokenizer = open_clip.get_tokenizer(self.config.clip_model)
         return self._clip_model, self._clip_preprocess

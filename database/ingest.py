@@ -98,21 +98,25 @@ class DataIngester:
                     # Video file itself has changed → full re-ingest
                     should_update = True
                     reason = "video_changed"
-                    print(f"Video content changed for {video_name} "
-                          f"(DB: {db_fingerprint} → New: {new_fingerprint})")
+                    print(
+                        f"Video content changed for {video_name} "
+                        f"(DB: {db_fingerprint} → New: {new_fingerprint})"
+                    )
                 else:
                     # Fingerprint matches – check if embeddings are present
                     has_text_embs = (
                         self.db.query(Embedding)
                         .join(TranscriptSegment)
                         .filter(TranscriptSegment.video_id == existing_video.id)
-                        .first() is not None
+                        .first()
+                        is not None
                     )
                     has_visual_embs = (
                         self.db.query(VisualEmbedding)
                         .join(Scene)
                         .filter(Scene.video_id == existing_video.id)
-                        .first() is not None
+                        .first()
+                        is not None
                     )
 
                     need_text = generate_embeddings and not has_text_embs
@@ -120,8 +124,10 @@ class DataIngester:
 
                     if need_text or need_visual:
                         # Fill only the missing embeddings, don't delete anything
-                        print(f"Filling missing embeddings for {video_name} "
-                              f"(text={need_text}, visual={need_visual})")
+                        print(
+                            f"Filling missing embeddings for {video_name} "
+                            f"(text={need_text}, visual={need_visual})"
+                        )
                         filled = self._fill_missing_embeddings(
                             existing_video, need_text, need_visual
                         )
@@ -160,10 +166,9 @@ class DataIngester:
                     "reason": "already_exists",
                 }
 
-
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Ingesting: {video_name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # Create video record
         video = Video(
@@ -222,7 +227,7 @@ class DataIngester:
                 ):
                     scene_db_id = s_db.id
                     break
-            
+
             segment = TranscriptSegment(
                 video_id=video.id,
                 scene_id=scene_db_id,
@@ -244,7 +249,7 @@ class DataIngester:
             print("Generating text embeddings (batch mode)...")
             texts = [seg.text for seg in transcript_segments]
             embeddings = self.embedding_gen.encode(
-                texts, 
+                texts,
                 batch_size=32,
                 show_progress=True,
             )
@@ -270,11 +275,14 @@ class DataIngester:
         # no matching transcript segment nearby.
         caption_embs_added = 0
         scenes_with_captions = [
-            s for s in scene_db_objects
+            s
+            for s in scene_db_objects
             if s.caption or (s.object_labels and len(s.object_labels) > 0) or s.ocr_text
         ]
         if scenes_with_captions:
-            print(f"Generating caption embeddings for {len(scenes_with_captions)} enriched scenes...")
+            print(
+                f"Generating caption embeddings for {len(scenes_with_captions)} enriched scenes..."
+            )
             caption_texts = []
             for scene in scenes_with_captions:
                 parts = [scene.caption] if scene.caption else []
@@ -287,7 +295,9 @@ class DataIngester:
                     parts.append(scene.ocr_text)
                 caption_texts.append(" ".join(parts))
 
-            caption_vecs = self.embedding_gen.encode(caption_texts, batch_size=16, show_progress=False)
+            caption_vecs = self.embedding_gen.encode(
+                caption_texts, batch_size=16, show_progress=False
+            )
             for scene, vec in zip(scenes_with_captions, caption_vecs):
                 emb = Embedding(
                     scene_id=scene.id,
@@ -330,14 +340,17 @@ class DataIngester:
                 .all()
             )
             segments_without_emb = [
-                seg for seg in segments
+                seg
+                for seg in segments
                 if not self.db.query(Embedding)
-                    .filter(Embedding.segment_id == seg.id)
-                    .first()
+                .filter(Embedding.segment_id == seg.id)
+                .first()
             ]
 
             if segments_without_emb:
-                print(f"  Generating text embeddings for {len(segments_without_emb)} segments...")
+                print(
+                    f"  Generating text embeddings for {len(segments_without_emb)} segments..."
+                )
                 texts = [seg.text for seg in segments_without_emb]
                 embeddings = self.embedding_gen.encode(
                     texts, batch_size=32, show_progress=True
@@ -353,17 +366,14 @@ class DataIngester:
                 print(f"  ✓ {len(segments_without_emb)} text embeddings generated")
 
         if need_visual:
-            scenes = (
-                self.db.query(Scene)
-                .filter(Scene.video_id == video.id)
-                .all()
-            )
+            scenes = self.db.query(Scene).filter(Scene.video_id == video.id).all()
             scenes_without_emb = [
-                s for s in scenes
+                s
+                for s in scenes
                 if s.keyframe_path
                 and not self.db.query(VisualEmbedding)
-                    .filter(VisualEmbedding.scene_id == s.id)
-                    .first()
+                .filter(VisualEmbedding.scene_id == s.id)
+                .first()
             ]
 
             if scenes_without_emb:
@@ -374,27 +384,31 @@ class DataIngester:
         print(f"  ✓ Missing embeddings filled for {video.filename}")
         return result
 
-    def ingest_visual_embeddings(self, scenes: List[Scene], batch_size: int = 32) -> int:
+    def ingest_visual_embeddings(
+        self, scenes: List[Scene], batch_size: int = 32
+    ) -> int:
         """Generate and store visual embeddings for a list of scenes."""
         scenes_with_keyframes = [s for s in scenes if s.keyframe_path]
         if not scenes_with_keyframes:
             return 0
 
-        print(f"Generating visual embeddings for {len(scenes_with_keyframes)} scenes...")
+        print(
+            f"Generating visual embeddings for {len(scenes_with_keyframes)} scenes..."
+        )
         vision_gen = self._get_vision_gen()
-        
+
         embeddings_created = 0
-        
+
         for i in range(0, len(scenes_with_keyframes), batch_size):
-            batch = scenes_with_keyframes[i:i+batch_size]
+            batch = scenes_with_keyframes[i : i + batch_size]
             batch_paths = []
             valid_scenes = []
-            
+
             for scene in batch:
                 full_path = Path(scene.keyframe_path)
                 if not full_path.is_absolute():
                     full_path = Path.cwd() / scene.keyframe_path
-                
+
                 if full_path.exists():
                     batch_paths.append(str(full_path))
                     valid_scenes.append(scene)
@@ -409,26 +423,26 @@ class DataIngester:
                     batch_paths,
                     batch_size=len(batch_paths),
                     show_progress=False,
-                    normalize=True
+                    normalize=True,
                 )
-                
+
                 for scene, embedding in zip(valid_scenes, embeddings):
                     visual_emb = VisualEmbedding(
                         scene_id=scene.id,
                         keyframe_path=scene.keyframe_path,
                         embedding=embedding.tolist(),
-                        embedding_model=vision_gen.model_name
+                        embedding_model=vision_gen.model_name,
                     )
                     self.db.add(visual_emb)
                     embeddings_created += 1
-                
+
                 # Flush batches to database
                 self.db.flush()
-                
+
             except Exception as e:
                 print(f"Error processing visual batch: {e}")
                 continue
-                
+
         print(f"✓ {embeddings_created} visual embeddings generated")
         return embeddings_created
 
@@ -437,7 +451,7 @@ class DataIngester:
         processed_dir: str = "processed",
         generate_embeddings: bool = True,
         skip_existing: bool = True,
-        update_existing: bool = True, # Default to True to handle updates
+        update_existing: bool = True,  # Default to True to handle updates
         force: bool = False,
     ) -> Dict:
         """
@@ -461,12 +475,12 @@ class DataIngester:
                 f"or legacy layout in '{processed_path}'"
             )
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"BATCH INGESTION")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Found {len(results_files)} videos to ingest")
         print(f"Source: {source_hint}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         stats = {
             "total": len(results_files),
@@ -498,6 +512,7 @@ class DataIngester:
                 self.db.rollback()
                 print(f"Failed to ingest {results_file.parent.name}: {e}")
                 import traceback
+
                 traceback.print_exc()
                 stats["failed"] += 1
                 stats["failed_videos"].append(
@@ -523,7 +538,6 @@ class DataIngester:
 
         return stats
 
-
     def verify(self) -> Dict:
         """Print a summary of database contents and flag any gaps."""
         total_videos = self.db.query(Video).count()
@@ -532,9 +546,9 @@ class DataIngester:
         total_text_emb = self.db.query(Embedding).count()
         total_vis_emb = self.db.query(VisualEmbedding).count()
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("DATABASE VERIFICATION")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Videos:              {total_videos}")
         print(f"Scenes:              {total_scenes}")
         print(f"Transcript segments: {total_segs}")
@@ -552,7 +566,9 @@ class DataIngester:
                 .count()
             )
             if vis_emb == 0 and scene_count > 0 and not v.filename.endswith(".wav"):
-                issues.append(f"  [{v.id}] {v.filename}: {scene_count} scenes, 0 visual embeddings")
+                issues.append(
+                    f"  [{v.id}] {v.filename}: {scene_count} scenes, 0 visual embeddings"
+                )
 
         print("\nRemaining issues:")
         if issues:
@@ -587,6 +603,7 @@ if __name__ == "__main__":
         stats = ingester.ingest_batch(
             processed_dir="processed",
             generate_embeddings=True,
+            update_existing=True,
             skip_existing=True,
         )
         print(f"\nIngestion complete: {stats['success']} videos in database")

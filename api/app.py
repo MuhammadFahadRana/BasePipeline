@@ -6,6 +6,9 @@ import asyncio
 import json
 from pathlib import Path
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 # Add parent directory to path to allow imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -18,7 +21,13 @@ from sqlalchemy.orm import Session
 import os
 
 from database.config import get_db, test_connection
-from database.models import Video, VideoCategory, User, UserCategoryAccess, TranscriptSegment
+from database.models import (
+    Video,
+    VideoCategory,
+    User,
+    UserCategoryAccess,
+    TranscriptSegment,
+)
 from search.semantic_search import SemanticSearchEngine, SearchResult
 from search.multi_modal_search import MultiModalSearchEngine, set_optimal_weights
 from api.auth import (
@@ -50,10 +59,19 @@ _mm_search_engine = None
 # ── Category-intent detection from natural-language queries ──────────────
 _CATEGORY_PATTERNS = [
     # English patterns
-    re.compile(r"(?:show|list|find|get|display|give)\s+(?:me\s+)?(?:all\s+)?(?:the\s+)?(?:videos?|results?)\s+(?:in|from|for|under|of)\s+(?:the\s+)?(?:category\s+)?[\"']?(.+?)[\"']?\s*(?:category)?\s*$", re.I),
-    re.compile(r"(?:all\s+)?(?:videos?|results?)\s+(?:in|from|for|under|of)\s+(?:the\s+)?(?:category\s+)?[\"']?(.+?)[\"']?\s*(?:category)?\s*$", re.I),
+    re.compile(
+        r"(?:show|list|find|get|display|give)\s+(?:me\s+)?(?:all\s+)?(?:the\s+)?(?:videos?|results?)\s+(?:in|from|for|under|of)\s+(?:the\s+)?(?:category\s+)?[\"']?(.+?)[\"']?\s*(?:category)?\s*$",
+        re.I,
+    ),
+    re.compile(
+        r"(?:all\s+)?(?:videos?|results?)\s+(?:in|from|for|under|of)\s+(?:the\s+)?(?:category\s+)?[\"']?(.+?)[\"']?\s*(?:category)?\s*$",
+        re.I,
+    ),
     # Norwegian patterns
-    re.compile(r"(?:vis|finn|hent|søk)\s+(?:meg\s+)?(?:alle\s+)?(?:videoer?|resultater?)\s+(?:i|fra|for|under)\s+(?:kategorien?\s+)?[\"']?(.+?)[\"']?\s*(?:kategori(?:en)?)?\s*$", re.I),
+    re.compile(
+        r"(?:vis|finn|hent|søk)\s+(?:meg\s+)?(?:alle\s+)?(?:videoer?|resultater?)\s+(?:i|fra|for|under)\s+(?:kategorien?\s+)?[\"']?(.+?)[\"']?\s*(?:kategori(?:en)?)?\s*$",
+        re.I,
+    ),
 ]
 
 # ── Site (label) intent detection from natural-language queries ───────────
@@ -64,7 +82,7 @@ def _detect_category_intent(query: str, known_categories: set) -> Optional[str]:
     for pattern in _CATEGORY_PATTERNS:
         m = pattern.search(query.strip())
         if m:
-            candidate = m.group(1).strip().strip('"\'')
+            candidate = m.group(1).strip().strip("\"'")
             # Fuzzy match against known categories (case-insensitive)
             for cat in known_categories:
                 if cat.lower() == candidate.lower():
@@ -106,17 +124,21 @@ def _detect_site_intent(query: str, known_sites: set) -> Optional[str]:
 def _get_allowed_filenames(user: User, db: Session) -> Optional[set]:
     """Return the set of video filenames the user may see, or None for admins (=all)."""
     allowed_cats = get_user_allowed_categories(user)
-    if allowed_cats is None:          # admin
+    if allowed_cats is None:  # admin
         return None
     all_videos = db.query(Video).all()
-    return {v.filename for v in all_videos if get_video_category(v.filename) in allowed_cats}
+    return {
+        v.filename for v in all_videos if get_video_category(v.filename) in allowed_cats
+    }
 
 
 def _filter_results(results, allowed_filenames, limit=None):
     """Filter search results to only include videos the user may access."""
     if allowed_filenames is None:
         return results[:limit] if limit else results
-    filtered = [r for r in results if getattr(r, 'video_filename', None) in allowed_filenames]
+    filtered = [
+        r for r in results if getattr(r, "video_filename", None) in allowed_filenames
+    ]
     return filtered[:limit] if limit else filtered
 
 
@@ -124,7 +146,7 @@ def _filter_result_dicts(result_dicts, allowed_filenames, limit=None):
     """Filter dict-form search results to only include videos the user may access."""
     if allowed_filenames is None:
         return result_dicts[:limit] if limit else result_dicts
-    filtered = [r for r in result_dicts if r.get('video_filename') in allowed_filenames]
+    filtered = [r for r in result_dicts if r.get("video_filename") in allowed_filenames]
     return filtered[:limit] if limit else filtered
 
 
@@ -256,10 +278,12 @@ async def startup_event():
     # Create auth tables if they don't exist yet
     from database.config import engine
     from database.models import Base
+
     Base.metadata.create_all(bind=engine)
 
     # Seed a default admin user if no users exist at all
     from database.config import SessionLocal
+
     db = SessionLocal()
     try:
         if db.query(User).count() == 0:
@@ -270,17 +294,25 @@ async def startup_event():
             )
             db.add(admin)
             db.commit()
-            print("[auth] Created default admin user (admin / admin) -- change the password!")
+            print(
+                "[auth] Created default admin user (admin / admin) -- change the password!"
+            )
         else:
             print("[auth] Users table OK")
 
         # Seed default video categories
         _DEFAULT_CATEGORIES = ["Oil & Gas", "Maintenance", "Installation", "Operations"]
         for cat_name in _DEFAULT_CATEGORIES:
-            if not db.query(VideoCategory).filter(VideoCategory.name == cat_name).first():
+            if (
+                not db.query(VideoCategory)
+                .filter(VideoCategory.name == cat_name)
+                .first()
+            ):
                 db.add(VideoCategory(name=cat_name))
         db.commit()
-        print(f"[categories] {db.query(VideoCategory).count()} video categories available")
+        print(
+            f"[categories] {db.query(VideoCategory).count()} video categories available"
+        )
     finally:
         db.close()
 
@@ -299,6 +331,7 @@ async def startup_event():
         from search.reranker import get_reranker
         from llm.query_parser import get_query_parser
         from embeddings.vision_embeddings import get_vision_embedding_generator
+
         get_reranker(enabled=True)
         get_query_parser(enabled=True)
         get_vision_embedding_generator()
@@ -341,9 +374,7 @@ def get_mm_search_engine(db: Session = Depends(get_db)):
         if _search_engine is None:
             _search_engine = SemanticSearchEngine(db)
         print("Initializing Multi-Modal Search Engine (this may take a moment)...")
-        _mm_search_engine = MultiModalSearchEngine(
-            db=db, text_search=_search_engine
-        )
+        _mm_search_engine = MultiModalSearchEngine(db=db, text_search=_search_engine)
     else:
         _mm_search_engine.update_db(db)
     return _mm_search_engine
@@ -363,9 +394,11 @@ async def health_check():
 #  AUTH ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════
 
+
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
+
 
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=100)
@@ -373,10 +406,12 @@ class RegisterRequest(BaseModel):
     role: str = Field("viewer", pattern="^(admin|viewer)$")
     categories: List[str] = Field(default_factory=list)
 
+
 class UpdateUserRequest(BaseModel):
     role: Optional[str] = Field(None, pattern="^(admin|viewer)$")
     categories: Optional[List[str]] = None
     password: Optional[str] = Field(None, min_length=4)
+
 
 class UserInfoResponse(BaseModel):
     id: int
@@ -416,7 +451,9 @@ async def auth_me(user: User = Depends(get_current_user)):
 
 
 @app.get("/auth/categories")
-async def list_all_categories(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def list_all_categories(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
     """Return categories visible to the current user (admins see all, viewers see only allowed)."""
     # Only DB-backed categories (managed via the admin Category dropdown)
     db_cats = db.query(VideoCategory.name).order_by(VideoCategory.name).all()
@@ -429,9 +466,11 @@ async def list_all_categories(user: User = Depends(get_current_user), db: Sessio
 
 
 @app.get("/auth/sites")
-async def list_all_sites(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def list_all_sites(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
     """Return distinct non-null video labels (sites) visible to the current user."""
-    q_videos = db.query(Video).filter(Video.label.isnot(None), Video.label != '')
+    q_videos = db.query(Video).filter(Video.label.isnot(None), Video.label != "")
     acl_filenames = _get_allowed_filenames(user, db)
     videos = q_videos.all()
     if acl_filenames is not None:
@@ -504,8 +543,11 @@ async def translate_text(request: Request):
 
 # ── Admin: user management ────────────────────────────────────────────────
 
+
 @app.get("/admin/users", response_model=List[UserInfoResponse])
-async def list_users(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+async def list_users(
+    admin: User = Depends(require_admin), db: Session = Depends(get_db)
+):
     """List all users (admin only)."""
     users = db.query(User).order_by(User.id).all()
     return [
@@ -564,7 +606,9 @@ async def update_user(
         target.password_hash = hash_password(req.password)
     if req.categories is not None:
         # Replace category list
-        db.query(UserCategoryAccess).filter(UserCategoryAccess.user_id == user_id).delete()
+        db.query(UserCategoryAccess).filter(
+            UserCategoryAccess.user_id == user_id
+        ).delete()
         for cat in req.categories:
             db.add(UserCategoryAccess(user_id=user_id, category=cat))
     db.commit()
@@ -597,43 +641,143 @@ async def delete_user(
 # ── Admin: video upload, categories, ground truth, pipeline config ─────
 
 # Allowed video extensions for upload
-_ALLOWED_VIDEO_EXT = {".mp4", ".avi", ".mkv", ".mov", ".webm", ".flv", ".wmv", ".ts", ".m2ts"}
+_ALLOWED_VIDEO_EXT = {
+    ".mp4",
+    ".avi",
+    ".mkv",
+    ".mov",
+    ".webm",
+    ".flv",
+    ".wmv",
+    ".ts",
+    ".m2ts",
+}
 
 # Available pipeline models (used for frontend dropdowns)
 TRANSCRIPTION_MODELS = [
-    {"id": "whisper-tiny",        "label": "Whisper Tiny",               "backend": "whisper",         "variant": {"name": "tiny"}},
-    {"id": "whisper-base",        "label": "Whisper Base",               "backend": "whisper",         "variant": {"name": "base"}},
-    {"id": "whisper-small",       "label": "Whisper Small",              "backend": "whisper",         "variant": {"name": "small"}},
-    {"id": "whisper-medium",      "label": "Whisper Medium",             "backend": "whisper",         "variant": {"name": "medium"}},
-    {"id": "whisper-large",       "label": "Whisper Large",              "backend": "whisper",         "variant": {"name": "large"}},
-    {"id": "whisperx-base",       "label": "WhisperX Base",              "backend": "whisperx",        "variant": {"name": "base"}},
-    {"id": "whisperx-large",      "label": "WhisperX Large",             "backend": "whisperx",        "variant": {"name": "large"}},
-    {"id": "distil-whisper",      "label": "Distil-Whisper Large v3",    "backend": "distil-whisper",  "variant": {}},
-    {"id": "vosk-en",             "label": "Vosk English",               "backend": "vosk",            "variant": {}},
-    {"id": "canary-1b",           "label": "NVIDIA Canary 1B",           "backend": "canary",          "variant": {}},
-    {"id": "parakeet-ctc-1.1b",   "label": "NVIDIA Parakeet CTC 1.1B",  "backend": "parakeet",        "variant": {"name": "parakeet-ctc-1.1b"}},
-    {"id": "parakeet-ctc-0.6b",   "label": "NVIDIA Parakeet CTC 0.6B",  "backend": "parakeet",        "variant": {"name": "parakeet-ctc-0.6b"}},
-    {"id": "google-medasr",       "label": "Google MedASR",              "backend": "medasr",          "variant": {}},
-    {"id": "speecht5-asr",        "label": "Microsoft SpeechT5 ASR",     "backend": "speecht5",        "variant": {}},
-    {"id": "wav2vec2",            "label": "Facebook Wav2Vec2",          "backend": "wav2vec",         "variant": {}},
-    {"id": "qwen3-asr-1.7b",     "label": "Qwen3 ASR 1.7B",            "backend": "qwen",            "variant": {"name": "qwen3-asr-1.7b"}},
-    {"id": "qwen3-asr-0.6b",     "label": "Qwen3 ASR 0.6B",            "backend": "qwen",            "variant": {"name": "qwen3-asr-0.6b"}},
-    {"id": "vibevoice",           "label": "Microsoft VibeVoice ASR",    "backend": "vibevoice",       "variant": {}},
-    {"id": "voxtral-mini",        "label": "Mistral Voxtral Mini 4B",   "backend": "voxtral",         "variant": {}},
+    {
+        "id": "whisper-tiny",
+        "label": "Whisper Tiny",
+        "backend": "whisper",
+        "variant": {"name": "tiny"},
+    },
+    {
+        "id": "whisper-base",
+        "label": "Whisper Base",
+        "backend": "whisper",
+        "variant": {"name": "base"},
+    },
+    {
+        "id": "whisper-small",
+        "label": "Whisper Small",
+        "backend": "whisper",
+        "variant": {"name": "small"},
+    },
+    {
+        "id": "whisper-medium",
+        "label": "Whisper Medium",
+        "backend": "whisper",
+        "variant": {"name": "medium"},
+    },
+    {
+        "id": "whisper-large",
+        "label": "Whisper Large",
+        "backend": "whisper",
+        "variant": {"name": "large"},
+    },
+    {
+        "id": "whisperx-base",
+        "label": "WhisperX Base",
+        "backend": "whisperx",
+        "variant": {"name": "base"},
+    },
+    {
+        "id": "whisperx-large",
+        "label": "WhisperX Large",
+        "backend": "whisperx",
+        "variant": {"name": "large"},
+    },
+    {
+        "id": "distil-whisper",
+        "label": "Distil-Whisper Large v3",
+        "backend": "distil-whisper",
+        "variant": {},
+    },
+    {"id": "vosk-en", "label": "Vosk English", "backend": "vosk", "variant": {}},
+    {
+        "id": "canary-1b",
+        "label": "NVIDIA Canary 1B",
+        "backend": "canary",
+        "variant": {},
+    },
+    {
+        "id": "parakeet-ctc-1.1b",
+        "label": "NVIDIA Parakeet CTC 1.1B",
+        "backend": "parakeet",
+        "variant": {"name": "parakeet-ctc-1.1b"},
+    },
+    {
+        "id": "parakeet-ctc-0.6b",
+        "label": "NVIDIA Parakeet CTC 0.6B",
+        "backend": "parakeet",
+        "variant": {"name": "parakeet-ctc-0.6b"},
+    },
+    {
+        "id": "google-medasr",
+        "label": "Google MedASR",
+        "backend": "medasr",
+        "variant": {},
+    },
+    {
+        "id": "speecht5-asr",
+        "label": "Microsoft SpeechT5 ASR",
+        "backend": "speecht5",
+        "variant": {},
+    },
+    {
+        "id": "wav2vec2",
+        "label": "Facebook Wav2Vec2",
+        "backend": "wav2vec",
+        "variant": {},
+    },
+    {
+        "id": "qwen3-asr-1.7b",
+        "label": "Qwen3 ASR 1.7B",
+        "backend": "qwen",
+        "variant": {"name": "qwen3-asr-1.7b"},
+    },
+    {
+        "id": "qwen3-asr-0.6b",
+        "label": "Qwen3 ASR 0.6B",
+        "backend": "qwen",
+        "variant": {"name": "qwen3-asr-0.6b"},
+    },
+    {
+        "id": "vibevoice",
+        "label": "Microsoft VibeVoice ASR",
+        "backend": "vibevoice",
+        "variant": {},
+    },
+    {
+        "id": "voxtral-mini",
+        "label": "Mistral Voxtral Mini 4B",
+        "backend": "voxtral",
+        "variant": {},
+    },
 ]
 
 SCENE_DETECTION_MODELS = [
-    {"id": "pyscenedetect",  "label": "PySceneDetect (ContentDetector)"},
-    {"id": "transnetv2",     "label": "TransNetV2 (Shot Boundary)"},
+    {"id": "pyscenedetect", "label": "PySceneDetect (ContentDetector)"},
+    {"id": "transnetv2", "label": "TransNetV2 (Shot Boundary)"},
 ]
 
 EMBEDDING_MODELS = [
-    {"id": "bge-m3",                "label": "BAAI/bge-m3 (1024-dim)"},
-    {"id": "qwen3-embedding-0.6b",  "label": "Qwen3-Embedding-0.6B"},
+    {"id": "bge-m3", "label": "BAAI/bge-m3 (1024-dim)"},
+    {"id": "qwen3-embedding-0.6b", "label": "Qwen3-Embedding-0.6B"},
 ]
 
 VISION_MODELS = [
-    {"id": "siglip-base",  "label": "google/siglip-base-patch16-224"},
+    {"id": "siglip-base", "label": "google/siglip-base-patch16-224"},
     {"id": "clip-vit-b32", "label": "CLIP ViT-B/32 (OpenAI)"},
 ]
 
@@ -670,14 +814,18 @@ async def create_category(
 
 
 @app.get("/admin/video-categories")
-async def list_video_categories(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+async def list_video_categories(
+    admin: User = Depends(require_admin), db: Session = Depends(get_db)
+):
     """List all video categories."""
     cats = db.query(VideoCategory).order_by(VideoCategory.name).all()
     return [{"id": c.id, "name": c.name} for c in cats]
 
 
 @app.delete("/admin/video-categories/{cat_id}")
-async def delete_video_category(cat_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+async def delete_video_category(
+    cat_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)
+):
     """Delete a video category. Videos in this category will have category_id set to NULL."""
     cat = db.query(VideoCategory).filter(VideoCategory.id == cat_id).first()
     if not cat:
@@ -709,7 +857,11 @@ async def update_video_metadata(
         if req.category_id == 0:
             video.category_id = None
         else:
-            cat = db.query(VideoCategory).filter(VideoCategory.id == req.category_id).first()
+            cat = (
+                db.query(VideoCategory)
+                .filter(VideoCategory.id == req.category_id)
+                .first()
+            )
             if not cat:
                 raise HTTPException(status_code=404, detail="Category not found")
             video.category_id = cat.id
@@ -747,13 +899,16 @@ async def upload_video(
 
     # Sanitise filename: keep only safe characters
     import re as _re
-    safe_name = _re.sub(r'[^\w\s\-\.\(\)]', '', file.filename)
+
+    safe_name = _re.sub(r"[^\w\s\-\.\(\)]", "", file.filename)
     if not safe_name:
         safe_name = f"upload_{int(time.time())}{ext}"
 
     dest = videos_dir / safe_name
     if dest.exists():
-        raise HTTPException(status_code=409, detail=f"File '{safe_name}' already exists")
+        raise HTTPException(
+            status_code=409, detail=f"File '{safe_name}' already exists"
+        )
 
     # Stream file to disk (avoid loading entire file into memory)
     total = 0
@@ -787,7 +942,8 @@ async def upload_ground_truth(
     gt_dir.mkdir(exist_ok=True)
 
     import re as _re
-    safe_name = _re.sub(r'[^\w\s\-\.\(\)]', '', file.filename)
+
+    safe_name = _re.sub(r"[^\w\s\-\.\(\)]", "", file.filename)
     if not safe_name:
         safe_name = f"gt_{int(time.time())}.json"
 
@@ -848,7 +1004,9 @@ async def run_pipeline(
     model_id = req.get("transcription_model", "whisper-base")
     model_entry = next((m for m in TRANSCRIPTION_MODELS if m["id"] == model_id), None)
     if not model_entry:
-        raise HTTPException(status_code=400, detail=f"Unknown transcription model: {model_id}")
+        raise HTTPException(
+            status_code=400, detail=f"Unknown transcription model: {model_id}"
+        )
 
     scene_threshold = float(req.get("scene_threshold", 30.0))
     device = req.get("device", "auto")
@@ -858,6 +1016,7 @@ async def run_pipeline(
 
     def _run():
         from basic_pipeline import BasicVideoPipeline
+
         pipe = BasicVideoPipeline(
             backend=model_entry["backend"],
             model_variant=model_entry["variant"] or None,
@@ -875,14 +1034,21 @@ async def run_pipeline(
         "filename": filename,
         "model": model_entry["label"],
         "result_summary": {
-            "segments": result.get("num_segments", 0) if isinstance(result, dict) else 0,
+            "segments": result.get("num_segments", 0)
+            if isinstance(result, dict)
+            else 0,
             "scenes": result.get("num_scenes", 0) if isinstance(result, dict) else 0,
         },
     }
 
 
 @app.get("/video/stream/{video_id}")
-async def stream_video(video_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def stream_video(
+    video_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """
     Stream video file with support for range requests (seeking).
 
@@ -997,7 +1163,9 @@ async def stream_video(video_id: int, request: Request, db: Session = Depends(ge
 
 
 @app.get("/video/transcode/{video_id}")
-async def transcode_video(video_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def transcode_video(
+    video_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     """
     Transcode a video to browser-compatible MP4 using FFmpeg.
 
@@ -1089,7 +1257,9 @@ def format_vtt_timestamp(seconds: float) -> str:
 
 
 @app.get("/video/subtitles/{video_id}", response_class=PlainTextResponse)
-async def get_video_subtitles(video_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def get_video_subtitles(
+    video_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     """
     Serve video subtitles in WebVTT format directly from the database.
     """
@@ -1123,7 +1293,9 @@ async def get_video_subtitles(video_id: int, db: Session = Depends(get_db), user
 
 
 @app.get("/videos", response_model=List[VideoInfo])
-async def list_videos(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def list_videos(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     """
     List videos the current user is allowed to see.
     Admins see all; viewers see only their assigned categories.
@@ -1131,7 +1303,9 @@ async def list_videos(db: Session = Depends(get_db), user: User = Depends(get_cu
     all_videos = db.query(Video).all()
     allowed_cats = get_user_allowed_categories(user)
     if allowed_cats is not None:
-        all_videos = [v for v in all_videos if get_video_category(v.filename) in allowed_cats]
+        all_videos = [
+            v for v in all_videos if get_video_category(v.filename) in allowed_cats
+        ]
     return [
         VideoInfo(
             id=v.id,
@@ -1148,13 +1322,21 @@ async def list_videos(db: Session = Depends(get_db), user: User = Depends(get_cu
 
 
 @app.post("/qa/ask", response_model=QA_Response)
-async def ask_video_question(request: QARequest, qa_system=Depends(get_video_qa), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def ask_video_question(
+    request: QARequest,
+    qa_system=Depends(get_video_qa),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """
     Ask a natural language question about the available videos.
     Uses RAG (Retrieval-Augmented Generation) to answer based on transcripts and visual semantics.
     """
     try:
-        result = qa_system.ask(
+        # Run the blocking model inference in a thread pool to avoid
+        # freezing the event loop (which blocks all other requests).
+        result = await asyncio.to_thread(
+            qa_system.ask,
             question=request.question,
             video_filter=request.video_filter,
             top_k=request.top_k,
@@ -1163,7 +1345,8 @@ async def ask_video_question(request: QARequest, qa_system=Depends(get_video_qa)
         allowed_filenames = _get_allowed_filenames(user, db)
         if allowed_filenames is not None and result.get("citations"):
             result["citations"] = [
-                c for c in result["citations"]
+                c
+                for c in result["citations"]
                 if c.get("video_filename") in allowed_filenames
             ]
         return result
@@ -1218,9 +1401,15 @@ async def quick_search(
     q: str = Query(..., description="Search query", min_length=1),
     limit: int = Query(10, description="Number of results", ge=1, le=50),
     video: Optional[str] = Query(None, description="Filter by video filename"),
-    category: Optional[List[str]] = Query(None, description="Filter by video category name(s)"),
-    label: Optional[str] = Query(None, description="Filter by video label (substring match)"),
-    site: Optional[List[str]] = Query(None, description="Filter by site name (exact label match)"),
+    category: Optional[List[str]] = Query(
+        None, description="Filter by video category name(s)"
+    ),
+    label: Optional[str] = Query(
+        None, description="Filter by video label (substring match)"
+    ),
+    site: Optional[List[str]] = Query(
+        None, description="Filter by site name (exact label match)"
+    ),
     facet: str = Query(
         "auto",
         description="Optional meaning facet: auto, oil_gas, tools, analytics",
@@ -1246,7 +1435,9 @@ async def quick_search(
     if cats or label or sites:
         q_videos = db.query(Video)
         if cats:
-            q_videos = q_videos.join(VideoCategory, Video.category_id == VideoCategory.id).filter(VideoCategory.name.in_(cats))
+            q_videos = q_videos.join(
+                VideoCategory, Video.category_id == VideoCategory.id
+            ).filter(VideoCategory.name.in_(cats))
         if label:
             q_videos = q_videos.filter(Video.label.ilike(f"%{label}%"))
         if sites:
@@ -1263,12 +1454,17 @@ async def quick_search(
 
     try:
         fallback_data = search_engine.search_with_fallback(
-            query=q, top_k=limit * 3 if allowed_filenames else limit, video_filter=video, facet=facet or "auto"
+            query=q,
+            top_k=limit * 3 if allowed_filenames else limit,
+            video_filter=video,
+            facet=facet or "auto",
         )
 
         results = fallback_data["results"]
         if allowed_filenames is not None:
-            results = [r for r in results if r.video_filename in allowed_filenames][:limit]
+            results = [r for r in results if r.video_filename in allowed_filenames][
+                :limit
+            ]
         metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
 
@@ -1306,7 +1502,9 @@ async def quick_search(
 
 @app.get("/search/browse")
 async def browse_by_category(
-    category: Optional[List[str]] = Query(None, description="Category name(s) to browse"),
+    category: Optional[List[str]] = Query(
+        None, description="Category name(s) to browse"
+    ),
     site: Optional[List[str]] = Query(None, description="Site/label name(s) to browse"),
     limit: int = Query(10, description="Max videos to return", ge=1, le=50),
     db: Session = Depends(get_db),
@@ -1321,12 +1519,16 @@ async def browse_by_category(
     cats = [c for c in (category or []) if c]
     sites = [s for s in (site or []) if s]
     if not cats and not sites:
-        raise HTTPException(status_code=400, detail="At least one category or site is required")
+        raise HTTPException(
+            status_code=400, detail="At least one category or site is required"
+        )
 
     # Build query based on category and/or site filters
     q_videos = db.query(Video)
     if cats:
-        q_videos = q_videos.join(VideoCategory, Video.category_id == VideoCategory.id).filter(VideoCategory.name.in_(cats))
+        q_videos = q_videos.join(
+            VideoCategory, Video.category_id == VideoCategory.id
+        ).filter(VideoCategory.name.in_(cats))
     if sites:
         q_videos = q_videos.filter(Video.label.in_(sites))
 
@@ -1362,18 +1564,20 @@ async def browse_by_category(
             }
             occurrences.append(rd)
             result_dicts.append(rd)
-        grouped_results.append({
-            "video_id": v.id,
-            "video_filename": v.filename,
-            "occurrences": occurrences,
-        })
+        grouped_results.append(
+            {
+                "video_id": v.id,
+                "video_filename": v.filename,
+                "occurrences": occurrences,
+            }
+        )
 
     search_time = time.time() - start_time
     browse_parts = []
     if cats:
-        browse_parts.append(', '.join(cats))
+        browse_parts.append(", ".join(cats))
     if sites:
-        browse_parts.append(', '.join(sites))
+        browse_parts.append(", ".join(sites))
     return {
         "query": f"[Browse: {' / '.join(browse_parts)}]",
         "results_count": len(result_dicts),
@@ -1419,7 +1623,9 @@ async def exact_search(
 
 @app.post("/search/multimodal", response_model=SearchResponse)
 async def multimodal_search(
-    request: MultiModalSearchRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user),
+    request: MultiModalSearchRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Multi-modal search endpoint combining text and vision.
@@ -1458,7 +1664,9 @@ async def multimodal_search(
         if _mm_search_engine is None:
             if _search_engine is None:
                 _search_engine = SemanticSearchEngine(db)
-            _mm_search_engine = MultiModalSearchEngine(db=db, text_search=_search_engine)
+            _mm_search_engine = MultiModalSearchEngine(
+                db=db, text_search=_search_engine
+            )
         _mm_search_engine.update_db(db)
         _mm_search_engine.text_weight = text_weight
         _mm_search_engine.vision_weight = vision_weight
@@ -1503,7 +1711,9 @@ async def multimodal_search(
             allowed_filenames = _get_allowed_filenames(user, db)
             results = _search_engine.search(
                 query=request.query,
-                top_k=request.top_k * 3 if allowed_filenames is not None else request.top_k,
+                top_k=request.top_k * 3
+                if allowed_filenames is not None
+                else request.top_k,
                 video_filter=request.video_filter,
             )
             results = _filter_results(results, allowed_filenames, limit=request.top_k)
@@ -1536,9 +1746,15 @@ async def quick_multimodal_search(
         description="Optional meaning facet: auto, oil_gas, tools, analytics",
     ),
     video: Optional[str] = Query(None, description="Filter by video filename"),
-    category: Optional[List[str]] = Query(None, description="Filter by video category name(s)"),
-    label: Optional[str] = Query(None, description="Filter by video label (substring match)"),
-    site: Optional[List[str]] = Query(None, description="Filter by site name (exact label match)"),
+    category: Optional[List[str]] = Query(
+        None, description="Filter by video category name(s)"
+    ),
+    label: Optional[str] = Query(
+        None, description="Filter by video label (substring match)"
+    ),
+    site: Optional[List[str]] = Query(
+        None, description="Filter by site name (exact label match)"
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -1565,7 +1781,9 @@ async def quick_multimodal_search(
     if cats or label or sites:
         q_videos = db.query(Video)
         if cats:
-            q_videos = q_videos.join(VideoCategory, Video.category_id == VideoCategory.id).filter(VideoCategory.name.in_(cats))
+            q_videos = q_videos.join(
+                VideoCategory, Video.category_id == VideoCategory.id
+            ).filter(VideoCategory.name.in_(cats))
         if label:
             q_videos = q_videos.filter(Video.label.ilike(f"%{label}%"))
         if sites:
@@ -1590,7 +1808,9 @@ async def quick_multimodal_search(
         if _mm_search_engine is None:
             if _search_engine is None:
                 _search_engine = SemanticSearchEngine(db)
-            _mm_search_engine = MultiModalSearchEngine(db=db, text_search=_search_engine)
+            _mm_search_engine = MultiModalSearchEngine(
+                db=db, text_search=_search_engine
+            )
         _mm_search_engine.update_db(db)
         _mm_search_engine.text_weight = text_weight
         _mm_search_engine.vision_weight = vision_weight
@@ -1606,7 +1826,9 @@ async def quick_multimodal_search(
 
         results = fallback_data["results"]
         if allowed_filenames is not None:
-            results = [r for r in results if r.video_filename in allowed_filenames][:limit]
+            results = [r for r in results if r.video_filename in allowed_filenames][
+                :limit
+            ]
         metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
 
@@ -1654,11 +1876,15 @@ async def quick_multimodal_search(
                 _search_engine = SemanticSearchEngine(db)
             _search_engine.db = db
             fallback_data = _search_engine.search_with_fallback(
-                query=q, top_k=limit * 3 if allowed_filenames else limit, video_filter=video
+                query=q,
+                top_k=limit * 3 if allowed_filenames else limit,
+                video_filter=video,
             )
             results = fallback_data["results"]
             if allowed_filenames is not None:
-                results = [r for r in results if r.video_filename in allowed_filenames][:limit]
+                results = [r for r in results if r.video_filename in allowed_filenames][
+                    :limit
+                ]
             metadata = fallback_data["search_metadata"]
             search_time = time.time() - start_time
 
@@ -1667,7 +1893,11 @@ async def quick_multimodal_search(
             for rd in result_dicts:
                 vid = rd["video_id"]
                 if vid not in grouped_by_video:
-                    grouped_by_video[vid] = {"video_id": vid, "video_filename": rd["video_filename"], "occurrences": []}
+                    grouped_by_video[vid] = {
+                        "video_id": vid,
+                        "video_filename": rd["video_filename"],
+                        "occurrences": [],
+                    }
                 grouped_by_video[vid]["occurrences"].append(rd)
 
             return {
@@ -2005,7 +2235,9 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = True
     max_tokens: int = Field(512, ge=1, le=2048)
     temperature: float = Field(0.1, ge=0.0, le=2.0)
-    language: Optional[str] = None  # e.g. "Norwegian", "English", or None for auto-detect
+    language: Optional[str] = (
+        None  # e.g. "Norwegian", "English", or None for auto-detect
+    )
 
 
 @app.get("/v1/models")
@@ -2126,7 +2358,9 @@ async def chat_completions(
 
 
 @app.get("/video/thumbnail/{video_id}")
-async def get_video_thumbnail(video_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def get_video_thumbnail(
+    video_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     """Return the first keyframe of a video as a thumbnail image."""
     from database.models import Scene as SceneModel
     from pathlib import Path as FilePath
@@ -2164,7 +2398,10 @@ async def get_video_thumbnail(video_id: int, db: Session = Depends(get_db), user
 
 
 @app.get("/keyframe")
-async def serve_keyframe(path: str = Query(..., description="Path to keyframe image"), user: User = Depends(get_current_user)):
+async def serve_keyframe(
+    path: str = Query(..., description="Path to keyframe image"),
+    user: User = Depends(get_current_user),
+):
     """Serve keyframe images for thumbnails in search results."""
     from pathlib import Path as FilePath
 
@@ -2180,10 +2417,6 @@ async def serve_keyframe(path: str = Query(..., description="Path to keyframe im
         str(keyframe_path),
         media_type=f"image/{keyframe_path.suffix.lstrip('.').replace('jpg', 'jpeg')}",
     )
-
-
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 
 @app.get("/api-info")
@@ -2203,7 +2436,9 @@ async def api_info():
 
 
 @app.get("/analytics")
-async def search_analytics(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def search_analytics(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     """
     Search analytics dashboard.
     Returns stats: total queries, type breakdown, top queries, zero-result queries, daily trend.
@@ -2436,7 +2671,9 @@ async def enrich_captions(
 
 
 @app.get("/admin/caption-stats")
-async def caption_stats(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def caption_stats(
+    db: Session = Depends(get_db), admin: User = Depends(require_admin)
+):
     """Returns how many scenes have captions vs still need enrichment."""
     from database.models import Scene
 

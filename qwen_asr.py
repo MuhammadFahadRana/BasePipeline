@@ -132,7 +132,8 @@ class QwenTranscriber:
 
         # Device selection
         if device == "auto":
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            from transcriber_utils import get_device
+            self.device = get_device()
         else:
             self.device = device
 
@@ -176,11 +177,21 @@ class QwenTranscriber:
                     device_map="cuda:0" if self.device == "cuda" else "cpu",
                     max_new_tokens=1024,
                 )
-                self.processor = None  # Not used for Qwen3-ASR
+                self.processor = None
                 print(f"Qwen3-ASR model loaded successfully\n")
             except Exception as e:
-                print(f"Error loading Qwen3-ASR model: {e}")
-                raise
+                if self.device == "cuda":
+                    print(f"  Warning: Qwen3-ASR failure on CUDA: {e}. Falling back to CPU.")
+                    self.device = "cpu"
+                    self.model = Qwen3ASRModel.from_pretrained(
+                        self.model_id,
+                        dtype=torch.float32,
+                        device_map="cpu",
+                        max_new_tokens=1024,
+                    )
+                    self.processor = None
+                else:
+                    raise e
             return
 
         # --- Qwen2-Audio / legacy Qwen-Audio-Chat ---
@@ -190,26 +201,34 @@ class QwenTranscriber:
             self.processor = AutoProcessor.from_pretrained(self.model_id)
 
             if "qwen2-audio" in self.model_id.lower():
-                self.model = Qwen2AudioForConditionalGeneration.from_pretrained(
-                    self.model_id,
-                    torch_dtype=dtype,
-                    device_map="auto" if self.device == "cuda" else None,
-                    trust_remote_code=True,
-                )
+                loader = Qwen2AudioForConditionalGeneration
             else:
-                # Fallback for older Qwen-Audio-Chat or custom models
-                self.model = AutoModelForCausalLM.from_pretrained(
+                loader = AutoModelForCausalLM
+
+            try:
+                self.model = loader.from_pretrained(
                     self.model_id,
                     torch_dtype=dtype,
                     device_map="auto" if self.device == "cuda" else None,
                     trust_remote_code=True,
                 )
+            except Exception as e:
+                if self.device == "cuda":
+                    print(f"  Warning: Qwen model failure on CUDA: {e}. Falling back to CPU.")
+                    self.device = "cpu"
+                    self.model = loader.from_pretrained(
+                        self.model_id,
+                        torch_dtype=torch.float32,
+                        device_map=None,
+                        trust_remote_code=True,
+                    )
+                else:
+                    raise e
 
             if self.device == "cpu":
                 self.model = self.model.to("cpu")
 
             self.model.eval()
-
             print(f"Model loaded successfully\n")
 
         except Exception as e:

@@ -28,23 +28,13 @@ from database.models import User, UserCategoryAccess
 # Configuration
 # ---------------------------------------------------------------------------
 def _get_stable_jwt_secret() -> str:
-    """Return a stable JWT secret that persists across server restarts.
+    """Return a JWT secret that persists only for the lifetime of the server process.
 
-    Priority: JWT_SECRET env-var → .jwt_secret file → generate & save."""
+    This ensures that token invalidation happens automatically on server restart."""
     env = os.getenv("JWT_SECRET")
     if env:
         return env
-    secret_path = os.path.join(os.path.dirname(__file__), "..", ".jwt_secret")
-    secret_path = os.path.normpath(secret_path)
-    try:
-        with open(secret_path, "r") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        pass
-    new_secret = secrets.token_hex(32)
-    with open(secret_path, "w") as f:
-        f.write(new_secret)
-    return new_secret
+    return secrets.token_hex(32)
 
 JWT_SECRET = _get_stable_jwt_secret()
 JWT_ALGORITHM = "HS256"

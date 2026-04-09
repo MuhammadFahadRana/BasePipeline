@@ -131,7 +131,7 @@ const ChatAssistant = (() => {
 
         try {
             const headers = { 'Content-Type': 'application/json' };
-            const token = localStorage.getItem('atlas_token');
+            const token = sessionStorage.getItem('atlas_token');
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
             const response = await fetch(API_URL, {

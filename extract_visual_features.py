@@ -45,7 +45,8 @@ class VisualFeatureExtractor:
             trust_remote_code: Whether to trust remote code from HF
         """
         if device == "auto":
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            from transcriber_utils import get_device
+            self.device = get_device()
         else:
             self.device = device
             
@@ -93,10 +94,28 @@ class VisualFeatureExtractor:
         elif self.device == "cuda":
             model_kwargs["device_map"] = "auto"
             
-        self.model = Qwen2VLForConditionalGeneration.from_pretrained(
-            self.model_name,
-            **model_kwargs
-        )
+        try:
+            self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+                self.model_name,
+                **model_kwargs
+            )
+        except Exception as e:
+            if self.device == "cuda":
+                print(f"  Warning: Loading {self.model_name} on CUDA failed: {e}")
+                print("  Retrying on CPU...")
+                self.device = "cpu"
+                model_kwargs["torch_dtype"] = torch.float32
+                if "device_map" in model_kwargs:
+                    del model_kwargs["device_map"]
+                if "quantization_config" in model_kwargs:
+                    del model_kwargs["quantization_config"]
+                
+                self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+                    self.model_name,
+                    **model_kwargs
+                )
+            else:
+                raise e
         
         if self.device == "cpu":
             self.model = self.model.to("cpu")
