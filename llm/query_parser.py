@@ -54,11 +54,15 @@ class QueryParser:
         self.model_name = model_name
         self.max_cache_size = max_cache_size
 
-        print(f"Loading Query Parser model: {model_name}")
-        print(f"Device: {device}")
+        device_tag = "[GPU]" if "cuda" in self.device else "[CPU]"
+        print(f"{device_tag} Loading Query Parser model: {model_name} on {self.device}")
 
         try:
             self.model, self.tokenizer = get_shared_llm()
+            try:
+                self.device = str(next(self.model.parameters()).device)
+            except StopIteration:
+                pass
             self._loaded = True
             print(f"[OK] Query Parser using shared model")
         except Exception as e:
@@ -85,7 +89,10 @@ class QueryParser:
         
         # Generate
         try:
-            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+            generation_device = next(self.model.parameters()).device
+            inputs = self.tokenizer(prompt, return_tensors="pt")
+            prompt_token_count = inputs["input_ids"].shape[1]
+            inputs = {k: v.to(generation_device) for k, v in inputs.items()}
             
             with torch.no_grad():
                 outputs = self.model.generate(
@@ -97,7 +104,9 @@ class QueryParser:
                     tokenizer=self.tokenizer
                 )
             
-            output_text = self.tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+            output_text = self.tokenizer.decode(
+                outputs[0][prompt_token_count:], skip_special_tokens=True
+            )
             parsed_json = self._extract_json(output_text)
             
             result = ParsedQuery(

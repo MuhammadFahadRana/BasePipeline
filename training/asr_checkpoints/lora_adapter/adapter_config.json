@@ -3,7 +3,7 @@
   "alpha_pattern": {},
   "arrow_config": null,
   "auto_mapping": null,
-  "base_model_name_or_path": "openai/whisper-large-v3",
+  "base_model_name_or_path": "openai/whisper-base",
   "bias": "none",
   "corda_config": null,
   "ensure_weight_tying": false,
@@ -29,8 +29,8 @@
   "rank_pattern": {},
   "revision": null,
   "target_modules": [
-    "q_proj",
-    "v_proj"
+    "v_proj",
+    "q_proj"
   ],
   "target_parameters": null,
   "task_type": "SEQ_2_SEQ_LM",

@@ -31,7 +31,8 @@ class LLMManager:
         if self._loaded:
             return
 
-        print(f"[LLMManager] Loading shared model: {self.model_name} on {self.device}")
+        device_tag = "[GPU]" if "cuda" in self.device else "[CPU]"
+        print(f"{device_tag} Loading shared model: {self.model_name} on {self.device}")
         
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(

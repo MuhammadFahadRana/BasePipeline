@@ -458,7 +458,7 @@ class SemanticSearchEngine:
         # Parallel execution
         parallel_enabled: bool = True,
         # Reranker
-        reranker_enabled: bool = True,
+        reranker_enabled: bool = False,
     ):
         """
         Initialize search engine.
@@ -497,6 +497,33 @@ class SemanticSearchEngine:
             "db_hits": 0,
             "avg_latency_ms": 0.0,
         }
+
+    def _apply_reranking(
+        self,
+        query: str,
+        results: List["SearchResult"],
+        top_k: int,
+        deep_search: bool = False,
+    ) -> List["SearchResult"]:
+        """Apply reranking only when explicitly requested or globally enabled."""
+        if not results or len(results) <= 1:
+            return results
+
+        if not (deep_search or self.reranker_enabled):
+            return results
+
+        if self._reranker is None:
+            self._reranker = get_reranker(enabled=True)
+        if not self._reranker:
+            return results
+
+        rerank_count = min(len(results), max(top_k, 1) * 3)
+        reranked_head = self._reranker.rerank(
+            query, results[:rerank_count], top_k=rerank_count
+        )
+        reranked_results = list(reranked_head) + list(results[rerank_count:])
+        reranked_results.sort(key=lambda x: x.score, reverse=True)
+        return reranked_results
 
     def _build_vocabulary(self) -> Set[str]:
         """Build vocabulary from transcript segments for 'did you mean?' suggestions."""
@@ -606,6 +633,7 @@ class SemanticSearchEngine:
         video_filter: Optional[str] = None,
         log_query: bool = True,
         use_cache: bool = True,
+        deep_search: bool = False,
     ) -> List[SearchResult]:
         """
         Hybrid search combining semantic similarity and fuzzy text matching.
@@ -620,6 +648,7 @@ class SemanticSearchEngine:
             video_filter: Optional video filename to filter results
             log_query: Log query to database for analytics
             use_cache: Use cached results if available (OPTIMIZATION #5)
+            deep_search: If True, uses the expensive Cross-Encoder reranker
 
         Returns:
             List of SearchResult objects sorted by score
@@ -635,6 +664,7 @@ class SemanticSearchEngine:
             text_weight=text_weight,
             min_score=min_score,
             video_filter=video_filter,
+            deep_search=deep_search,
         )
 
         if self.cache_enabled and use_cache:
@@ -703,17 +733,13 @@ class SemanticSearchEngine:
         # Sort by score first
         combined_results.sort(key=lambda x: x.score, reverse=True)
 
-        # ── Cross-encoder reranking (biggest quality jump) ──
-        if self.reranker_enabled:
-            if self._reranker is None:
-                self._reranker = get_reranker(enabled=True)
-            if self._reranker:
-                # Rerank top candidates (limit to avoid slow scoring)
-                rerank_count = min(len(combined_results), top_k * 3)
-                combined_results[:rerank_count] = self._reranker.rerank(
-                    query, combined_results[:rerank_count], top_k=rerank_count
-                )
-                combined_results.sort(key=lambda x: x.score, reverse=True)
+        # ── Cross-encoder reranking (explicit slow path) ──
+        combined_results = self._apply_reranking(
+            query,
+            combined_results,
+            top_k=top_k,
+            deep_search=deep_search,
+        )
 
         # ── Keyword anchoring guardrail (prevents semantic overreach) ──
         # Apply AFTER reranking so the reranker cannot re-introduce unanchored hits.
@@ -789,6 +815,7 @@ class SemanticSearchEngine:
         video_filter: Optional[str] = None,
         log_query: bool = True,
         facet: str = "auto",
+        deep_search: bool = False,
     ) -> Dict:
         """
         Tiered search with fallback strategy (Google-like behavior).
@@ -816,6 +843,15 @@ class SemanticSearchEngine:
             "facets": _facet_suggestions_for_query(query),
             "sense_suggestions": _sense_suggestions(query),
         }
+
+        def finalize_results(candidate_results: List[SearchResult]) -> List[SearchResult]:
+            final = self._apply_reranking(
+                search_query,
+                list(candidate_results or []),
+                top_k=top_k,
+                deep_search=deep_search,
+            )
+            return final[:top_k]
 
         # ── Query preprocessing: extract content keywords ──
         keywords = extract_keywords(search_query)
@@ -847,6 +883,7 @@ class SemanticSearchEngine:
                     min_score=0.18,
                     video_filter=video_filter,
                     log_query=False,  # log only once
+                    deep_search=False,
                 )
                 for r in sub_results:
                     r.facet = facet_id
@@ -858,7 +895,10 @@ class SemanticSearchEngine:
                 metadata["search_message"] = (
                     "Showing a balanced mix across meanings. Use the chips to focus."
                 )
-                return {"results": results, "search_metadata": metadata}
+                return {
+                    "results": finalize_results(results),
+                    "search_metadata": metadata,
+                }
 
         # ── Tier 1: Full query search with standard thresholds ──
         results = self.search(
@@ -867,6 +907,7 @@ class SemanticSearchEngine:
             min_score=0.20,
             video_filter=video_filter,
             log_query=log_query,
+            deep_search=False,
         )
         metadata["tiers_tried"].append("full_query")
 
@@ -883,6 +924,7 @@ class SemanticSearchEngine:
             min_score=0.10,
             video_filter=video_filter,
             log_query=False,  # Don't double-log
+            deep_search=False,
         )
         metadata["tiers_tried"].append("relaxed")
 
@@ -913,6 +955,7 @@ class SemanticSearchEngine:
                 min_score=0.15,
                 video_filter=video_filter,
                 log_query=False,
+                deep_search=False,
             )
 
             if phrase_results and phrase_results[0].score > (
@@ -942,6 +985,7 @@ class SemanticSearchEngine:
                     min_score=0.30,
                     video_filter=video_filter,
                     log_query=False,
+                    deep_search=False,
                 )
                 for r in word_results:
                     key = r.segment_id
@@ -988,7 +1032,7 @@ class SemanticSearchEngine:
                 f"Try simpler or different keywords."
             )
 
-        return {"results": results, "search_metadata": metadata}
+        return {"results": finalize_results(results), "search_metadata": metadata}
 
     def _semantic_search(
         self, query_embedding, top_k: int = 20, video_filter: Optional[str] = None

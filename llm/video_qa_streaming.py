@@ -105,10 +105,18 @@ class StreamingVideoQA(VideoQA):
         context_text = "\n\n".join(context_parts)
 
         # ── 3. Build prompt ─────────────────────────────────────────────
-        prompt = self._build_prompt(question, context_text, language=language)
+        messages = self._build_messages(question, context_text, language=language)
+        prompt = self._render_chat_prompt(messages)
 
         # ── 4. Stream generation ────────────────────────────────────────
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self.max_input_tokens,
+        )
+        generation_device = self._get_generation_device()
+        inputs = {k: v.to(generation_device) for k, v in inputs.items()}
 
         streamer = TextIteratorStreamer(
             self.tokenizer,
@@ -221,6 +229,8 @@ def get_streaming_qa(db: Session) -> StreamingVideoQA:
     global _streaming_qa
     if _streaming_qa is None:
         _streaming_qa = StreamingVideoQA(db=db)
+    else:
+        _streaming_qa.update_db(db)
     return _streaming_qa
 
 

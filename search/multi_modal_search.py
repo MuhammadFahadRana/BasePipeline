@@ -92,6 +92,7 @@ class MultiModalSearchEngine:
         top_k: int = 10,
         video_filter: Optional[str] = None,
         use_vision: bool = True,
+        deep_search: bool = False,
     ) -> List[MultiModalSearchResult]:
         """
         Perform multi-modal search.
@@ -99,18 +100,21 @@ class MultiModalSearchEngine:
         Args:
             query: Search query text
             top_k: Number of results to return
-            video_filter: Filter by specific video filename
-            use_vision: Whether to include vision similarity
+            video_filter: Optional video filename filter
+            use_vision: Whether to combine with visual search
+            deep_search: If True, uses the expensive Cross-Encoder reranker
 
         Returns:
             List of multi-modal search results ranked by combined score
         """
         # 1. Get Text Candidates
-        text_results = self.text_search.search(
-            query=query,
-            top_k=top_k * 5 if use_vision else top_k,
+        text_resp = self.text_search.search_with_fallback(
+            query,
+            top_k=top_k * 4 if use_vision else top_k,
             video_filter=video_filter,
+            deep_search=deep_search,
         )
+        text_results = text_resp["results"]
 
         if not use_vision or self.vision_weight == 0:
             return [
@@ -201,6 +205,7 @@ class MultiModalSearchEngine:
         video_filter: Optional[str] = None,
         use_llm: bool = True,
         facet: str = "auto",
+        deep_search: bool = False,
     ) -> dict:
         """
         Multi-modal search with tiered fallback strategy.
@@ -248,6 +253,7 @@ class MultiModalSearchEngine:
             top_k=top_k * 3 if vw > 0 else top_k,
             video_filter=video_filter,
             facet=facet or "auto",
+            deep_search=deep_search,
         )
 
         # Attach intent metadata

@@ -57,7 +57,7 @@ class VideoQA:
             use_device_map_auto: use HF automatic placement for larger models
         """
         self.db = db
-        self.search_engine = SemanticSearchEngine(db)
+        self.search_engine = SemanticSearchEngine(db, reranker_enabled=False)
         self.model_name = model_name
         self.max_new_tokens = max_new_tokens
         self.max_context_results = max_context_results
@@ -96,6 +96,11 @@ class VideoQA:
             f"max_input_tokens={self.max_input_tokens} | "
             f"max_context_tokens={self.max_context_tokens}"
         )
+
+    def update_db(self, db: Session) -> None:
+        """Refresh the DB session for singleton reuse across requests."""
+        self.db = db
+        self.search_engine.db = db
 
     def ask(
         self,

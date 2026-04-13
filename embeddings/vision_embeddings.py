@@ -28,8 +28,8 @@ class VisionEmbeddingGenerator:
         self.device = device
         self.model_name = model_name
 
-        print(f"Loading SigLIP model: {model_name}")
-        print(f"Device: {device}")
+        device_tag = "[GPU]" if "cuda" in self.device else "[CPU]"
+        print(f"{device_tag} Loading SigLIP vision model: {model_name} on {self.device}")
 
         self.model = AutoModel.from_pretrained(model_name).to(device)
         self.processor = AutoProcessor.from_pretrained(model_name)

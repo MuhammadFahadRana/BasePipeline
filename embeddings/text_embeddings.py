@@ -27,8 +27,8 @@ class EmbeddingGenerator:
         self.device = device
         self.model_name = model_name
 
-        print(f"Loading embedding model: {model_name}")
-        print(f"Device: {device}")
+        device_tag = "[GPU]" if "cuda" in device else "[CPU]"
+        print(f"{device_tag} Loading text embedding model: {model_name} on {device}")
 
         # Note: Qwen3-Embedding models are compatible with SentenceTransformer
         self.model = SentenceTransformer(

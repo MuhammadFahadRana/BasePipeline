@@ -26,6 +26,7 @@ function clearAuth() {
     currentUser = null;
     sessionStorage.removeItem('atlas_token');
     sessionStorage.removeItem('atlas_user');
+    resetVideoCache({ stopPolling: true });
 }
 
 function showApp() {
@@ -48,7 +49,6 @@ const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
 const clearBtn = document.getElementById('clearBtn');
 const limitSelect = document.getElementById('limitSelect');
-const searchModeSelect = document.getElementById('searchModeSelect');
 const resultsSection = document.getElementById('resultsSection');
 const resultsContainer = document.getElementById('resultsContainer');
 const resultsTitle = document.getElementById('resultsTitle');
@@ -82,6 +82,7 @@ let lastResults = []; // Store results for tab re-sorting
 let lastSearchData = null; // Store full response for re-rendering
 let currentView = 'combined'; // Current active tab view
 let currentFacet = 'auto'; // Meaning facet (auto/oil_gas/tools/analytics)
+let _videoPollTimer = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -94,7 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh button in the Videos tab
     const refreshBtn = document.getElementById('refreshVideosBtn');
     if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => loadVideos());
+        refreshBtn.addEventListener('click', () => loadVideos(true));
     }
 
     // If we already have a saved token, validate it
@@ -144,13 +145,78 @@ function attachLoginListeners() {
 }
 
 // Initialize App
+// Cached videos list — avoid redundant fetches
+let _videosLoaded = false;
+let _videosRequest = null;
+
+function resetVideoCache({ stopPolling = false } = {}) {
+    videos = [];
+    _videosLoaded = false;
+    _videosRequest = null;
+    if (stopPolling && _videoPollTimer) {
+        clearInterval(_videoPollTimer);
+        _videoPollTimer = null;
+    }
+}
+
+function updateVideoCountDisplay(count) {
+    videoCount.textContent = Number.isFinite(count) ? String(count) : '?';
+}
+
+async function fetchVideoCount() {
+    const response = await authFetch(`${API_BASE_URL}/videos/count`);
+    if (response.status === 401) { showLogin(); return null; }
+    if (!response.ok) throw new Error(`Video count failed: ${response.statusText}`);
+    const data = await response.json();
+    return Number.isFinite(data.count) ? data.count : 0;
+}
+
+async function refreshVideoCount() {
+    try {
+        const count = await fetchVideoCount();
+        if (count !== null) updateVideoCountDisplay(count);
+        return count;
+    } catch (_) {
+        updateVideoCountDisplay(NaN);
+        return null;
+    }
+}
+
+async function getVideos({ force = false } = {}) {
+    if (_videosRequest) return _videosRequest;
+    if (_videosLoaded && !force) return videos;
+
+    _videosRequest = (async () => {
+        const response = await authFetch(`${API_BASE_URL}/videos`);
+        if (response.status === 401) { showLogin(); return []; }
+        if (!response.ok) {
+            throw new Error(`Failed to load videos: ${response.statusText}`);
+        }
+
+        const freshVideos = await response.json();
+        videos = freshVideos;
+        _videosLoaded = true;
+        updateVideoCountDisplay(videos.length);
+        return videos;
+    })();
+
+    try {
+        return await _videosRequest;
+    } finally {
+        _videosRequest = null;
+    }
+}
+
 async function initializeApp() {
     await checkHealth();
-    await loadVideos();
+    await refreshVideoCount();
+    // Only fetch the video count on startup — do NOT load full grid here.
+    // The full grid is loaded lazily when the user clicks the Videos tab.
     await populateSearchCategoryFilter();
     await populateSearchSiteFilter();
-    // Poll for new videos every 30 seconds to keep the count and grid fresh
-    setInterval(pollVideoCount, 30000);
+    // Poll for new videos every 30 seconds to keep the count fresh
+    if (_videoPollTimer) clearInterval(_videoPollTimer);
+    _videoPollTimer = setInterval(pollVideoCount, 30000);
 }
 
 async function populateSearchCategoryFilter() {
@@ -198,13 +264,13 @@ async function populateSearchSiteFilter() {
 // Poll video count — lightweight check; only re-renders grid if count changed
 async function pollVideoCount() {
     try {
-        const response = await authFetch(`${API_BASE_URL}/videos`);
-        if (!response.ok) return;
-        const freshVideos = await response.json();
-        if (freshVideos.length !== videos.length) {
-            videos = freshVideos;
-            videoCount.textContent = videos.length;
-            // Only re-render the grid if the Videos tab is currently visible
+        const count = await fetchVideoCount();
+        if (count === null) return;
+
+        updateVideoCountDisplay(count);
+
+        if (_videosLoaded && count !== videos.length) {
+            await getVideos({ force: true });
             const videosTab = document.getElementById('videosTab');
             if (videosTab && videosTab.style.display !== 'none') {
                 renderVideosGrid(videos);
@@ -230,6 +296,7 @@ async function checkHealth() {
             statusIndicator.className = 'stat-value status-indicator online';
             statusIndicator.textContent = ''; // Dot handled by CSS
             statusText.textContent = 'Online';
+            return data;
         } else {
             throw new Error('API unhealthy');
         }
@@ -238,21 +305,18 @@ async function checkHealth() {
         statusIndicator.className = 'stat-value status-indicator offline';
         statusIndicator.textContent = '✕'; // Cross
         statusText.textContent = 'Offline';
+        return null;
     }
 }
 
 // Load Videos
-async function loadVideos() {
+async function loadVideos(force = false) {
     try {
-        const response = await authFetch(`${API_BASE_URL}/videos`);
-        if (response.status === 401) { showLogin(); return; }
-        videos = await response.json();
-
-        videoCount.textContent = videos.length;
-        renderVideosGrid(videos);
+        const videoList = await getVideos({ force });
+        renderVideosGrid(videoList);
     } catch (error) {
         console.error('Failed to load videos:', error);
-        videoCount.textContent = '?';
+        updateVideoCountDisplay(NaN);
     }
 }
 
@@ -277,7 +341,12 @@ function attachMainNavListeners() {
 
             if (tab.dataset.tab === 'videos') {
                 videosTab.style.display = 'block';
-                loadVideos();
+                // Only load/render if not already cached
+                if (!_videosLoaded) {
+                    loadVideos();
+                } else {
+                    renderVideosGrid(videos);
+                }
             } else if (tab.dataset.tab === 'admin') {
                 adminTab.style.display = 'block';
                 loadAdminPanel();
@@ -296,77 +365,8 @@ function formatDuration(seconds) {
     if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     return `${m}:${String(s).padStart(2, '0')}`;
 }
-/**
- * Load the video stream in a hidden element, seek to 0.1s,
- * capture the frame to a canvas, then clean up.
- */
-function captureFirstFrame(streamUrl, canvas, fallback, badgeEl) {
-    const vid = document.createElement('video');
-    vid.crossOrigin = 'anonymous';
-    vid.muted = true;
-    vid.preload = 'metadata';
-    vid.style.display = 'none';
-
-    let done = false;
-
-    const cleanup = () => {
-        vid.pause();
-        vid.removeAttribute('src');
-        vid.load();
-        vid.remove();
-    };
-
-    // Timeout fallback: if we don't get a frame in 10s, show placeholder
-    const timeout = setTimeout(() => {
-        if (done) return;
-        done = true;
-        canvas.style.display = 'none';
-        fallback.style.display = 'flex';
-        cleanup();
-    }, 10000);
-
-    vid.addEventListener('loadedmetadata', () => {
-        vid.currentTime = 0.1;
-        // Dynamically update the duration badge if we can read the real length
-        if (badgeEl && vid.duration && !isNaN(vid.duration) && vid.duration !== Infinity) {
-            const realDuration = formatDuration(vid.duration);
-            if (realDuration) {
-                badgeEl.textContent = realDuration;
-                badgeEl.style.display = 'inline-block';
-            }
-        }
-    });
-
-    vid.addEventListener('seeked', () => {
-        if (done) return;
-        done = true;
-        clearTimeout(timeout);
-
-        try {
-            canvas.width = vid.videoWidth || 320;
-            canvas.height = vid.videoHeight || 180;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
-            canvas.style.opacity = '1';
-        } catch (e) {
-            canvas.style.display = 'none';
-            fallback.style.display = 'flex';
-        }
-        cleanup();
-    });
-
-    vid.addEventListener('error', () => {
-        if (done) return;
-        done = true;
-        clearTimeout(timeout);
-        canvas.style.display = 'none';
-        fallback.style.display = 'flex';
-        cleanup();
-    });
-
-    vid.src = streamUrl;
-    document.body.appendChild(vid);
-}
+// captureFirstFrame REMOVED — replaced by server-side thumbnails below.
+// Old approach loaded a hidden <video> for EVERY card, consuming bandwidth and memory.
 
 /**
  * Derive an installation / category name from a video object.
@@ -399,7 +399,6 @@ function buildVideoCard(video) {
     if (staticDur) {
         durHtml = `<span class="video-duration-badge">${staticDur}</span>`;
     }
-    const streamUrl = `${API_BASE_URL}/video/stream/${video.id}?token=${authToken}`;
 
     // Show label if available, otherwise filename
     const displayName = video.label || video.filename;
@@ -407,9 +406,13 @@ function buildVideoCard(video) {
         ? `<span class="video-label-badge" title="Label: ${escapeHtml(video.label)}">${escapeHtml(video.label)}</span>`
         : '';
 
+    // Use server-side thumbnail endpoint instead of client-side video capture
+    const thumbUrl = `${API_BASE_URL}/video/thumbnail/${video.id}?token=${authToken}`;
+
     card.innerHTML = `
         <div class="video-browser-thumb">
-            <canvas class="video-thumb-canvas"></canvas>
+            <img class="video-thumb-img" src="${thumbUrl}" loading="lazy" alt="${escapeHtml(video.filename)}"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
             <div class="video-thumb-fallback">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <rect x="2" y="4" width="20" height="16" rx="3" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"/>
@@ -430,11 +433,6 @@ function buildVideoCard(video) {
             </div>
         </div>
     `;
-
-    const canvas  = card.querySelector('.video-thumb-canvas');
-    const fallback = card.querySelector('.video-thumb-fallback');
-    const badgeEl  = card.querySelector('.video-duration-badge');
-    captureFirstFrame(streamUrl, canvas, fallback, badgeEl);
 
     card.addEventListener('click', () => openVideoFromBrowser(video));
     return card;
@@ -530,17 +528,30 @@ function attachEventListeners() {
         }
     });
 
+    // Ask AI button — manually triggered, does NOT auto-fire on search
+    const askAiBtn = document.getElementById('askAiBtn');
+    if (askAiBtn) {
+        askAiBtn.addEventListener('click', async () => {
+            if (!currentQuery) return;
+            askAiBtn.disabled = true;
+            askAiBtn.textContent = 'Thinking…';
+            try {
+                await fetchAiAnswer(currentQuery);
+            } finally {
+                askAiBtn.disabled = false;
+                askAiBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.0313 2.60091 15.9205 3.63818 17.5L2.5 21.5L6.5 20.3618C8.07954 21.3991 9.96875 22 12 22Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="8" cy="12" r="1" fill="currentColor"/>
+                    <circle cx="12" cy="12" r="1" fill="currentColor"/>
+                    <circle cx="16" cy="12" r="1" fill="currentColor"/>
+                </svg> Ask AI`;
+            }
+        });
+    }
+
+
     // Re-run search when limit dropdown changes
     limitSelect.addEventListener('change', () => {
-        if (selectedImageFile) {
-            performImageSearch();
-        } else if (searchInput.value.trim()) {
-            performSearch();
-        }
-    });
-
-    // Re-run search when search mode changes (dynamic switching)
-    searchModeSelect.addEventListener('change', () => {
         if (selectedImageFile) {
             performImageSearch();
         } else if (searchInput.value.trim()) {
@@ -792,10 +803,17 @@ async function fetchAiAnswer(query) {
                 } catch (_) { /* skip malformed chunk */ }
             }
 
-            // Update the panel with what we have so far
-            if (fullAnswer && answerBody) {
+            // THROTTLED: Update the panel at most every 75ms to reduce DOM churn
+            const now = Date.now();
+            if (fullAnswer && answerBody && (!fetchAiAnswer._lastRender || now - fetchAiAnswer._lastRender > 75)) {
                 answerBody.innerHTML = renderModernAiAnswer(fullAnswer);
+                fetchAiAnswer._lastRender = now;
             }
+        }
+
+        // Final render to ensure the complete answer is displayed
+        if (fullAnswer && answerBody) {
+            answerBody.innerHTML = renderModernAiAnswer(fullAnswer);
         }
 
         if (!fullAnswer.trim()) {
@@ -896,76 +914,48 @@ async function performSearch() {
 
     try {
         const limit = parseInt(limitSelect.value);
-        const searchMode = searchModeSelect.value;
         const video = null;
 
-        // Fire search AND QA in parallel for faster perceived response
         const searchPromise = (async () => {
-            // Try multi-modal search first
+            const baseParams = new URLSearchParams({
+                q: query,
+                limit: limit,
+                facet: currentFacet,
+            });
+
+            if (video) {
+                baseParams.append('video', video);
+            }
+
+            const activeChips = document.querySelectorAll('#searchCategoryFilter .category-chip.active');
+            activeChips.forEach(chip => baseParams.append('category', chip.dataset.category));
+
+            const activeSiteChips = document.querySelectorAll('#searchSiteFilter .site-chip.active');
+            activeSiteChips.forEach(chip => baseParams.append('site', chip.dataset.site));
+
             try {
-                const params = new URLSearchParams({
-                    q: query,
-                    limit: limit,
-                    mode: searchMode,
-                    facet: currentFacet
-                });
+                const response = await authFetch(`${API_BASE_URL}/search/multimodal/quick?${baseParams}`);
 
-                if (video) {
-                    params.append('video', video);
-                }
-
-                // Category filter from chips
-                const activeChips = document.querySelectorAll('#searchCategoryFilter .category-chip.active');
-                activeChips.forEach(chip => params.append('category', chip.dataset.category));
-
-                // Site filter from chips
-                const activeSiteChips = document.querySelectorAll('#searchSiteFilter .site-chip.active');
-                activeSiteChips.forEach(chip => params.append('site', chip.dataset.site));
-
-                const response = await authFetch(`${API_BASE_URL}/search/multimodal/quick?${params}`);
-
-                // If multi-modal fails with 500 error, fallback to text-only
                 if (!response.ok) {
-                    console.log('Multi-modal search failed, falling back to text-only search');
+                    console.log('Multi-modal search failed, falling back to text search');
                     throw new Error('Multi-modal unavailable');
                 }
 
                 return await response.json();
-
             } catch (error) {
-                // Fallback to text-only search
-                console.log('Using text-only search:', error.message);
-
-                const params = new URLSearchParams({
-                    q: query,
-                    limit: limit,
-                    facet: currentFacet
-                });
-
-                if (video) {
-                    params.append('video', video);
-                }
-
-                // Category filter from chips
-                const activeChips2 = document.querySelectorAll('#searchCategoryFilter .category-chip.active');
-                activeChips2.forEach(chip => params.append('category', chip.dataset.category));
-
-                // Site filter from chips
-                const activeSiteChips2 = document.querySelectorAll('#searchSiteFilter .site-chip.active');
-                activeSiteChips2.forEach(chip => params.append('site', chip.dataset.site));
-
-                const response = await authFetch(`${API_BASE_URL}/search/quick?${params}`);
-
-                if (!response.ok) {
-                    throw new Error(`Search failed: ${response.statusText}`);
-                }
-
-                return await response.json();
+                console.log('Using text-only fallback:', error.message);
             }
+
+            const response = await authFetch(`${API_BASE_URL}/search/quick?${baseParams}`);
+
+            if (!response.ok) {
+                throw new Error(`Search failed: ${response.statusText}`);
+            }
+
+            return await response.json();
         })();
 
-        // Fire QA in parallel (non-blocking)
-        const qaPromise = fetchAiAnswer(query);
+        // QA is NO LONGER auto-fired. User can trigger it manually via "Ask AI" button.
 
         // Wait for search results first — display immediately
         const data = await searchPromise;
@@ -994,7 +984,6 @@ async function performSearch() {
                             const browseData = await browseResp.json();
                             if (browseData.results && browseData.results.length > 0) {
                                 displayResults(browseData, null);
-                                // Skip garbage QA for pure site-browse fallback
                                 return;
                             }
                         }
@@ -1004,13 +993,6 @@ async function performSearch() {
         }
 
         displayResults(data, null);
-
-        // Then fill in QA answer when it arrives (non-blocking)
-        qaPromise.then(qaResult => {
-            if (qaResult && qaResult.answer && qaResult.answer.trim()) {
-                displayAiAnswer(qaResult);
-            }
-        }).catch(() => { /* QA failure is non-critical */ });
 
     } catch (error) {
         console.error('Search error:', error);
@@ -1199,6 +1181,10 @@ function displayResults(data, qaData = null) {
     // Reset translate dropdown to "Original" for fresh results
     const translateSelect = document.getElementById('translateLang');
     if (translateSelect) translateSelect.value = '';
+
+    // Show the Ask AI button now that we have results to answer about
+    const askAiBtn = document.getElementById('askAiBtn');
+    if (askAiBtn) askAiBtn.style.display = 'inline-flex';
 
     resultsSection.style.display = 'block';
 }
@@ -1891,7 +1877,7 @@ async function loadAdminPanel() {
         const [catRes, usersRes, videosRes, gtRes] = await Promise.allSettled([
             authFetch(`${API_BASE_URL}/auth/categories`),
             authFetch(`${API_BASE_URL}/admin/users`),
-            authFetch(`${API_BASE_URL}/videos`),
+            getVideos(),
             authFetch(`${API_BASE_URL}/admin/ground-truths`),
         ]);
 
@@ -1921,8 +1907,8 @@ async function loadAdminPanel() {
         }
 
         // Video count for Video Labels tab
-        if (videosRes.status === 'fulfilled' && videosRes.value.ok) {
-            const adminVideos = await videosRes.value.json();
+        if (videosRes.status === 'fulfilled') {
+            const adminVideos = videosRes.value;
             updateAdminSubTabCount('video-labels', adminVideos.length);
         }
 
@@ -2138,19 +2124,19 @@ function attachAdminSubNavListeners() {
 let videoCategories = []; // [{id, name}]
 
 async function loadVideoLabelsSection() {
-    // Fetch categories and videos in parallel
-    const [catResp, videosResp] = await Promise.all([
-        authFetch(`${API_BASE_URL}/admin/video-categories`),
-        authFetch(`${API_BASE_URL}/videos`),
-    ]);
+    try {
+        const [catResp, videosList] = await Promise.all([
+            authFetch(`${API_BASE_URL}/admin/video-categories`),
+            getVideos(),
+        ]);
 
-    if (catResp.ok) videoCategories = await catResp.json();
-    renderVideoCategoryTags();
-
-    if (!videosResp.ok) return;
-    const videos = await videosResp.json();
-    renderVideoLabelsTable(videos);
-    attachVideoLabelListeners();
+        if (catResp.ok) videoCategories = await catResp.json();
+        renderVideoCategoryTags();
+        renderVideoLabelsTable(videosList);
+        attachVideoLabelListeners();
+    } catch (error) {
+        console.error('Failed to load video labels section:', error);
+    }
 }
 
 function renderVideoCategoryTags() {
@@ -2213,6 +2199,7 @@ function attachVideoLabelListeners() {
                 body: JSON.stringify({ label: label || null, category_id: categoryId }),
             });
             if (resp.ok) {
+                resetVideoCache();
                 showNotification('Video updated', 'info');
                 btn.textContent = 'Saved!';
                 setTimeout(() => { btn.textContent = 'Save'; }, 1500);
@@ -2374,6 +2361,8 @@ async function doVideoUpload() {
         successEl.textContent = `Uploaded "${result.filename}" (${result.size_mb} MB) in category "${result.category}"`;
         successEl.style.display = '';
         uploadFile = null;
+        resetVideoCache();
+        await refreshVideoCount();
         showNotification('Video uploaded successfully', 'info');
     } catch (err) {
         progressEl.style.display = 'none';
@@ -2504,19 +2493,14 @@ async function loadPipelineConfig() {
     // Populate video dropdown (from /videos endpoint)
     const videoSel = document.getElementById('pipelineVideo');
     try {
-        const resp = await authFetch(`${API_BASE_URL}/videos`);
-        if (resp.ok) {
-            const videos = await resp.json();
-            videoSel.innerHTML = '';
-            // Also show files in videos/ that aren't yet in DB
-            // For now, populate from DB videos
-            videos.forEach(v => {
-                const opt = document.createElement('option');
-                opt.value = v.filename;
-                opt.textContent = v.filename;
-                videoSel.appendChild(opt);
-            });
-        }
+        const videoList = await getVideos();
+        videoSel.innerHTML = '';
+        videoList.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v.filename;
+            opt.textContent = v.filename;
+            videoSel.appendChild(opt);
+        });
     } catch (e) { /* ignore */ }
 }
 

@@ -141,14 +141,6 @@
                             <option value="50">50</option>
                         </select>
                     </div>
-                    <div class="option-group">
-                        <label for="searchModeSelect">Mode:</label>
-                        <select id="searchModeSelect" class="select-input">
-                            <option value="balanced" selected>Balanced Model</option>
-                            <option value="text_heavy">Text Heavy Model</option>
-                            <option value="vision_heavy">Vision Heavy Model</option>
-                        </select>
-                    </div>
                 </div>
 
             </section>
@@ -158,6 +150,15 @@
                 <div class="results-header">
                     <h2 id="resultsTitle">Search Results</h2>
                     <div class="results-header-right">
+                        <button id="askAiBtn" class="ask-ai-btn" title="Ask ATLAS AI about these results" style="display: none;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.0313 2.60091 15.9205 3.63818 17.5L2.5 21.5L6.5 20.3618C8.07954 21.3991 9.96875 22 12 22Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <circle cx="8" cy="12" r="1" fill="currentColor"/>
+                                <circle cx="12" cy="12" r="1" fill="currentColor"/>
+                                <circle cx="16" cy="12" r="1" fill="currentColor"/>
+                            </svg>
+                            Ask AI
+                        </button>
                         <div class="translate-toggle">
                             <label for="translateLang">Language:</label>
                             <select id="translateLang" class="select-input select-input-sm">

@@ -1,8 +1,8 @@
 ---
-base_model: openai/whisper-large-v3
+base_model: openai/whisper-base
 library_name: peft
 tags:
-- base_model:adapter:openai/whisper-large-v3
+- base_model:adapter:openai/whisper-base
 - lora
 - transformers
 ---

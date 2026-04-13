@@ -4,9 +4,11 @@ UPDATED: Now uses the shared 1.5B LLM Singleton as a zero-shot reranker.
 """
 
 import time
-import re
 from typing import List, Optional, Any
 from llm.llm_manager import get_llm_manager
+
+
+_cpu_warning_emitted = False
 
 class CrossEncoderReranker:
     """Rerank search results using the shared 1.5B Instruct model."""
@@ -21,7 +23,9 @@ class CrossEncoderReranker:
         self.model_name = model_name
         self.max_length = max_length
         self.manager = get_llm_manager()
-        print(f"[OK] Reranker initialized using shared LLM infrastructure.")
+        # CrossEncoderReranker uses the LLMManager singleton
+        device_tag = "[GPU]" if "cuda" in self.manager.device else "[CPU]"
+        print(f"{device_tag} Reranker initialized using shared LLM ({self.manager.device})")
 
     def rerank(
         self,
@@ -37,13 +41,23 @@ class CrossEncoderReranker:
             return results
 
         start_time = time.time()
-        
+
         # We use the manager's rerank logic which already blends scores
         # and handles the prompt-based evaluation.
-        # We rerank the top 12 to ensure speed while significantly boosting relevance.
+        # On CPU, cap the work aggressively to keep deep search usable.
         rerank_limit = 12
+        if "cpu" in self.manager.device:
+            global _cpu_warning_emitted
+            rerank_limit = min(rerank_limit, top_k or len(results), 4)
+            if not _cpu_warning_emitted:
+                print(
+                    "[CPU] Deep Search is running in reduced mode "
+                    "(reranking the top 4 candidates only)."
+                )
+                _cpu_warning_emitted = True
+
         reranked_results = self.manager.rerank(query, results, top_n=rerank_limit)
-        
+
         elapsed_ms = (time.time() - start_time) * 1000
         print(
             f"  Smart Reranker: Processed {min(len(results), rerank_limit)} candidates in {elapsed_ms:.0f}ms."

@@ -5,9 +5,10 @@ import subprocess
 import asyncio
 import json
 from pathlib import Path
+from functools import lru_cache
 
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 # Add parent directory to path to allow imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,7 +30,7 @@ from database.models import (
     TranscriptSegment,
 )
 from search.semantic_search import SemanticSearchEngine, SearchResult
-from search.multi_modal_search import MultiModalSearchEngine, set_optimal_weights
+from search.multi_modal_search import MultiModalSearchEngine
 from api.auth import (
     hash_password,
     verify_password,
@@ -46,6 +47,7 @@ import re
 import urllib.parse
 import urllib.request
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 # Formats that browsers cannot play natively → must be transcoded
 TRANSCODE_EXTENSIONS = {".ts", ".mp2t", ".m2ts", ".mts", ".avi", ".mkv", ".mov"}
@@ -54,6 +56,55 @@ TRANSCODE_EXTENSIONS = {".ts", ".mp2t", ".m2ts", ".mts", ".avi", ".mkv", ".mov"}
 _video_qa = None
 _search_engine = None
 _mm_search_engine = None
+
+PROJECT_ROOT = Path(__file__).parent.parent
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+INDEX_HTML_PATH = FRONTEND_DIR / "index.html"
+FRONTEND_ASSETS = ("styles.css", "chat_styles.css", "app.js", "chat.js")
+
+
+def _server_capabilities() -> dict:
+    import torch
+
+    has_cuda = torch.cuda.is_available()
+    return {
+        "compute_device": "cuda" if has_cuda else "cpu",
+        "has_cuda": has_cuda,
+    }
+
+
+@lru_cache(maxsize=len(FRONTEND_ASSETS))
+def _frontend_asset_version(asset_name: str) -> str:
+    asset_path = FRONTEND_DIR / asset_name
+    return str(asset_path.stat().st_mtime_ns)
+
+
+def _render_frontend_index() -> str:
+    html = INDEX_HTML_PATH.read_text(encoding="utf-8")
+    for asset_name in FRONTEND_ASSETS:
+        versioned_name = f'{asset_name}?v={_frontend_asset_version(asset_name)}'
+        html = html.replace(f'"{asset_name}"', f'"{versioned_name}"')
+    return html
+
+
+def _resolve_video_file_path(raw_path: Optional[str]) -> Optional[Path]:
+    if not raw_path:
+        return None
+
+    candidate = Path(raw_path)
+    if candidate.exists():
+        return candidate if candidate.is_absolute() else (PROJECT_ROOT / candidate)
+
+    local_candidate = PROJECT_ROOT / "videos" / os.path.basename(raw_path)
+    if local_candidate.exists():
+        return local_candidate
+
+    if not candidate.is_absolute():
+        relative_candidate = PROJECT_ROOT / candidate
+        if relative_candidate.exists():
+            return relative_candidate
+
+    return None
 
 
 # ── Category-intent detection from natural-language queries ──────────────
@@ -132,21 +183,74 @@ def _get_allowed_filenames(user: User, db: Session) -> Optional[set]:
     }
 
 
+def _get_accessible_available_videos(
+    user: User, db: Session
+) -> List[tuple[Video, Path]]:
+    allowed_cats = get_user_allowed_categories(user)
+    visible_videos: List[tuple[Video, Path]] = []
+
+    for video in db.query(Video).all():
+        if allowed_cats is not None and get_video_category(video.filename) not in allowed_cats:
+            continue
+
+        resolved_path = _resolve_video_file_path(video.file_path)
+        if resolved_path is None:
+            continue
+
+        visible_videos.append((video, resolved_path))
+
+    return visible_videos
+
+
+def _serialize_video_info(video: Video) -> "VideoInfo":
+    return VideoInfo(
+        id=video.id,
+        filename=video.filename,
+        duration_seconds=video.duration_seconds,
+        whisper_model=video.whisper_model,
+        processed_at=video.processed_at.isoformat() if video.processed_at else None,
+        label=video.label,
+        category=video.category_rel.name if video.category_rel else None,
+        category_id=video.category_id,
+    )
+
+
+def _is_result_playable(result) -> bool:
+    return _resolve_video_file_path(getattr(result, "video_path", None)) is not None
+
+
 def _filter_results(results, allowed_filenames, limit=None):
     """Filter search results to only include videos the user may access."""
-    if allowed_filenames is None:
-        return results[:limit] if limit else results
-    filtered = [
-        r for r in results if getattr(r, "video_filename", None) in allowed_filenames
-    ]
-    return filtered[:limit] if limit else filtered
+    filtered = []
+    for result in results:
+        if (
+            allowed_filenames is not None
+            and getattr(result, "video_filename", None) not in allowed_filenames
+        ):
+            continue
+        if not _is_result_playable(result):
+            continue
+
+        filtered.append(result)
+        if limit and len(filtered) >= limit:
+            break
+    return filtered
 
 
 def _filter_result_dicts(result_dicts, allowed_filenames, limit=None):
     """Filter dict-form search results to only include videos the user may access."""
-    if allowed_filenames is None:
-        return result_dicts[:limit] if limit else result_dicts
-    filtered = [r for r in result_dicts if r.get("video_filename") in allowed_filenames]
+    filtered = []
+    for result in result_dicts:
+        if (
+            allowed_filenames is not None
+            and result.get("video_filename") not in allowed_filenames
+        ):
+            continue
+        if not _resolve_video_file_path(result.get("video_path")):
+            continue
+        filtered.append(result)
+        if limit and len(filtered) >= limit:
+            break
     return filtered[:limit] if limit else filtered
 
 
@@ -180,10 +284,6 @@ class MultiModalSearchRequest(BaseModel):
         0.5, description="Weight for vision similarity", ge=0, le=1
     )
     use_vision: bool = Field(True, description="Enable vision search")
-    search_mode: Optional[str] = Field(
-        "balanced",
-        description="Search mode: balanced, text_heavy, vision_heavy, visual_only",
-    )
     use_llm: bool = Field(
         True, description="Use LLM for intent parsing (disable for speed)"
     )
@@ -251,11 +351,92 @@ class VideoInfo(BaseModel):
     category_id: Optional[int] = None
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan handler for app startup and shutdown."""
+    # ── Startup ──────────────────────────────────────────────────────────
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] ATLAS API starting up...")
+    
+    if not test_connection():
+        raise RuntimeError(
+            "Failed to connect to database. Check your .env configuration."
+        )
+        
+    # Create auth tables if they don't exist yet
+    from database.config import engine
+    from database.models import Base
+    Base.metadata.create_all(bind=engine)
+
+    # Seed a default admin user if no users exist at all
+    from database.config import SessionLocal
+    db = SessionLocal()
+    try:
+        if db.query(User).count() == 0:
+            admin = User(
+                username="admin",
+                password_hash=hash_password("admin"),
+                role="admin",
+            )
+            db.add(admin)
+            db.commit()
+            print("[auth] Created default admin user (admin / admin)")
+        else:
+            print("[auth] Users table OK")
+
+        # Seed default video categories
+        _DEFAULT_CATEGORIES = ["Oil & Gas", "Maintenance", "Installation", "Operations"]
+        for cat_name in _DEFAULT_CATEGORIES:
+            if not db.query(VideoCategory).filter(VideoCategory.name == cat_name).first():
+                db.add(VideoCategory(name=cat_name))
+        db.commit()
+    finally:
+        db.close()
+
+    # ── Pre-warm models (Optimized) ──────────────────────────────────────
+    # We only pre-warm the fast semantic engine by default.
+    # Heavy models (LLM) are pre-warmed ONLY if CUDA is available to avoid CPU lag.
+    capabilities = _server_capabilities()
+    has_cuda = capabilities["has_cuda"]
+    device_label = "GPU (CUDA)" if has_cuda else "CPU"
+    print(f"[device] Detected hardware: {device_label}")
+    
+    print("[warmup] Pre-loading search engines...")
+    warmup_db = SessionLocal()
+    try:
+        global _search_engine, _mm_search_engine
+        if _search_engine is None:
+            _search_engine = SemanticSearchEngine(warmup_db)
+        if has_cuda and _mm_search_engine is None:
+            _mm_search_engine = MultiModalSearchEngine(db=warmup_db, text_search=_search_engine)
+            
+        if has_cuda:
+            # Only preload heavy stuff on GPU
+            from search.reranker import get_reranker
+            from llm.query_parser import get_query_parser
+            from embeddings.vision_embeddings import get_vision_embedding_generator
+            get_reranker(enabled=True)
+            get_query_parser(enabled=True)
+            get_vision_embedding_generator()
+            print("[warmup] GPU models pre-loaded")
+        else:
+            print("[warmup] CPU mode: heavy models will be lazy-loaded on demand to speed up startup")
+    except Exception as e:
+        print(f"[warmup] Non-critical warmup error: {e}")
+    finally:
+        warmup_db.close()
+
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] ATLAS API ready")
+    
+    yield
+    # ── Shutdown ─────────────────────────────────────────────────────────
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] ATLAS API shutting down...")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Video Semantic Search API",
     description="Search video transcripts using semantic understanding and fuzzy matching",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS middleware (adjust origins as needed)
@@ -268,80 +449,6 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Check database connection on startup and seed default admin."""
-    if not test_connection():
-        raise RuntimeError(
-            "Failed to connect to database. Check your .env configuration."
-        )
-    # Create auth tables if they don't exist yet
-    from database.config import engine
-    from database.models import Base
-
-    Base.metadata.create_all(bind=engine)
-
-    # Seed a default admin user if no users exist at all
-    from database.config import SessionLocal
-
-    db = SessionLocal()
-    try:
-        if db.query(User).count() == 0:
-            admin = User(
-                username="admin",
-                password_hash=hash_password("admin"),
-                role="admin",
-            )
-            db.add(admin)
-            db.commit()
-            print(
-                "[auth] Created default admin user (admin / admin) -- change the password!"
-            )
-        else:
-            print("[auth] Users table OK")
-
-        # Seed default video categories
-        _DEFAULT_CATEGORIES = ["Oil & Gas", "Maintenance", "Installation", "Operations"]
-        for cat_name in _DEFAULT_CATEGORIES:
-            if (
-                not db.query(VideoCategory)
-                .filter(VideoCategory.name == cat_name)
-                .first()
-            ):
-                db.add(VideoCategory(name=cat_name))
-        db.commit()
-        print(
-            f"[categories] {db.query(VideoCategory).count()} video categories available"
-        )
-    finally:
-        db.close()
-
-    # ── Pre-warm models so the first search is fast ──────────────────
-    print("[warmup] Pre-loading search models (background)...")
-    warmup_db = SessionLocal()
-    try:
-        global _search_engine, _mm_search_engine
-        if _search_engine is None:
-            _search_engine = SemanticSearchEngine(warmup_db)
-        if _mm_search_engine is None:
-            _mm_search_engine = MultiModalSearchEngine(
-                db=warmup_db, text_search=_search_engine
-            )
-        # Trigger lazy loads: reranker, query parser, vision model
-        from search.reranker import get_reranker
-        from llm.query_parser import get_query_parser
-        from embeddings.vision_embeddings import get_vision_embedding_generator
-
-        get_reranker(enabled=True)
-        get_query_parser(enabled=True)
-        get_vision_embedding_generator()
-        print("[warmup] All models pre-loaded successfully")
-    except Exception as e:
-        print(f"[warmup] Non-critical warmup error: {e}")
-    finally:
-        warmup_db.close()
-
-    print("[ok] API server started successfully")
 
 
 def get_video_qa(db: Session = Depends(get_db)):
@@ -352,6 +459,8 @@ def get_video_qa(db: Session = Depends(get_db)):
 
         print("Initializing Video QA system (this may take a moment)...")
         _video_qa = VideoQA(db)
+    else:
+        _video_qa.update_db(db)
     return _video_qa
 
 
@@ -387,6 +496,7 @@ async def health_check():
     return {
         "status": "healthy" if db_ok else "unhealthy",
         "database": "ok" if db_ok else "error",
+        **_server_capabilities(),
     }
 
 
@@ -1064,28 +1174,12 @@ async def stream_video(
     if not user_can_access_video(user, video.filename):
         raise HTTPException(status_code=403, detail="Access denied to this video")
 
-    video_path = video.file_path
-
-    # Fix relative paths from the database (e.g. "videos\filename.mp4" or just "filename.mp4")
-    # Path Mapping (FIX): If DB contains Linux absolute paths but we are on Windows,
-    # or relative paths, resolve the filename to the local 'videos' directory.
-    project_root = Path(__file__).parent.parent
-
-    if not os.path.exists(video_path):
-        # Try finding it in the videos directory
-        local_filename = os.path.basename(video_path)
-        resolved_path = project_root / "videos" / local_filename
-
-        if resolved_path.exists():
-            video_path = str(resolved_path)
-        else:
-            raise HTTPException(
-                status_code=404, detail=f"Video file not found: {video_path}"
-            )
-    else:
-        # If the path exists but it's a relative path, make it absolute for streaming
-        if not os.path.isabs(video_path):
-            video_path = str(project_root / video_path)
+    resolved_path = _resolve_video_file_path(video.file_path)
+    if resolved_path is None:
+        raise HTTPException(
+            status_code=404, detail=f"Video file not found: {video.file_path}"
+        )
+    video_path = str(resolved_path)
 
     file_size = os.path.getsize(video_path)
 
@@ -1130,7 +1224,7 @@ async def stream_video(
                 f.seek(start)
                 remaining = chunk_size
                 while remaining > 0:
-                    read_size = min(8192, remaining)
+                    read_size = min(262144, remaining)
                     data = f.read(read_size)
                     if not data:
                         break
@@ -1150,7 +1244,7 @@ async def stream_video(
         # Full file request
         def iterfile():
             with open(video_path, "rb") as f:
-                while chunk := f.read(8192):
+                while chunk := f.read(262144):
                     yield chunk
 
         headers = {
@@ -1180,22 +1274,18 @@ async def transcode_video(
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
 
-    video_path = video.file_path
-    project_root = Path(__file__).parent.parent
+    # Security check: can user access this video's category?
+    if not user_can_access_video(user, video.filename):
+        raise HTTPException(
+            status_code=403, detail="You do not have permission to access this video"
+        )
 
-    if not os.path.exists(video_path):
-        local_filename = os.path.basename(video_path)
-        resolved_path = project_root / "videos" / local_filename
-        if resolved_path.exists():
-            video_path = str(resolved_path)
-        else:
-            raise HTTPException(
-                status_code=404, detail=f"Video file not found: {video_path}"
-            )
-    else:
-        # If the path exists but it's a relative path, make it absolute
-        if not os.path.isabs(video_path):
-            video_path = str(project_root / video_path)
+    resolved_path = _resolve_video_file_path(video.file_path)
+    if resolved_path is None:
+        raise HTTPException(
+            status_code=404, detail=f"Video file not found: {video.file_path}"
+        )
+    video_path = str(resolved_path)
 
     async def stream_ffmpeg():
         """Pipe ffmpeg stdout as a fragmented MP4 stream."""
@@ -1300,25 +1390,18 @@ async def list_videos(
     List videos the current user is allowed to see.
     Admins see all; viewers see only their assigned categories.
     """
-    all_videos = db.query(Video).all()
-    allowed_cats = get_user_allowed_categories(user)
-    if allowed_cats is not None:
-        all_videos = [
-            v for v in all_videos if get_video_category(v.filename) in allowed_cats
-        ]
     return [
-        VideoInfo(
-            id=v.id,
-            filename=v.filename,
-            duration_seconds=v.duration_seconds,
-            whisper_model=v.whisper_model,
-            processed_at=v.processed_at.isoformat() if v.processed_at else None,
-            label=v.label,
-            category=v.category_rel.name if v.category_rel else None,
-            category_id=v.category_id,
-        )
-        for v in all_videos
+        _serialize_video_info(video)
+        for video, _ in _get_accessible_available_videos(user, db)
     ]
+
+
+@app.get("/videos/count")
+async def count_videos(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
+    """Return the accessible count of currently available videos."""
+    return {"count": len(_get_accessible_available_videos(user, db))}
 
 
 @app.post("/qa/ask", response_model=QA_Response)
@@ -1460,11 +1543,9 @@ async def quick_search(
             facet=facet or "auto",
         )
 
-        results = fallback_data["results"]
-        if allowed_filenames is not None:
-            results = [r for r in results if r.video_filename in allowed_filenames][
-                :limit
-            ]
+        results = _filter_results(
+            fallback_data["results"], allowed_filenames, limit=limit
+        )
         metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
 
@@ -1537,6 +1618,9 @@ async def browse_by_category(
     matched_videos = q_videos.all()
     if acl_filenames is not None:
         matched_videos = [v for v in matched_videos if v.filename in acl_filenames]
+    matched_videos = [
+        v for v in matched_videos if _resolve_video_file_path(v.file_path) is not None
+    ]
 
     matched_videos = matched_videos[:limit]
 
@@ -1633,12 +1717,6 @@ async def multimodal_search(
     Search using **both transcript text and visual content** from keyframes.
     This provides more accurate results by matching both what was said and what was shown.
 
-    **Search Modes:**
-    - `balanced`: Equal weight to text and vision (50/50)
-    - `text_heavy`: Prioritize transcript matches (70/30)
-    - `vision_heavy`: Prioritize visual content (30/70)
-    - `visual_only`: Only search by visual similarity (0/100)
-
     **Example queries:**
     - "drilling rig" → Finds both mentions AND visual appearances of drilling rigs
     - "safety equipment" → Finds helmets, vests even if not mentioned
@@ -1650,14 +1728,8 @@ async def multimodal_search(
     start_time = time.time()
 
     try:
-        # Set weights based on search mode if provided
-        if request.search_mode:
-            text_w, vision_w = set_optimal_weights(request.search_mode)
-            text_weight = text_w
-            vision_weight = vision_w
-        else:
-            text_weight = request.text_weight
-            vision_weight = request.vision_weight
+        text_weight = request.text_weight
+        vision_weight = request.vision_weight
 
         # Reuse singleton multi-modal search engine
         global _mm_search_engine, _search_engine
@@ -1682,8 +1754,9 @@ async def multimodal_search(
             use_llm=request.use_llm,
         )
 
-        results = fallback_data["results"]
-        results = _filter_results(results, allowed_filenames, limit=request.top_k)
+        results = _filter_results(
+            fallback_data["results"], allowed_filenames, limit=request.top_k
+        )
         metadata = fallback_data["search_metadata"]
 
         search_time = time.time() - start_time
@@ -1734,10 +1807,6 @@ async def multimodal_search(
 async def quick_multimodal_search(
     q: str = Query(..., description="Search query", min_length=1),
     limit: int = Query(10, description="Number of results", ge=1, le=50),
-    mode: str = Query(
-        "balanced",
-        description="Search mode: balanced, text_heavy, vision_heavy, visual_only",
-    ),
     use_llm: bool = Query(
         False, description="Use LLM for intent parsing (disable for speed)"
     ),
@@ -1760,18 +1829,13 @@ async def quick_multimodal_search(
 ):
     """
     Quick multi-modal search (GET request for easy testing).
+    Uses the default balanced profile for the main app experience.
     Supports filtering by category, label, and site.
 
     **Example:**
     ```
-    GET /search/multimodal/quick?q=drilling+techniques&limit=5&mode=balanced&site=Yggdrasil
+    GET /search/multimodal/quick?q=drilling+techniques&limit=5&site=Yggdrasil
     ```
-
-    **Modes:**
-    - `balanced` (default): 50% text, 50% vision
-    - `text_heavy`: 70% text, 30% vision
-    - `vision_heavy`: 30% text, 70% vision
-    - `visual_only`: 0% text, 100% vision
     """
     # Build set of allowed filenames: enforce user category access + optional category/label/site UI filter
     acl_filenames = _get_allowed_filenames(user, db)
@@ -1799,7 +1863,7 @@ async def quick_multimodal_search(
         allowed_filenames = extra_filter
 
     try:
-        text_weight, vision_weight = set_optimal_weights(mode)
+        text_weight, vision_weight = 0.5, 0.5
 
         start_time = time.time()
 
@@ -1824,11 +1888,9 @@ async def quick_multimodal_search(
             facet=facet or "auto",
         )
 
-        results = fallback_data["results"]
-        if allowed_filenames is not None:
-            results = [r for r in results if r.video_filename in allowed_filenames][
-                :limit
-            ]
+        results = _filter_results(
+            fallback_data["results"], allowed_filenames, limit=limit
+        )
         metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
 
@@ -1848,7 +1910,6 @@ async def quick_multimodal_search(
 
         return {
             "query": q,
-            "mode": mode,
             "weights": {"text": text_weight, "vision": vision_weight},
             "results_count": len(result_dicts),
             "results": result_dicts,
@@ -1879,12 +1940,11 @@ async def quick_multimodal_search(
                 query=q,
                 top_k=limit * 3 if allowed_filenames else limit,
                 video_filter=video,
+                facet=facet or "auto",
             )
-            results = fallback_data["results"]
-            if allowed_filenames is not None:
-                results = [r for r in results if r.video_filename in allowed_filenames][
-                    :limit
-                ]
+            results = _filter_results(
+                fallback_data["results"], allowed_filenames, limit=limit
+            )
             metadata = fallback_data["search_metadata"]
             search_time = time.time() - start_time
 
@@ -1902,7 +1962,6 @@ async def quick_multimodal_search(
 
             return {
                 "query": q,
-                "mode": "text_only (vision unavailable)",
                 "weights": {"text": 1.0, "vision": 0.0},
                 "results_count": len(result_dicts),
                 "results": result_dicts,
@@ -2691,12 +2750,16 @@ async def caption_stats(
 
 # Serve the frontend
 @app.get("/")
+@app.get("/index.html")
 async def read_root():
-    return FileResponse("frontend/index.html")
+    return HTMLResponse(
+        _render_frontend_index(),
+        headers={"Cache-Control": "no-store, max-age=0, must-revalidate"},
+    )
 
 
 # Mount static files (css, js) - Make sure this is AFTER all other routes
-app.mount("/", StaticFiles(directory="frontend"), name="frontend")
+app.mount("/", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 
 
 if __name__ == "__main__":

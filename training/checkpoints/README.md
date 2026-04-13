@@ -3,51 +3,48 @@ tags:
 - sentence-transformers
 - sentence-similarity
 - feature-extraction
-- dense
 - generated_from_trainer
 - dataset_size:561
 - loss:MultipleNegativesRankingLoss
 base_model: Qwen/Qwen3-Embedding-0.6B
 widget:
-- source_sentence: every night, like your
+- source_sentence: where do they talk about It's more tangible than world?
   sentences:
-  - People say to me, what's risk management really all about? Surely it's a lot to
-    do
-  - I'm really, really excited to be here today because I'm about to show you some
-    stuff that's
-  - Would you pay $10 a month to have a watch that has to be recharged every night,
-    like your cell phone, and stops working when you leave your area code?
-- source_sentence: where do they talk about Behandlet diesel gjennom behandlet dieselfilter?
+  - The base was made of three steel structures, each with a stand, a roof and various
+    equipment modules on top of the roof.
+  - I think it's been really valuable to have people from Cognite, Microsoft and Acura
+    Solutions on the team with us at this hackathon,
+  - It's more tangible than world peace and it's certainly more immediate. But, um,
+    it's, yeah, it's the day it's, it would be
+- source_sentence: where do they talk about This million people gathering banks?
   sentences:
-  - Behandlet diesel går gjennom et behandlet dieselfilter før den distribueres til
-    forbrukerne på feltsenteret.
-  - Now they come in bearing gifts and they bring gold, frankincense and myrrh. This
-    really happened.
-  - the first step of the risk process. Once we know what we're trying to achieve,
-    the
-- source_sentence: limits for what's technically
-  sentences:
-  - beginning and I look forward to continue pushing the limits for what's technically
-    feasible while drilling a well.
-  - Alle produksjonsbrønnene er utstyrt med flerfasemåler og sanddetektor og er tilkoblet
-    et prøvetakningskabinett.
-  - In this second, consciously or unconsciously, the minute you decide to focus on
-    something, you've got to give it a meaning.
-- source_sentence: stars who were traveling
-  sentences:
-  - and to play a young doctor for a bunch of rock and roll stars who were traveling
-    in a bus ride from San Francisco to England.
   - This is a million people gathering on the banks of the Ganges in 2001.
-  - There are hundreds and hundreds and hundreds and hundreds and hundreds of architects
-    and designers and inventors around the world that are getting involved in humanitarian
-    work.
-- source_sentence: where do they talk about though came with small downside?
+  - So they, in the morning, will do something in arena, then they'll do something
+    in proscenium and so forth.
+  - With the upgrades made for the AKBP contract, Dipsy Stavanger has become an even
+    sharper drilling machine.
+- source_sentence: within the confines of
   sentences:
-  - Behandlet diesel går gjennom et behandlet dieselfilter før den distribueres til
-    forbrukerne på feltsenteret.
-  - The job though came with one small downside and that is they intended to publish
-    my email address at the end of every column.
-  - This is a million people gathering on the banks of the Ganges in 2001.
+  - So they're not forced to always work within the confines of a contemporary gallery
+    space.
+  - we're going to introduce a whole new generation of people to computing with kind
+    of this standard
+  - This is a nationwide policy agenda I'm trying to build, and as you all know, politics
+    are personal.
+- source_sentence: where do they talk about Even with modern shielding, spacecraft?
+  sentences:
+  - Even with modern shielding, a spacecraft within the radiation belts would only
+    survive for around three months.
+  - with tea towels on their heads and they put these boxes down. The first boy said,
+    I bring you gold.
+  - Til oppstart av nye brønner kan oljen sendes direkte til oljeeksport, mens når
+    den brukes til brønntesting blir oljen ledet inn i prosessen.
+- source_sentence: so eloquently last night
+  sentences:
+  - And so they needed to be able to quickly transform between different theater organizations.
+  - Like global warming, as we heard so eloquently last night from Al Gore.
+  - And somewhere in those links, by the way, not at the top, somewhere in those links
+    is a button that makes you a new document.
 pipeline_tag: sentence-similarity
 library_name: sentence-transformers
 ---
@@ -71,14 +68,14 @@ This is a [sentence-transformers](https://www.SBERT.net) model finetuned from [Q
 ### Model Sources
 
 - **Documentation:** [Sentence Transformers Documentation](https://sbert.net)
-- **Repository:** [Sentence Transformers on GitHub](https://github.com/huggingface/sentence-transformers)
+- **Repository:** [Sentence Transformers on GitHub](https://github.com/UKPLab/sentence-transformers)
 - **Hugging Face:** [Sentence Transformers on Hugging Face](https://huggingface.co/models?library=sentence-transformers)
 
 ### Full Model Architecture
 
 ```
 SentenceTransformer(
-  (0): Transformer({'max_seq_length': 32768, 'do_lower_case': False, 'architecture': 'PeftModelForFeatureExtraction'})
+  (0): Transformer({'max_seq_length': 32768, 'do_lower_case': False}) with Transformer model: PeftModelForFeatureExtraction 
   (1): Pooling({'word_embedding_dimension': 1024, 'pooling_mode_cls_token': False, 'pooling_mode_mean_tokens': False, 'pooling_mode_max_tokens': False, 'pooling_mode_mean_sqrt_len_tokens': False, 'pooling_mode_weightedmean_tokens': False, 'pooling_mode_lasttoken': True, 'include_prompt': True})
   (2): Normalize()
 )
@@ -101,23 +98,19 @@ from sentence_transformers import SentenceTransformer
 # Download from the 🤗 Hub
 model = SentenceTransformer("sentence_transformers_model_id")
 # Run inference
-queries = [
-    "where do they talk about though came with small downside?",
+sentences = [
+    'so eloquently last night',
+    'Like global warming, as we heard so eloquently last night from Al Gore.',
+    'And somewhere in those links, by the way, not at the top, somewhere in those links is a button that makes you a new document.',
 ]
-documents = [
-    'The job though came with one small downside and that is they intended to publish my email address at the end of every column.',
-    'This is a million people gathering on the banks of the Ganges in 2001.',
-    'Behandlet diesel går gjennom et behandlet dieselfilter før den distribueres til forbrukerne på feltsenteret.',
-]
-query_embeddings = model.encode_query(queries)
-document_embeddings = model.encode_document(documents)
-print(query_embeddings.shape, document_embeddings.shape)
-# [1, 1024] [3, 1024]
+embeddings = model.encode(sentences)
+print(embeddings.shape)
+# [3, 1024]
 
 # Get the similarity scores for the embeddings
-similarities = model.similarity(query_embeddings, document_embeddings)
-print(similarities)
-# tensor([[0.4073, 0.1381, 0.1279]])
+similarities = model.similarity(embeddings, embeddings)
+print(similarities.shape)
+# [3, 3]
 ```
 
 <!--
@@ -162,6 +155,7 @@ You can finetune this model on your own dataset.
 
 #### Unnamed Dataset
 
+
 * Size: 561 training samples
 * Columns: <code>sentence_0</code> and <code>sentence_1</code>
 * Approximate statistics based on the first 561 samples:
@@ -170,17 +164,16 @@ You can finetune this model on your own dataset.
   | type    | string                                                                            | string                                                                            |
   | details | <ul><li>min: 5 tokens</li><li>mean: 11.57 tokens</li><li>max: 31 tokens</li></ul> | <ul><li>min: 9 tokens</li><li>mean: 29.38 tokens</li><li>max: 80 tokens</li></ul> |
 * Samples:
-  | sentence_0                                                                  | sentence_1                                                                                                       |
-  |:----------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------|
-  | <code>where do they talk about they needed able quickly transform?</code>   | <code>And so they needed to be able to quickly transform between different theater organizations.</code>         |
-  | <code>I just want to</code>                                                 | <code>Anyway, we moved from Stratford to Los Angeles. And I just want to say a word about the transition.</code> |
-  | <code>where do they talk about Hvordan skal bedre systemforståelse??</code> | <code>Hvordan skal jeg få en bedre systemforståelse?</code>                                                      |
+  | sentence_0                                                                   | sentence_1                                                                                                                                                |
+  |:-----------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------|
+  | <code>where do they talk about oppstart brønner oljen sendes direkte?</code> | <code>Til oppstart av nye brønner kan oljen sendes direkte til oljeeksport, mens når den brukes til brønntesting blir oljen ledet inn i prosessen.</code> |
+  | <code>get letters to form</code>                                             | <code>I don't know when, but we decided to get letters to form words so we can communicate.</code>                                                        |
+  | <code>made a different decision,</code>                                      | <code>haven't there been some decisions you've made that if you made a different decision, your life would be completely different?</code>                |
 * Loss: [<code>MultipleNegativesRankingLoss</code>](https://sbert.net/docs/package_reference/sentence_transformer/losses.html#multiplenegativesrankingloss) with these parameters:
   ```json
   {
       "scale": 20.0,
-      "similarity_fct": "cos_sim",
-      "gather_across_devices": false
+      "similarity_fct": "cos_sim"
   }
   ```
 
@@ -290,18 +283,16 @@ You can finetune this model on your own dataset.
 - `prompts`: None
 - `batch_sampler`: batch_sampler
 - `multi_dataset_batch_sampler`: round_robin
-- `router_mapping`: {}
-- `learning_rate_mapping`: {}
 
 </details>
 
 ### Framework Versions
-- Python: 3.11.14
-- Sentence Transformers: 5.2.2
+- Python: 3.11.9
+- Sentence Transformers: 3.3.1
 - Transformers: 5.3.0
 - PyTorch: 2.6.0+cu124
 - Accelerate: 1.12.0
-- Datasets: 4.8.4
+- Datasets: 4.5.0
 - Tokenizers: 0.22.2
 
 ## Citation
