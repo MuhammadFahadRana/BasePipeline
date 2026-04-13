@@ -45,59 +45,76 @@ class SimpleTranscriber:
     VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".ts"}
     AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"}
 
-    def __init__(self, backend: str = "whisper", model_variant: dict = None, model_size: str = "large", device: str = "auto"):
-        """
-        Initialize transcriber with selected backend.
-
-        Args:
-            backend: "whisper", "whisperx", or "distil-whisper"
-            model_variant: Dict with model details (e.g. {'name': 'base'})
-            model_size: fallback if model_variant is None
-            device: "auto", "cpu", or "cuda"
-        """
+    def __init__(
+        self,
+        backend: str = "whisper",
+        model_variant: dict = None,
+        model_size: str = "large",
+        device: str = "auto",
+        language: str | None = "en",
+        task: str = "transcribe",
+    ):
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
         print(f"Using device: {device}")
-
         self.device = device
-        
-        # Handle arguments
         self.backend = backend
+        self.language = language
+        self.task = task
+
         if model_variant and "name" in model_variant:
             self.model_size = model_variant["name"]
         else:
             self.model_size = model_size
 
-        # MODEL SELECTION
         print(f"Initializing {self.backend} with model: {self.model_size}")
 
         if self.backend == "whisper":
-            # OpenAI Whisper or HF Whisper (if LoRA)
+            # default display name
             self.model_name = f"Whisper-{self.model_size.capitalize()}"
-            print(f"Loading {self.model_name} on {device}")
-            
+
+            # local LoRA adapter path
             lora_path = os.getenv("ASR_LORA_PATH")
+            if lora_path:
+                lora_path = str(Path(lora_path).resolve())
+
             if lora_path and os.path.exists(lora_path):
-                print(f"Loading HuggingFace Whisper with LoRA from {lora_path}")
-                from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-                from peft import PeftModel
-                model_id = f"openai/whisper-{self.model_size}"
-                self.processor = AutoProcessor.from_pretrained(model_id)
+                print(f"Loading Hugging Face Whisper + LoRA from: {lora_path}")
+
+                from peft import PeftConfig, PeftModel
+
+                peft_config = PeftConfig.from_pretrained(lora_path)
+                base_model_id = peft_config.base_model_name_or_path or f"openai/whisper-{self.model_size}"
+
+                print(f"Base model from adapter config: {base_model_id}")
+
+                self.processor = AutoProcessor.from_pretrained(base_model_id)
+
                 base_model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                    model_id,
+                    base_model_id,
                     torch_dtype=torch.float16 if device == "cuda" else torch.float32,
                     use_safetensors=True,
                 ).to(device)
+
                 self.model = PeftModel.from_pretrained(base_model, lora_path)
-                print(f"[OK] LoRA adapter successfully loaded")
+                self.model.eval()
+
+                adapter_tag = Path(lora_path).name
+                self.model_name = f"Whisper-{self.model_size.capitalize()}-LoRA-{adapter_tag}"
                 self._backend_type = "hf_whisper"
+                self.lora_path = lora_path
+
+                print(f"[OK] LoRA adapter successfully loaded")
+                print(f"[OK] Effective model name: {self.model_name}")
+
             else:
+                print(f"Loading OpenAI Whisper {self.model_name} on {device}")
                 self.model = whisper.load_model(self.model_size, device=device)
                 self._backend_type = "openai_whisper"
+                self.lora_path = None
 
         elif self.backend == "whisperx":
-            # WhisperX
             self.model_name = f"WhisperX-{self.model_size.capitalize()}"
             print(f"Loading {self.model_name} on {device}")
             try:
@@ -109,7 +126,6 @@ class SimpleTranscriber:
                 raise ImportError("WhisperX not installed. Run: pip install whisperx")
 
         elif self.backend == "distil-whisper":
-            # Distil-Whisper
             self.model_name = "Distil-Whisper-Large-v3"
             model_id = "distil-whisper/distil-large-v3"
             if model_variant and "model_id" in model_variant:
@@ -124,13 +140,14 @@ class SimpleTranscriber:
                 use_safetensors=True,
             ).to(device)
             print(f"{self.model_name} loaded successfully")
-        
+
         else:
-            # Default fallback or error
             print(f"Warning: Unknown backend '{backend}', falling back to Whisper")
             self.backend = "whisper"
             self.model_name = f"Whisper-{self.model_size.capitalize()}"
             self.model = whisper.load_model(self.model_size, device=device)
+            self._backend_type = "openai_whisper"
+            self.lora_path = None
 
     def transcribe_video(self, file_path: str, output_dir: str = "processed"):
         """
@@ -328,23 +345,33 @@ class SimpleTranscriber:
                 sampling_rate=sr,
                 return_tensors="pt",
                 padding=True,
+                return_attention_mask=True,
             )
 
-            # Move inputs to device and create attention mask explicitly
             input_features = inputs.input_features.to(self.device, dtype=self.model.dtype)
-            attention_mask = (
-                torch.ones_like(input_features[:, 0, :]).long().to(self.device)
-            )
 
-            # Generate with higher penalties for better quality in challenging audio
+            attention_mask = None
+            if hasattr(inputs, "attention_mask") and inputs.attention_mask is not None:
+                attention_mask = inputs.attention_mask.to(self.device)
+
+            generate_kwargs = {
+                "max_new_tokens": 256,
+                "num_beams": 1,
+                "repetition_penalty": 1.3,
+                "no_repeat_ngram_size": 4,
+                "task": self.task,
+            }
+
+            # TED is English, so keep this explicit for stable decoding.
+            # If you want multilingual auto-behavior later, set self.language = None.
+            if self.language:
+                generate_kwargs["language"] = self.language
+
             with torch.no_grad():
                 generated_ids = self.model.generate(
-                    input_features,
+                    input_features=input_features,
                     attention_mask=attention_mask,
-                    max_new_tokens=256,
-                    num_beams=1,
-                    repetition_penalty=1.3,
-                    no_repeat_ngram_size=4,
+                    **generate_kwargs,
                 )
 
             chunk_text = self.processor.batch_decode(
@@ -606,10 +633,10 @@ if __name__ == "__main__":
     # transcriber = SimpleTranscriber()
 
     # Batch process all videos in a folder
-    # transcriber.batch_transcribe(
-    #     folder_path="videos",
-    #     output_dir="processed"
-    # )
+    transcriber.batch_transcribe(
+        folder_path="videos",
+        output_dir="processed"
+    )
 
     # Process single video
-    transcriber.transcribe_video("videos\AkerBP 2.mp4", output_dir="processed")
+    # transcriber.transcribe_video("videos\AkerBP 2.mp4", output_dir="processed")

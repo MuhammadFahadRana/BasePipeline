@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import time
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -400,12 +401,18 @@ def parse_args() -> argparse.Namespace:
                         help="yt-dlp format selector. Default tries best video+audio, else best.")
     parser.add_argument("--cookies-from-browser", type=str, default=None,
                         help="Browser name for yt-dlp cookies, e.g. chrome, firefox, edge")
+    parser.add_argument(
+        "--lora-path",
+        type=Path,
+        default=None,
+        help="Path to local LoRA adapter folder, e.g. training/asr_checkpoints/lora_adapter",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-
+    
     work_dir = args.work_dir.resolve()
     videos_dir = args.videos_dir.resolve() if args.videos_dir else work_dir / "TEDVideos"
     processed_dir = args.processed_dir.resolve() if args.processed_dir else work_dir / "TEDprocessed"
@@ -442,6 +449,12 @@ def main() -> int:
     log(f"Matched TED items: {len(items)}")
     log(f"Using backend={args.backend}, model={args.model}, threshold={args.threshold}, device={args.device}")
 
+
+    if args.lora_path is not None:
+        resolved_lora = args.lora_path.resolve()
+        os.environ["ASR_LORA_PATH"] = str(resolved_lora)
+        log(f"Using LoRA adapter: {resolved_lora}")
+        
     pipeline = BasicVideoPipeline(
         backend=args.backend,
         model_variant={"name": args.model},
