@@ -47,6 +47,18 @@ function showLogin() {
     document.getElementById('appContainer').style.display = 'none';
 }
 
+function handleAtlasHomeClick(event) {
+    event.preventDefault();
+    const searchTab = document.querySelector('.main-nav-tab[data-tab="search"]');
+    if (searchTab) {
+        searchTab.click();
+    }
+    searchInput.value = '';
+    clearBtn.style.display = 'none';
+    hideLoading();
+    showEmpty();
+}
+
 // DOM Elements
 const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
@@ -68,6 +80,7 @@ const emptyState = document.getElementById('emptyState');
 const videoCount = document.getElementById('videoCount');
 const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
+const atlasHomeLink = document.getElementById('atlasHomeLink');
 const quickSearchBtns = document.querySelectorAll('.quick-search-btn');
 
 // Video Modal Elements
@@ -296,6 +309,9 @@ function attachLoginListeners() {
     document.getElementById('logoutBtn').addEventListener('click', () => {
         showLogin();
     });
+    if (atlasHomeLink) {
+        atlasHomeLink.addEventListener('click', handleAtlasHomeClick);
+    }
 }
 
 // Initialize App
@@ -2954,14 +2970,11 @@ async function translateText(text, targetLang) {
     const cacheKey = `${targetLang}:${text.substring(0, 100)}`;
     if (_translationCache[cacheKey]) return _translationCache[cacheKey];
 
-    // Auto-detect source: if target is Norwegian, assume source is English & vice-versa
-    const sourceLang = targetLang === 'no' ? 'en' : 'no';
-
     try {
         const resp = await authFetch(`${API_BASE_URL}/translate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, source: sourceLang, target: targetLang })
+            body: JSON.stringify({ text, source: 'auto', target: targetLang })
         });
         if (!resp.ok) return text;
         const data = await resp.json();

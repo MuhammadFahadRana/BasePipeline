@@ -6,6 +6,15 @@
 
 const ChatAssistant = (() => {
     const API_URL = 'http://localhost:8000/v1/chat/completions';
+    const TRANSLATE_URL = 'http://localhost:8000/translate';
+    const LANGUAGE_CODE_MAP = {
+        English: 'en',
+        Norwegian: 'no',
+        Spanish: 'es',
+        French: 'fr',
+        German: 'de',
+        Arabic: 'ar',
+    };
 
     // State
     let chatHistory = [];
@@ -105,6 +114,48 @@ const ChatAssistant = (() => {
             .replace(/\n/g, '<br>');
     }
 
+    function isTranslateRequest(text) {
+        const q = (text || '').trim();
+        if (!q) return false;
+        return /^(translate(\s+this)?|can you translate(\s+this)?|could you translate(\s+this)?|please translate(\s+this)?|kan du oversette(\s+dette)?)\b/i.test(q);
+    }
+
+    function getTargetLanguageCode(question) {
+        const selected = chatLangSelect ? chatLangSelect.value : 'auto';
+        if (selected && selected !== 'auto' && LANGUAGE_CODE_MAP[selected]) {
+            return LANGUAGE_CODE_MAP[selected];
+        }
+        const q = (question || '').toLowerCase();
+        if (q.includes('english') || q.includes('engelsk')) return 'en';
+        if (q.includes('norwegian') || q.includes('norsk')) return 'no';
+        if (q.includes('spanish')) return 'es';
+        if (q.includes('french')) return 'fr';
+        if (q.includes('german')) return 'de';
+        if (q.includes('arabic')) return 'ar';
+        return null;
+    }
+
+    async function translateAssistantMessage(text, targetCode) {
+        const headers = { 'Content-Type': 'application/json' };
+        const token = sessionStorage.getItem('atlas_token');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const response = await fetch(TRANSLATE_URL, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                text,
+                source: 'auto',
+                target: targetCode,
+            }),
+        });
+        if (!response.ok) {
+            throw new Error(`Translation failed: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.translated || text;
+    }
+
     async function sendMessage() {
         const text = chatInput.value.trim();
         if (!text || isGenerating) return;
@@ -135,6 +186,26 @@ const ChatAssistant = (() => {
         let fullResponse = '';
 
         try {
+            if (isTranslateRequest(text)) {
+                const previousAssistant = [...chatHistory]
+                    .reverse()
+                    .find(m => m.role === 'assistant' && m.content?.trim());
+                if (!previousAssistant) {
+                    fullResponse = "I couldn't find a previous assistant answer to translate.";
+                } else {
+                    const targetCode = getTargetLanguageCode(text);
+                    if (!targetCode) {
+                        fullResponse = 'Please choose a language in the dropdown (or mention target language) and ask again.';
+                    } else {
+                        fullResponse = await translateAssistantMessage(previousAssistant.content, targetCode);
+                    }
+                }
+                bubble.classList.remove('streaming');
+                bubble.innerHTML = formatMarkdown(fullResponse);
+                chatHistory.push({ role: 'assistant', content: fullResponse });
+                return;
+            }
+
             const headers = { 'Content-Type': 'application/json' };
             const token = sessionStorage.getItem('atlas_token');
             if (token) headers['Authorization'] = `Bearer ${token}`;

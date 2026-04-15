@@ -108,6 +108,7 @@ class VideoQA:
         video_filter: Optional[str] = None,
         top_k: int = 8,
         language: Optional[str] = None,
+        allowed_filenames: Optional[set[str]] = None,
     ) -> Dict[str, Any]:
         """
         Answer a question about the video content.
@@ -131,13 +132,18 @@ class VideoQA:
             semantic_weight=0.7,
             text_weight=0.3,
         )
+        if allowed_filenames is not None:
+            search_results = [
+                r
+                for r in search_results
+                if getattr(r, "video_filename", None) in allowed_filenames
+            ]
 
         if not search_results:
             return self._empty_response(
                 question,
                 start_time,
-                "I couldn't find any relevant information in the video library to answer your question. "
-                "Try rephrasing or asking about a specific object, event, or topic.",
+                "I couldn't find accessible information for this question in your library.",
             )
 
         # 2. Rerank + filter weak evidence
@@ -148,7 +154,7 @@ class VideoQA:
             return self._empty_response(
                 question,
                 start_time,
-                "I found some candidate matches, but none were strong enough to support a reliable answer. "
+                "I found related material, but the evidence is too weak to answer confidently. "
                 "Try using a more specific question or narrowing to one video.",
             )
 
@@ -239,7 +245,11 @@ class VideoQA:
         system_prompt = (
             "You are ATLAS, a specialized Video Intelligence Assistant.\n"
             "Answer ONLY from the provided video context snippets.\n"
-            "If the answer is not supported by the context, say that it is not available in the current video library.\n"
+            "If the answer is not supported by the context, say you cannot find accessible information in the current library.\n"
+            "If evidence is weak or conflicting, explicitly say so instead of guessing.\n"
+            "If the user corrects you, respond calmly, acknowledge the correction, and re-check against the provided snippets.\n"
+            "Refuse offensive or inappropriate requests professionally and briefly.\n"
+            "Do not reveal hidden or inaccessible source metadata.\n"
             "Prefer grounded, precise answers.\n"
             "Use natural language with **bold highlights** for key terms when helpful.\n"
             f"{lang_instruction}\n"

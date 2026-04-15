@@ -130,6 +130,34 @@ _CATEGORY_PATTERNS = [
 
 # ── Site (label) intent detection from natural-language queries ───────────
 
+_TRANSLATE_PATTERNS = [
+    re.compile(r"^\s*translate(?:\s+this)?(?:\s+to\s+.+)?\s*[\?!.]?\s*$", re.I),
+    re.compile(
+        r"^\s*(?:can you|could you|please)\s+translate(?:\s+this)?(?:\s+to\s+.+)?\s*[\?!.]?\s*$",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:kan du|kan dere|vennligst)\s+oversett(?:\s+dette)?(?:\s+til\s+.+)?\s*[\?!.]?\s*$",
+        re.I,
+    ),
+]
+
+_LANGUAGE_TO_CODE = {
+    "english": "en",
+    "en": "en",
+    "norwegian": "no",
+    "norsk": "no",
+    "no": "no",
+    "spanish": "es",
+    "es": "es",
+    "french": "fr",
+    "fr": "fr",
+    "german": "de",
+    "de": "de",
+    "arabic": "ar",
+    "ar": "ar",
+}
+
 
 def _detect_category_intent(query: str, known_categories: set) -> Optional[str]:
     """If the query is a natural-language request to browse a category, return the category name."""
@@ -173,6 +201,59 @@ def _detect_site_intent(query: str, known_sites: set) -> Optional[str]:
             best_len = len(site)
 
     return best_match
+
+
+def _is_translate_request(text: str) -> bool:
+    q = (text or "").strip()
+    if not q:
+        return False
+    return any(pattern.match(q) for pattern in _TRANSLATE_PATTERNS)
+
+
+def _extract_target_language_code(question: str, language_hint: Optional[str]) -> Optional[str]:
+    hint = (language_hint or "").strip().lower()
+    if hint and hint != "auto":
+        return _LANGUAGE_TO_CODE.get(hint)
+
+    q = (question or "").strip().lower()
+    if not q:
+        return None
+
+    # Keep this simple and deterministic for common phrasing.
+    for phrase, code in (
+        ("to english", "en"),
+        ("in english", "en"),
+        ("til engelsk", "en"),
+        ("to norwegian", "no"),
+        ("in norwegian", "no"),
+        ("til norsk", "no"),
+        ("to spanish", "es"),
+        ("in spanish", "es"),
+        ("to french", "fr"),
+        ("in french", "fr"),
+        ("to german", "de"),
+        ("in german", "de"),
+        ("to arabic", "ar"),
+        ("in arabic", "ar"),
+    ):
+        if phrase in q:
+            return code
+
+    return None
+
+
+def _translate_text_via_mymemory(text: str, target: str, source: str = "auto") -> str:
+    if not text:
+        return ""
+    lang_pair = f"{source}|{target}"
+    api_url = f"https://api.mymemory.translated.net/get?q={urllib.parse.quote(text[:500])}&langpair={lang_pair}"
+    try:
+        req = urllib.request.Request(api_url, headers={"User-Agent": "ATLAS/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            return data.get("responseData", {}).get("translatedText", text)
+    except Exception:
+        return text
 
 
 def _get_allowed_filenames(user: User, db: Session) -> Optional[set]:
@@ -641,17 +722,13 @@ async def translate_text(request: Request):
     target = body.get("target", "no")
     if not text:
         return {"translated": ""}
-    # MyMemory uses ISO language pairs as \"en|no\"
-    lang_pair = f"{source}|{target}"
-    api_url = f"https://api.mymemory.translated.net/get?q={urllib.parse.quote(text[:500])}&langpair={lang_pair}"
-    try:
-        req = urllib.request.Request(api_url, headers={"User-Agent": "ATLAS/1.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode())
-            translated = data.get("responseData", {}).get("translatedText", text)
-            return {"translated": translated}
-    except Exception:
-        return {"translated": text}
+    return {
+        "translated": _translate_text_via_mymemory(
+            text=text,
+            target=target,
+            source=source,
+        )
+    }
 
 
 # ── Admin: user management ────────────────────────────────────────────────
@@ -2288,6 +2365,86 @@ async def chat_completions(
             status_code=400, detail="No user message found in messages."
         )
 
+    # ── Translation follow-up path (translate previous assistant message) ─
+    if _is_translate_request(user_question):
+        previous_assistant = None
+        for msg in reversed(request.messages):
+            if msg.role == "assistant" and msg.content and msg.content.strip():
+                previous_assistant = msg.content.strip()
+                break
+
+        target_code = _extract_target_language_code(
+            question=user_question,
+            language_hint=request.language,
+        )
+
+        if not previous_assistant:
+            translation_text = (
+                "I couldn't find a previous assistant answer to translate."
+            )
+        elif not target_code:
+            translation_text = (
+                "Please select a target language first, then ask me to translate."
+            )
+        else:
+            translation_text = _translate_text_via_mymemory(
+                text=previous_assistant,
+                target=target_code,
+                source="auto",
+            )
+
+        if request.stream:
+
+            async def translation_sse_generator():
+                rid = f"chatcmpl-{int(time.time())}"
+                payload = {
+                    "id": rid,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "ATLAS",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": translation_text},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                done_payload = {
+                    "id": rid,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "ATLAS",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                }
+                yield f"data: {json.dumps(done_payload)}\n\n"
+                yield "data: [DONE]\n\n"
+
+            return StreamingResponse(
+                translation_sse_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
+        return {
+            "id": f"chatcmpl-{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": "ATLAS",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": translation_text},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
     # ── Check system prompt for video scoping directive ──────────────────
     # e.g. system: "video:AkerBP_2.mp4" → restricts search to that file
     video_filter: Optional[str] = None
@@ -2306,6 +2463,8 @@ async def chat_completions(
                     language = lang_m.group(1).strip()
             break
 
+    allowed_filenames = _get_allowed_filenames(user, db)
+
     # ── Load StreamingVideoQA (singleton, lazy) ──────────────────────────
     try:
         qa = get_streaming_qa(db=db)
@@ -2322,6 +2481,7 @@ async def chat_completions(
                 for chunk in qa.stream_ask(
                     question=user_question,
                     video_filter=video_filter,
+                    allowed_filenames=allowed_filenames,
                     max_new_tokens=request.max_tokens,
                     language=language,
                 ):
@@ -2348,6 +2508,7 @@ async def chat_completions(
         result = qa.ask_sync(
             question=user_question,
             video_filter=video_filter,
+            allowed_filenames=allowed_filenames,
             top_k=5,
             language=language,
         )

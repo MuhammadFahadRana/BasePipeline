@@ -37,6 +37,7 @@ class StreamingVideoQA(VideoQA):
         request_id: Optional[str] = None,
         max_new_tokens: int = 512,
         language: Optional[str] = None,
+        allowed_filenames: Optional[set[str]] = None,
     ) -> Iterator[str]:
         """
         Generator that yields SSE data lines (already formatted as
@@ -85,24 +86,47 @@ class StreamingVideoQA(VideoQA):
             semantic_weight=0.7,
             text_weight=0.3,
         )
+        if allowed_filenames is not None:
+            search_results = [
+                r
+                for r in search_results
+                if getattr(r, "video_filename", None) in allowed_filenames
+            ]
 
         if not search_results:
+            msg = "I couldn't find accessible information for this question in your library."
+            yield _chunk(msg)
+            yield _done()
+            return
+
+        # ── 2. Rerank + filter weak evidence + select context ───────────
+        reranked = self._rerank_results(question, search_results)
+        filtered = [r for r in reranked if r["rerank_score"] >= self.min_rerank_score]
+        if not filtered:
             msg = (
-                "I couldn't find relevant information in the video library "
-                "to answer your question. Try rephrasing or using different keywords."
+                "I found related material, but the evidence is too weak to answer confidently. "
+                "Try a more specific question."
             )
             yield _chunk(msg)
             yield _done()
             return
 
-        # ── 2. Build RAG context ────────────────────────────────────────
-        context_parts = []
-        for i, res in enumerate(search_results):
-            ts = _fmt_ts(res.start_time)
-            context_parts.append(
-                f"[Source {i + 1} | {res.video_filename} @ {ts}]\n{res.text}"
+        selected = self._select_context_with_budget(
+            filtered_results=filtered,
+            token_budget=self.max_context_tokens,
+            max_results=self.max_context_results,
+        )
+        if not selected:
+            msg = (
+                "I found related material, but I couldn't fit enough grounded context to answer reliably. "
+                "Try narrowing your question."
             )
-        context_text = "\n\n".join(context_parts)
+            yield _chunk(msg)
+            yield _done()
+            return
+
+        context_text = "\n\n".join(item["formatted_context"] for item in selected)
+        selected_results = [item["result"] for item in selected]
 
         # ── 3. Build prompt ─────────────────────────────────────────────
         messages = self._build_messages(question, context_text, language=language)
@@ -145,7 +169,7 @@ class StreamingVideoQA(VideoQA):
         thread.join()
 
         # ── 5. Append formatted source citations ────────────────────────
-        citations = _build_citation_block(search_results)
+        citations = _build_citation_block(selected_results)
         yield _chunk(citations)
         yield _done()
 
@@ -155,13 +179,20 @@ class StreamingVideoQA(VideoQA):
         video_filter: Optional[str] = None,
         top_k: int = 5,
         language: Optional[str] = None,
+        allowed_filenames: Optional[set[str]] = None,
     ) -> Dict:
         """
         Synchronous (non-streaming) version — aggregates the stream and
         returns an OpenAI-style complete response dict.
         """
         full_text = ""
-        for chunk in self.stream_ask(question, video_filter=video_filter, top_k=top_k, language=language):
+        for chunk in self.stream_ask(
+            question,
+            video_filter=video_filter,
+            top_k=top_k,
+            language=language,
+            allowed_filenames=allowed_filenames,
+        ):
             if chunk.startswith("data: [DONE]") or not chunk.startswith("data: "):
                 continue
             try:
@@ -210,7 +241,7 @@ def _build_citation_block(results: List[SearchResult]) -> str:
         seen.add(key)
         ts = _fmt_ts(r.start_time)
         snippet = (r.text or "")[:100].replace("\n", " ").strip()
-        score_pct = int((r.score or 0) * 100)
+        score_pct = max(0, min(100, int((r.score or 0) * 100)))
         lines.append(
             f"{i + 1}. **{r.video_filename}** @ `{ts}` ({score_pct}% match)  \n"
             f"   > {snippet}…\n"
