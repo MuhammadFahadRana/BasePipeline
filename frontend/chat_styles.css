@@ -319,6 +319,26 @@
     cursor: not-allowed;
 }
 
+.chat-stop-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    background: #fee2e2;
+    color: #b91c1c;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.chat-stop-btn:hover {
+    background: #fecaca;
+    border-color: #fca5a5;
+}
+
 /* Animations */
 @keyframes chatFadeIn {
     from { opacity: 0; transform: translateY(4px); }

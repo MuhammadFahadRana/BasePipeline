@@ -79,6 +79,66 @@ class MultiModalSearchEngine:
         self.db = db
         self.text_search.db = db
 
+    @staticmethod
+    def _infer_query_intent(query: str) -> Dict[str, bool]:
+        q = (query or "").lower()
+        visual_tokens = {
+            "show",
+            "image",
+            "picture",
+            "frame",
+            "screen",
+            "scene",
+            "looks like",
+            "appearance",
+            "logo",
+            "diagram",
+        }
+        ocr_tokens = {
+            "text on screen",
+            "subtitle",
+            "slide",
+            "caption",
+            "written",
+            "spelled",
+            "wording",
+            "what does it say",
+            "ocr",
+        }
+        temporal_start = {"start", "beginning", "intro", "first"}
+        temporal_end = {"end", "ending", "outro", "last", "final"}
+
+        has_visual = any(t in q for t in visual_tokens)
+        has_ocr = any(t in q for t in ocr_tokens)
+        prefers_start = any(t in q for t in temporal_start)
+        prefers_end = any(t in q for t in temporal_end)
+
+        return {
+            "visual": has_visual,
+            "ocr": has_ocr,
+            "prefers_start": prefers_start,
+            "prefers_end": prefers_end,
+        }
+
+    @staticmethod
+    def _temporal_boost(
+        frame_role: Optional[str], prefers_start: bool, prefers_end: bool
+    ) -> float:
+        if not frame_role:
+            return 0.0
+        role = frame_role.lower()
+        if prefers_start and role.startswith("start"):
+            return 0.12
+        if prefers_end and role.startswith("end"):
+            return 0.12
+        if prefers_start or prefers_end:
+            if role.startswith("mid"):
+                return -0.04
+            return 0.02
+        if role.startswith("mid"):
+            return 0.03
+        return 0.0
+
     @property
     def vision_gen(self):
         """Lazy load vision embedding generator."""
@@ -247,6 +307,14 @@ class MultiModalSearchEngine:
                 tw = max(tw, 0.7)
                 vw = 1.0 - tw
 
+        heuristics = self._infer_query_intent(search_query)
+        if heuristics["visual"] and not heuristics["ocr"]:
+            vw = max(vw, 0.65)
+            tw = 1.0 - vw
+        elif heuristics["ocr"]:
+            tw = max(tw, 0.75)
+            vw = 1.0 - tw
+
         # 1. Get text results with fallback
         fallback_data = self.text_search.search_with_fallback(
             query=search_query,
@@ -341,6 +409,8 @@ class MultiModalSearchEngine:
         for key, (t_score, v_score, base_result) in candidate_map.items():
             current_v_score = v_score
             current_keyframe = base_result.keyframe_path
+            current_evidence_time = getattr(base_result, "evidence_time", None)
+            current_evidence_role = getattr(base_result, "evidence_frame_role", None)
 
             # If we don't have a score yet, try to fetch embedding for segment or scene
             if current_v_score == 0.0:
@@ -403,16 +473,23 @@ class MultiModalSearchEngine:
                     vision_data = self._get_vision_embedding_for_scene(target_scene_id)
 
                 if vision_data:
-                    emb, path = vision_data
+                    emb, path, sample_time, frame_role = vision_data
                     current_v_score = float(np.dot(query_vision_embedding, emb))
                     if not current_keyframe:
                         current_keyframe = path
+                    current_evidence_time = sample_time
+                    current_evidence_role = frame_role
 
-            raw_vision_scores[key] = (current_v_score, current_keyframe)
+            raw_vision_scores[key] = (
+                current_v_score,
+                current_keyframe,
+                current_evidence_time,
+                current_evidence_role,
+            )
 
         # Normalize vision scores to [0, 1] for fair combination with text
         # critical fix: Do NOT min-max normalize if all scores are low noise!
-        all_v = [v for v, _ in raw_vision_scores.values()]
+        all_v = [v for v, _, _, _ in raw_vision_scores.values()]
         v_min = min(all_v) if all_v else 0
         v_max = max(all_v) if all_v else 0
         
@@ -423,7 +500,12 @@ class MultiModalSearchEngine:
 
         final_results = []
         for key, (t_score, _, base_result) in candidate_map.items():
-            current_v_score, current_keyframe = raw_vision_scores[key]
+            (
+                current_v_score,
+                current_keyframe,
+                current_evidence_time,
+                current_evidence_role,
+            ) = raw_vision_scores[key]
 
             # Adjust normalization: if score is below noise floor, keep it near 0
             if v_max < 0.22:
@@ -437,6 +519,13 @@ class MultiModalSearchEngine:
             if t_score == 0.0:
                 norm_v_score *= 0.5  # 50% penalty for zero text relevance
 
+            norm_v_score += self._temporal_boost(
+                current_evidence_role,
+                prefers_start=heuristics["prefers_start"],
+                prefers_end=heuristics["prefers_end"],
+            )
+            norm_v_score = max(0.0, min(1.0, norm_v_score))
+
             combined_score = (effective_text_weight * t_score) + (
                 effective_vision_weight * norm_v_score
             )
@@ -449,6 +538,8 @@ class MultiModalSearchEngine:
                     "combined_score": combined_score,
                     "score": combined_score,
                     "keyframe_path": current_keyframe,
+                    "evidence_time": current_evidence_time,
+                    "evidence_frame_role": current_evidence_role,
                 }
             )
 
@@ -475,7 +566,7 @@ class MultiModalSearchEngine:
 
         result = self.db.execute(
             text("""
-            SELECT ve.embedding, ve.keyframe_path
+            SELECT ve.embedding, ve.keyframe_path, ve.sample_time, ve.frame_role
             FROM transcript_segments ts
             -- Most segments may have ts.scene_id = NULL; fall back to time overlap within same video.
             JOIN scenes s ON (
@@ -490,6 +581,13 @@ class MultiModalSearchEngine:
             JOIN visual_embeddings ve ON s.id = ve.scene_id
             WHERE ts.id = :segment_id
             AND ve.embedding_model = :model_name
+            ORDER BY CASE ve.frame_role
+                WHEN 'mid' THEN 0
+                WHEN 'start' THEN 1
+                WHEN 'end' THEN 2
+                ELSE 3
+            END,
+            COALESCE(ve.sample_time, 0)
             LIMIT 1
         """),
             {"segment_id": segment_id, "model_name": self.vision_model_name},
@@ -518,7 +616,7 @@ class MultiModalSearchEngine:
             norm = np.linalg.norm(embedding)
             if norm > 0:
                 embedding = embedding / norm
-            return embedding, row[1]
+            return embedding, row[1], row[2], row[3]
 
         return None
 
@@ -531,10 +629,17 @@ class MultiModalSearchEngine:
         """
         result = self.db.execute(
             text("""
-            SELECT ve.embedding, ve.keyframe_path
+            SELECT ve.embedding, ve.keyframe_path, ve.sample_time, ve.frame_role
             FROM visual_embeddings ve
             WHERE ve.scene_id = :scene_id
             AND ve.embedding_model = :model_name
+            ORDER BY CASE ve.frame_role
+                WHEN 'mid' THEN 0
+                WHEN 'start' THEN 1
+                WHEN 'end' THEN 2
+                ELSE 3
+            END,
+            COALESCE(ve.sample_time, 0)
             LIMIT 1
         """),
             {"scene_id": scene_id, "model_name": self.vision_model_name},
@@ -560,7 +665,7 @@ class MultiModalSearchEngine:
             norm = np.linalg.norm(embedding)
             if norm > 0:
                 embedding = embedding / norm
-            return embedding, row[1]
+            return embedding, row[1], row[2], row[3]
 
         return None
 
@@ -594,23 +699,33 @@ class MultiModalSearchEngine:
             params["video_filter"] = video_filter
 
         sql_query = f"""
-            SELECT 
-                ts.id as segment_id,
-                v.id as video_id,
-                v.filename as video_filename,
-                v.file_path as video_path,
-                COALESCE(ts.start_time, s.start_time) as start_time,
-                COALESCE(ts.end_time, s.end_time) as end_time,
-                COALESCE(ts.text, '[Visual match]') as text,
-                ve.keyframe_path,
-                1 - (ve.embedding <=> CAST(:query_embedding AS vector)) AS similarity
-            FROM visual_embeddings ve
-            JOIN scenes s ON ve.scene_id = s.id
-            JOIN videos v ON s.video_id = v.id
-            LEFT JOIN transcript_segments ts ON ts.scene_id = s.id
-            WHERE ve.embedding_model = :model_name
-            {query_filter}
-            ORDER BY ve.embedding <=> CAST(:query_embedding AS vector)
+            WITH ranked AS (
+                SELECT
+                    ts.id as segment_id,
+                    v.id as video_id,
+                    v.filename as video_filename,
+                    v.file_path as video_path,
+                    COALESCE(ts.start_time, s.start_time) as start_time,
+                    COALESCE(ts.end_time, s.end_time) as end_time,
+                    COALESCE(ts.text, '[Visual match]') as text,
+                    ve.keyframe_path,
+                    ve.sample_time,
+                    ve.frame_role,
+                    1 - (ve.embedding <=> CAST(:query_embedding AS vector)) AS similarity,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY s.id
+                        ORDER BY ve.embedding <=> CAST(:query_embedding AS vector)
+                    ) AS rn
+                FROM visual_embeddings ve
+                JOIN scenes s ON ve.scene_id = s.id
+                JOIN videos v ON s.video_id = v.id
+                LEFT JOIN transcript_segments ts ON ts.scene_id = s.id
+                WHERE ve.embedding_model = :model_name
+                {query_filter}
+            )
+            SELECT * FROM ranked
+            WHERE rn = 1
+            ORDER BY similarity DESC
             LIMIT :top_k
         """
 
@@ -630,6 +745,8 @@ class MultiModalSearchEngine:
                 vision_score=float(row.similarity),
                 combined_score=float(row.similarity),
                 match_type="visual",
+                evidence_time=row.sample_time,
+                evidence_frame_role=row.frame_role,
             )
             res.keyframe_path = row.keyframe_path
             results.append(res)

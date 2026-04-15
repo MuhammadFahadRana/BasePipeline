@@ -82,6 +82,8 @@ class Scene(Base):
     
     # OCR and enrichment fields
     ocr_text = Column(Text)  # Text extracted from keyframe via OCR
+    ocr_text_norm = Column(Text)  # Normalized OCR text for retrieval
+    ocr_confidence = Column(Float)  # Mean confidence across OCR detections
     ocr_processed_at = Column(DateTime)  # When OCR was last run
     
     # Semantic enrichment fields
@@ -189,6 +191,9 @@ class VisualEmbedding(Base):
         Integer, ForeignKey("scenes.id", ondelete="CASCADE"), nullable=False
     )
     keyframe_path = Column(Text, nullable=False)
+    sample_time = Column(Float)  # Timestamp (seconds) of sampled frame
+    frame_role = Column(String(20), default="mid")  # start/mid/end/extra_n
+    frame_index = Column(Integer)  # Absolute frame index in source video
     embedding = Column(Vector(768))  # 768-dim for SigLIP (google/siglip-base-patch16-224)
     embedding_model = Column(String(100), default="google/siglip-base-patch16-224")
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -197,7 +202,13 @@ class VisualEmbedding(Base):
     scene = relationship("Scene")
 
     __table_args__ = (
-        UniqueConstraint("scene_id", "embedding_model", name="uq_scene_visual_embedding"),
+        UniqueConstraint(
+            "scene_id",
+            "embedding_model",
+            "frame_role",
+            "sample_time",
+            name="uq_scene_visual_embedding",
+        ),
     )
 
     def __repr__(self):

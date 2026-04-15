@@ -1,5 +1,6 @@
 // API Configuration
 const API_BASE_URL = 'http://localhost:8000';
+const ENABLE_INLINE_SEARCH_ANSWER = false;
 
 // ============================================
 // AUTH STATE
@@ -22,6 +23,8 @@ function saveAuth(token, user) {
 }
 
 function clearAuth() {
+    abortActiveSearch();
+    abortActiveAi();
     authToken = null;
     currentUser = null;
     sessionStorage.removeItem('atlas_token');
@@ -49,13 +52,18 @@ const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
 const clearBtn = document.getElementById('clearBtn');
 const limitSelect = document.getElementById('limitSelect');
+const askAiBtn = document.getElementById('askAiBtn');
 const resultsSection = document.getElementById('resultsSection');
 const resultsContainer = document.getElementById('resultsContainer');
 const resultsTitle = document.getElementById('resultsTitle');
 const resultsCount = document.getElementById('resultsCount');
 const answerPanel = document.getElementById('answerPanel');
 const answerBody = document.getElementById('answerBody');
+const answerToggleBtn = document.getElementById('answerToggleBtn');
+const stopAiBtn = document.getElementById('stopAiBtn');
 const loadingState = document.getElementById('loadingState');
+const loadingMessage = document.getElementById('loadingMessage');
+const stopSearchBtn = document.getElementById('stopSearchBtn');
 const emptyState = document.getElementById('emptyState');
 const videoCount = document.getElementById('videoCount');
 const statusIndicator = document.getElementById('statusIndicator');
@@ -78,11 +86,157 @@ let currentQuery = '';
 let videos = [];
 let currentVideoResult = null; // Store current result for copy functionality
 let selectedImageFile = null; // Store selected image for visual search
-let lastResults = []; // Store results for tab re-sorting
-let lastSearchData = null; // Store full response for re-rendering
-let currentView = 'combined'; // Current active tab view
+let lastResults = []; // Backward compatibility cache of currently rendered results
+let lastSearchData = null; // Backward compatibility cache of currently rendered payload
+let lastSearchSets = { text: null, multimodal: null }; // Dual result sets per query
+let currentView = 'text'; // Active result tab: text | combined | visual
 let currentFacet = 'auto'; // Meaning facet (auto/oil_gas/tools/analytics)
 let _videoPollTimer = null;
+let activeSearchController = null;
+let activeAiController = null;
+let isSearchRunning = false;
+let isAiGenerating = false;
+let isAnswerCollapsed = false;
+
+function getSearchButtonMarkup(isStop = false) {
+    if (isStop) {
+        return `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/>
+            </svg>
+            <span class="search-btn-label">Stop</span>
+        `;
+    }
+
+    return `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span class="search-btn-label">Search</span>
+    `;
+}
+
+function getAskAiButtonMarkup(isStop = false) {
+    if (isStop) {
+        return `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/>
+            </svg>
+            <span>Stop</span>
+        `;
+    }
+
+    return `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.0313 2.60091 15.9205 3.63818 17.5L2.5 21.5L6.5 20.3618C8.07954 21.3991 9.96875 22 12 22Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="8" cy="12" r="1" fill="currentColor"/>
+            <circle cx="12" cy="12" r="1" fill="currentColor"/>
+            <circle cx="16" cy="12" r="1" fill="currentColor"/>
+        </svg>
+        <span>Ask AI</span>
+    `;
+}
+
+function setSearchButtonState(isRunning) {
+    isSearchRunning = isRunning;
+    if (!searchBtn) return;
+
+    searchBtn.innerHTML = getSearchButtonMarkup(isRunning);
+    searchBtn.classList.toggle('is-stop', isRunning);
+    searchBtn.title = isRunning ? 'Stop the current search' : 'Search';
+
+    if (stopSearchBtn) {
+        stopSearchBtn.style.display = isRunning ? 'inline-flex' : 'none';
+    }
+    if (loadingMessage) {
+        loadingMessage.textContent = isRunning ? 'Searching your library...' : 'Searching...';
+    }
+}
+
+function setAskAiButtonState(isRunning) {
+    if (!ENABLE_INLINE_SEARCH_ANSWER) {
+        if (askAiBtn) askAiBtn.style.display = 'none';
+        isAiGenerating = false;
+        return;
+    }
+
+    isAiGenerating = isRunning;
+    if (!askAiBtn) return;
+
+    askAiBtn.innerHTML = getAskAiButtonMarkup(isRunning);
+    askAiBtn.classList.toggle('is-stop', isRunning);
+    askAiBtn.title = isRunning ? 'Stop the current ATLAS answer' : 'Ask ATLAS AI about these results';
+}
+
+function setAnswerCollapsed(collapsed) {
+    isAnswerCollapsed = collapsed;
+    if (!answerPanel) return;
+
+    answerPanel.classList.toggle('is-collapsed', collapsed);
+    if (answerToggleBtn) {
+        answerToggleBtn.textContent = collapsed ? 'Show' : 'Hide';
+        answerToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    }
+}
+
+function showAnswerPanel({ expand = true } = {}) {
+    if (answerPanel) {
+        answerPanel.style.display = 'block';
+    }
+    if (answerToggleBtn) {
+        answerToggleBtn.style.display = 'inline-flex';
+    }
+    if (expand) {
+        setAnswerCollapsed(false);
+    }
+}
+
+function hideAnswerPanel({ clearContent = false } = {}) {
+    if (answerPanel) {
+        answerPanel.style.display = 'none';
+    }
+    if (answerToggleBtn) {
+        answerToggleBtn.style.display = 'none';
+    }
+    if (stopAiBtn) {
+        stopAiBtn.style.display = 'none';
+    }
+    setAnswerCollapsed(false);
+    if (clearContent && answerBody) {
+        answerBody.innerHTML = '';
+    }
+}
+
+function restoreVisibleContentAfterAbort(previousQuery = '') {
+    currentQuery = previousQuery;
+    hideLoading();
+
+    const hasRenderedResults = Boolean(resultsContainer && resultsContainer.innerHTML.trim());
+    const hasRenderedAnswer = Boolean(answerBody && answerBody.innerHTML.trim());
+
+    if (hasRenderedResults || hasRenderedAnswer) {
+        hideEmpty();
+        resultsSection.style.display = 'block';
+    } else {
+        showEmpty();
+    }
+}
+
+function abortActiveSearch({ notify = false } = {}) {
+    if (!activeSearchController) return;
+    activeSearchController.abort();
+    if (notify) {
+        showNotification('Search stopped.', 'info');
+    }
+}
+
+function abortActiveAi({ notify = false } = {}) {
+    if (!activeAiController) return;
+    activeAiController.abort();
+    if (notify) {
+        showNotification('ATLAS answer stopped.', 'info');
+    }
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -519,8 +673,19 @@ function openVideoFromBrowser(video) {
 
 // Attach Event Listeners
 function attachEventListeners() {
+    setSearchButtonState(false);
+    setAskAiButtonState(false);
+    if (!ENABLE_INLINE_SEARCH_ANSWER) {
+        hideAnswerPanel({ clearContent: true });
+    }
+
     // Search button
     searchBtn.addEventListener('click', () => {
+        if (isSearchRunning) {
+            abortActiveSearch({ notify: true });
+            return;
+        }
+
         if (selectedImageFile) {
             performImageSearch();
         } else {
@@ -529,23 +694,33 @@ function attachEventListeners() {
     });
 
     // Ask AI button — manually triggered, does NOT auto-fire on search
-    const askAiBtn = document.getElementById('askAiBtn');
-    if (askAiBtn) {
+    if (askAiBtn && ENABLE_INLINE_SEARCH_ANSWER) {
         askAiBtn.addEventListener('click', async () => {
             if (!currentQuery) return;
-            askAiBtn.disabled = true;
-            askAiBtn.textContent = 'Thinking…';
-            try {
-                await fetchAiAnswer(currentQuery);
-            } finally {
-                askAiBtn.disabled = false;
-                askAiBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.0313 2.60091 15.9205 3.63818 17.5L2.5 21.5L6.5 20.3618C8.07954 21.3991 9.96875 22 12 22Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <circle cx="8" cy="12" r="1" fill="currentColor"/>
-                    <circle cx="12" cy="12" r="1" fill="currentColor"/>
-                    <circle cx="16" cy="12" r="1" fill="currentColor"/>
-                </svg> Ask AI`;
+            if (isAiGenerating) {
+                abortActiveAi({ notify: true });
+                return;
             }
+
+            await fetchAiAnswer(currentQuery);
+        });
+    }
+
+    if (stopSearchBtn) {
+        stopSearchBtn.addEventListener('click', () => {
+            abortActiveSearch({ notify: true });
+        });
+    }
+
+    if (stopAiBtn && ENABLE_INLINE_SEARCH_ANSWER) {
+        stopAiBtn.addEventListener('click', () => {
+            abortActiveAi({ notify: true });
+        });
+    }
+
+    if (answerToggleBtn && ENABLE_INLINE_SEARCH_ANSWER) {
+        answerToggleBtn.addEventListener('click', () => {
+            setAnswerCollapsed(!isAnswerCollapsed);
         });
     }
 
@@ -702,6 +877,15 @@ async function performImageSearch() {
     }
 
     const textQuery = searchInput.value.trim();
+    const previousQuery = currentQuery;
+    abortActiveSearch();
+    abortActiveAi();
+    hideAnswerPanel({ clearContent: true });
+    if (askAiBtn) askAiBtn.style.display = 'none';
+
+    const controller = new AbortController();
+    activeSearchController = controller;
+    setSearchButtonState(true);
     currentQuery = textQuery || `Image: ${selectedImageFile.name}`;
     showLoading();
 
@@ -729,6 +913,7 @@ async function performImageSearch() {
         const response = await authFetch(url, {
             method: 'POST',
             body: formData,
+            signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -739,23 +924,41 @@ async function performImageSearch() {
         displayResults(data);
 
     } catch (error) {
+        if (error.name === 'AbortError') {
+            if (activeSearchController === controller) {
+                restoreVisibleContentAfterAbort(previousQuery);
+            }
+            return;
+        }
         console.error('Image search error:', error);
         showNotification('Image search failed. Please try again.', 'error');
         hideLoading();
         showEmpty();
+    } finally {
+        if (activeSearchController === controller) {
+            activeSearchController = null;
+            setSearchButtonState(false);
+        }
     }
 }
 
 // Helper: fetch AI answer using the streaming chat completions endpoint.
 // Shows the answer panel immediately and streams tokens as they arrive.
 async function fetchAiAnswer(query) {
-    // Show the answer panel immediately with a loading indicator
-    if (answerPanel) {
-        answerPanel.style.display = 'block';
-    }
+    abortActiveAi();
+
+    const controller = new AbortController();
+    activeAiController = controller;
+    setAskAiButtonState(true);
+    if (stopAiBtn) stopAiBtn.style.display = 'inline-flex';
+    fetchAiAnswer._lastRender = 0;
+
+    showAnswerPanel({ expand: true });
     if (answerBody) {
-        answerBody.innerHTML = '<p class="answer-loading"><span class="typing-dots"><span>.</span><span>.</span><span>.</span></span> ATLAS Thinking…</p>';
+        answerBody.innerHTML = '<p class="answer-loading"><span class="typing-dots"><span>.</span><span>.</span><span>.</span></span> ATLAS is composing an answer…</p>';
     }
+
+    let fullAnswer = '';
 
     try {
         const headers = { 'Content-Type': 'application/json' };
@@ -764,6 +967,7 @@ async function fetchAiAnswer(query) {
         const resp = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
             method: 'POST',
             headers,
+            signal: controller.signal,
             body: JSON.stringify({
                 model: 'ATLAS',
                 messages: [{ role: 'user', content: query }],
@@ -779,7 +983,6 @@ async function fetchAiAnswer(query) {
         const reader = resp.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
-        let fullAnswer = '';
 
         while (true) {
             const { done, value } = await reader.read();
@@ -803,41 +1006,55 @@ async function fetchAiAnswer(query) {
                 } catch (_) { /* skip malformed chunk */ }
             }
 
-            // THROTTLED: Update the panel at most every 75ms to reduce DOM churn
             const now = Date.now();
-            if (fullAnswer && answerBody && (!fetchAiAnswer._lastRender || now - fetchAiAnswer._lastRender > 75)) {
+            if (
+                fullAnswer &&
+                answerBody &&
+                (!fetchAiAnswer._lastRender || now - fetchAiAnswer._lastRender > 75)
+            ) {
                 answerBody.innerHTML = renderModernAiAnswer(fullAnswer);
                 fetchAiAnswer._lastRender = now;
             }
         }
 
-        // Final render to ensure the complete answer is displayed
         if (fullAnswer && answerBody) {
             answerBody.innerHTML = renderModernAiAnswer(fullAnswer);
         }
 
         if (!fullAnswer.trim()) {
-            // No answer generated
-            if (answerPanel) answerPanel.style.display = 'none';
-            if (answerBody) answerBody.innerHTML = '';
+            hideAnswerPanel({ clearContent: true });
             return null;
         }
 
-        // Check for garbage answers
         if (_isGarbageAnswer(fullAnswer)) {
-            if (answerPanel) answerPanel.style.display = 'none';
-            if (answerBody) answerBody.innerHTML = '';
+            hideAnswerPanel({ clearContent: true });
             return null;
         }
 
-        // Return a structure compatible with displayAiAnswer
         return { answer: fullAnswer, citations: [] };
     } catch (err) {
+        if (err.name === 'AbortError') {
+            if (fullAnswer.trim()) {
+                showAnswerPanel({ expand: false });
+                if (answerBody) {
+                    answerBody.innerHTML = renderModernAiAnswer(fullAnswer);
+                }
+                return { answer: fullAnswer, citations: [] };
+            }
+
+            hideAnswerPanel({ clearContent: true });
+            return null;
+        }
+
         console.error('AI answer fetch error:', err);
-        // Hide the panel on error
-        if (answerPanel) answerPanel.style.display = 'none';
-        if (answerBody) answerBody.innerHTML = '';
+        hideAnswerPanel({ clearContent: true });
         return null;
+    } finally {
+        if (activeAiController === controller) {
+            activeAiController = null;
+            setAskAiButtonState(false);
+            if (stopAiBtn) stopAiBtn.style.display = 'none';
+        }
     }
 }
 
@@ -852,6 +1069,18 @@ async function performSearch() {
         return;
     }
 
+    const previousQuery = currentQuery;
+    abortActiveSearch();
+    abortActiveAi();
+
+    const controller = new AbortController();
+    activeSearchController = controller;
+    setSearchButtonState(true);
+    hideAnswerPanel({ clearContent: true });
+    if (askAiBtn) {
+        askAiBtn.style.display = 'none';
+    }
+
     // Browse-only mode (no text query, but chips selected)
     if (!query && (selectedCatChips.length > 0 || selectedSiteChips.length > 0)) {
         currentQuery = '';
@@ -861,15 +1090,28 @@ async function performSearch() {
             const params = new URLSearchParams({ limit });
             selectedCatChips.forEach(chip => params.append('category', chip.dataset.category));
             selectedSiteChips.forEach(chip => params.append('site', chip.dataset.site));
-            const response = await authFetch(`${API_BASE_URL}/search/browse?${params}`);
+            const response = await authFetch(`${API_BASE_URL}/search/browse?${params}`, {
+                signal: controller.signal,
+            });
             if (!response.ok) throw new Error(`Browse failed: ${response.statusText}`);
             const data = await response.json();
             displayResults(data, null);
         } catch (error) {
+            if (error.name === 'AbortError') {
+                if (activeSearchController === controller) {
+                    restoreVisibleContentAfterAbort(previousQuery);
+                }
+                return;
+            }
             console.error('Browse error:', error);
             showNotification('Browse failed. Please try again.', 'error');
             hideLoading();
             showEmpty();
+        } finally {
+            if (activeSearchController === controller) {
+                activeSearchController = null;
+                setSearchButtonState(false);
+            }
         }
         return;
     }
@@ -877,7 +1119,9 @@ async function performSearch() {
     // Detect category or site browse intent from natural-language query
     if (query && selectedCatChips.length === 0 && selectedSiteChips.length === 0) {
         try {
-            const intentResp = await authFetch(`${API_BASE_URL}/search/intent?q=${encodeURIComponent(query)}`);
+            const intentResp = await authFetch(`${API_BASE_URL}/search/intent?q=${encodeURIComponent(query)}`, {
+                signal: controller.signal,
+            });
             if (intentResp.ok) {
                 const intent = await intentResp.json();
                 if (intent.type === 'category_browse' && intent.category) {
@@ -886,10 +1130,16 @@ async function performSearch() {
                     const limit = parseInt(limitSelect.value);
                     const params = new URLSearchParams({ limit });
                     params.append('category', intent.category);
-                    const browseResp = await authFetch(`${API_BASE_URL}/search/browse?${params}`);
+                    const browseResp = await authFetch(`${API_BASE_URL}/search/browse?${params}`, {
+                        signal: controller.signal,
+                    });
                     if (browseResp.ok) {
                         const data = await browseResp.json();
                         displayResults(data, null);
+                        if (activeSearchController === controller) {
+                            activeSearchController = null;
+                            setSearchButtonState(false);
+                        }
                         return;
                     }
                 } else if (intent.type === 'site_browse' && intent.site) {
@@ -898,15 +1148,31 @@ async function performSearch() {
                     const limit = parseInt(limitSelect.value);
                     const params = new URLSearchParams({ limit });
                     params.append('site', intent.site);
-                    const browseResp = await authFetch(`${API_BASE_URL}/search/browse?${params}`);
+                    const browseResp = await authFetch(`${API_BASE_URL}/search/browse?${params}`, {
+                        signal: controller.signal,
+                    });
                     if (browseResp.ok) {
                         const data = await browseResp.json();
                         displayResults(data, null);
+                        if (activeSearchController === controller) {
+                            activeSearchController = null;
+                            setSearchButtonState(false);
+                        }
                         return;
                     }
                 }
             }
-        } catch (e) { /* intent detection failed, proceed with normal search */ }
+        } catch (e) {
+            if (e.name === 'AbortError') {
+                if (activeSearchController === controller) {
+                    restoreVisibleContentAfterAbort(previousQuery);
+                    activeSearchController = null;
+                    setSearchButtonState(false);
+                }
+                return;
+            }
+            /* intent detection failed, proceed with normal search */
+        }
     }
 
     currentQuery = query;
@@ -933,26 +1199,21 @@ async function performSearch() {
             const activeSiteChips = document.querySelectorAll('#searchSiteFilter .site-chip.active');
             activeSiteChips.forEach(chip => baseParams.append('site', chip.dataset.site));
 
-            try {
-                const response = await authFetch(`${API_BASE_URL}/search/multimodal/quick?${baseParams}`);
-
-                if (!response.ok) {
-                    console.log('Multi-modal search failed, falling back to text search');
-                    throw new Error('Multi-modal unavailable');
-                }
-
-                return await response.json();
-            } catch (error) {
-                console.log('Using text-only fallback:', error.message);
-            }
-
-            const response = await authFetch(`${API_BASE_URL}/search/quick?${baseParams}`);
-
+            const response = await authFetch(`${API_BASE_URL}/search/quick?${baseParams}`, {
+                signal: controller.signal,
+            });
             if (!response.ok) {
                 throw new Error(`Search failed: ${response.statusText}`);
             }
 
-            return await response.json();
+            const textData = await response.json();
+            return {
+                ...textData,
+                search_sets: {
+                    text: textData,
+                    multimodal: null,
+                },
+            };
         })();
 
         // QA is NO LONGER auto-fired. User can trigger it manually via "Ask AI" button.
@@ -965,7 +1226,9 @@ async function performSearch() {
         const resultCount = (data && data.results) ? data.results.length : 0;
         if (resultCount === 0 && query) {
             try {
-                const sitesResp = await authFetch(`${API_BASE_URL}/auth/sites`);
+                const sitesResp = await authFetch(`${API_BASE_URL}/auth/sites`, {
+                    signal: controller.signal,
+                });
                 if (sitesResp.ok) {
                     const sitesArr = await sitesResp.json();
                     const qLower = query.toLowerCase();
@@ -977,9 +1240,11 @@ async function performSearch() {
                         }
                     }
                     if (bestSite) {
-                        const browseParams = new URLSearchParams({ limit: parseInt(document.getElementById('searchLimit')?.value || 10) });
+                        const browseParams = new URLSearchParams({ limit: parseInt(limitSelect?.value || 10) });
                         browseParams.append('site', bestSite);
-                        const browseResp = await authFetch(`${API_BASE_URL}/search/browse?${browseParams}`);
+                        const browseResp = await authFetch(`${API_BASE_URL}/search/browse?${browseParams}`, {
+                            signal: controller.signal,
+                        });
                         if (browseResp.ok) {
                             const browseData = await browseResp.json();
                             if (browseData.results && browseData.results.length > 0) {
@@ -995,10 +1260,21 @@ async function performSearch() {
         displayResults(data, null);
 
     } catch (error) {
+        if (error.name === 'AbortError') {
+            if (activeSearchController === controller) {
+                restoreVisibleContentAfterAbort(previousQuery);
+            }
+            return;
+        }
         console.error('Search error:', error);
         showNotification('Search failed. Please try again.', 'error');
         hideLoading();
         showEmpty();
+    } finally {
+        if (activeSearchController === controller) {
+            activeSearchController = null;
+            setSearchButtonState(false);
+        }
     }
 }
 
@@ -1113,13 +1389,12 @@ function displayAiAnswer(qaData) {
 
     // Suppress garbage answers
     if (_isGarbageAnswer(qaData.answer)) {
-        if (answerPanel) answerPanel.style.display = 'none';
+        hideAnswerPanel({ clearContent: true });
         return;
     }
 
-    if (answerPanel) {
-        answerPanel.style.display = 'block';
-    }
+    showAnswerPanel({ expand: true });
+    if (stopAiBtn) stopAiBtn.style.display = 'none';
     if (answerBody) {
         answerBody.innerHTML = renderModernAiAnswer(qaData.answer, qaData.citations);
     }
@@ -1132,10 +1407,29 @@ function displayResults(data, qaData = null) {
 
     const { query, results, results_count, search_time_seconds, search_strategy, search_message } = data;
 
-    // Store for tab re-sorting
-    lastResults = results.slice();
-    lastSearchData = data;
-    currentView = 'combined';
+    // Store dual datasets for tab switching (text-only vs multimodal views)
+    lastSearchSets = {
+        text: data?.search_sets?.text || data,
+        multimodal: data?.search_sets?.multimodal || null,
+    };
+    lastResults = (lastSearchSets.text?.results || results || []).slice();
+    lastSearchData = lastSearchSets.text || data;
+
+    const hasMultimodalDataset = Boolean(
+        lastSearchSets.multimodal &&
+        Array.isArray(lastSearchSets.multimodal.results) &&
+        lastSearchSets.multimodal.results.length > 0
+    );
+    const hasComponentScores = Boolean(
+        Array.isArray(lastSearchSets.text?.results) &&
+        lastSearchSets.text.results.some(
+            r => r && r.text_score !== undefined && r.vision_score !== undefined
+        )
+    );
+    const textCount = Array.isArray(lastSearchSets.text?.results) ? lastSearchSets.text.results.length : (results_count || 0);
+    const multimodalCount = hasMultimodalDataset ? lastSearchSets.multimodal.results.length : 0;
+    const useVisualAsDefault = textCount === 0 && multimodalCount > 0;
+    currentView = useVisualAsDefault ? 'visual' : 'text';
     // If backend applied a facet, keep it in state
     currentFacet = data.facet_applied || currentFacet || 'auto';
 
@@ -1143,18 +1437,22 @@ function displayResults(data, qaData = null) {
 
     // Show AI answer if provided synchronously; otherwise leave the panel
     // alone — the streaming fetchAiAnswer manages its own visibility.
-    if (qaData && qaData.answer && qaData.answer.trim()) {
+    if (ENABLE_INLINE_SEARCH_ANSWER && qaData && qaData.answer && qaData.answer.trim()) {
         displayAiAnswer(qaData);
     }
 
     // Display count and search time (like Google)
-    let countText = `${results_count} result${results_count !== 1 ? 's' : ''}`;
+    let countText = `${textCount} text result${textCount !== 1 ? 's' : ''}`;
+    if (hasMultimodalDataset) {
+        countText += ` • ${multimodalCount} visual result${multimodalCount !== 1 ? 's' : ''}`;
+    }
     if (search_time_seconds !== undefined) {
         countText += ` (${search_time_seconds} seconds)`;
     }
     resultsCount.textContent = countText;
 
-    if (results_count === 0) {
+    if (textCount === 0 && multimodalCount === 0) {
+        if (askAiBtn) askAiBtn.style.display = 'none';
         showEmptyResults();
         document.getElementById('resultTabs').style.display = 'none';
         renderFacetChips(data.facets || [], currentFacet);
@@ -1163,28 +1461,45 @@ function displayResults(data, qaData = null) {
         return;
     }
 
-    // Show/hide tabs based on whether multimodal scores are available
-    const hasMultimodalScores = results.some(r => r.text_score !== undefined && r.vision_score !== undefined);
+    // Show tabs only when we have a real multimodal dataset for this query
     const tabsEl = document.getElementById('resultTabs');
-    tabsEl.style.display = hasMultimodalScores ? 'flex' : 'none';
+    tabsEl.style.display = (hasMultimodalDataset || hasComponentScores) ? 'flex' : 'none';
 
-    // Reset active tab to Combined
+    // Reset active tab to Text (default for speed/precision)
     tabsEl.querySelectorAll('.result-tab').forEach(tab => tab.classList.remove('active'));
-    tabsEl.querySelector('[data-view="combined"]').classList.add('active');
+    const defaultTab = tabsEl.querySelector(`[data-view="${currentView}"]`);
+    if (defaultTab) defaultTab.classList.add('active');
 
     renderFacetChips(data.facets || [], currentFacet);
     // Render "Did you mean?" / word-sense suggestions above results
     renderSenseSuggestions(data.sense_suggestions || [], data.did_you_mean);
-    // Render results grouped by video
-    renderGroupedResults(data.grouped_results || [], results, search_strategy, search_message);
+    // Render default dataset (text by default, visual when text is empty)
+    const textData = lastSearchSets.text || data;
+    const defaultData = useVisualAsDefault ? (lastSearchSets.multimodal || textData) : textData;
+    const defaultResults = (defaultData.results || []).slice();
+    if (currentView === 'visual') {
+        defaultResults.sort((a, b) => (b.vision_score || 0) - (a.vision_score || 0));
+    } else if (currentView === 'combined') {
+        defaultResults.sort((a, b) => (b.combined_score || b.score || 0) - (a.combined_score || a.score || 0));
+    }
+    renderGroupedResults(
+        buildGroupedResults(defaultResults),
+        defaultResults,
+        defaultData.search_strategy,
+        defaultData.search_message,
+    );
 
     // Reset translate dropdown to "Original" for fresh results
     const translateSelect = document.getElementById('translateLang');
     if (translateSelect) translateSelect.value = '';
 
     // Show the Ask AI button now that we have results to answer about
-    const askAiBtn = document.getElementById('askAiBtn');
-    if (askAiBtn) askAiBtn.style.display = 'inline-flex';
+    if (askAiBtn && ENABLE_INLINE_SEARCH_ANSWER) {
+        askAiBtn.style.display = 'inline-flex';
+        setAskAiButtonState(false);
+    } else if (askAiBtn) {
+        askAiBtn.style.display = 'none';
+    }
 
     resultsSection.style.display = 'block';
 }
@@ -1400,6 +1715,7 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
             const row = document.createElement('div');
             row.className = 'occurrence-row';
             if (idx >= 2) row.classList.add('occurrence-hidden');
+            const sourceMeta = getResultSourceMeta(occ);
 
             const thumbnailHtml = occ.keyframe_path
                 ? `<img class="occurrence-thumb" src="${API_BASE_URL}/keyframe?path=${encodeURIComponent(occ.keyframe_path)}&token=${authToken}" 
@@ -1408,16 +1724,27 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
 
             const highlightedText = highlightText(occ.text || '', currentQuery);
             const scoreVal = occ.combined_score || occ.score || 0;
+            const hasMultiScores = occ.text_score !== undefined && occ.vision_score !== undefined;
 
-            const scoreHtml = isBrowse
-                ? ''
-                : `<span class="occurrence-score">Score: ${scoreVal.toFixed(3)}</span>`;
+            let scoreHtml = '';
+            if (!isBrowse && hasMultiScores) {
+                scoreHtml = `
+                    <span class="occurrence-score-badges">
+                        <span class="score-badge score-badge-text ${currentView === 'text' ? 'active' : ''}" title="Text embedding similarity">T: ${Number(occ.text_score).toFixed(3)}</span>
+                        <span class="score-badge score-badge-visual ${currentView === 'visual' ? 'active' : ''}" title="Visual embedding similarity">V: ${Number(occ.vision_score).toFixed(3)}</span>
+                        <span class="score-badge score-badge-combined ${currentView === 'combined' ? 'active' : ''}" title="Combined score">C: ${Number(occ.combined_score || 0).toFixed(3)}</span>
+                    </span>
+                `;
+            } else if (!isBrowse) {
+                scoreHtml = `<span class="occurrence-score">Score: ${scoreVal.toFixed(3)}</span>`;
+            }
 
             row.innerHTML = `
                 ${thumbnailHtml}
                 <div class="occurrence-body">
                     <div class="occurrence-ts-row">
                         <span class="occurrence-timestamp">${escapeHtml(occ.timestamp || '00:00:00')}</span>
+                        <span class="result-source source-${sourceMeta.id}">${sourceMeta.label}</span>
                         ${scoreHtml}
                     </div>
                     <div class="occurrence-text">${highlightedText}</div>
@@ -1463,6 +1790,29 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
         videoCard.appendChild(occList);
         resultsContainer.appendChild(videoCard);
     });
+}
+
+function buildGroupedResults(flatResults = []) {
+    const groupedMap = {};
+    flatResults.forEach(rd => {
+        const vid = rd.video_id;
+        if (!groupedMap[vid]) {
+            groupedMap[vid] = {
+                video_id: vid,
+                video_filename: rd.video_filename,
+                occurrences: [],
+            };
+        }
+        groupedMap[vid].occurrences.push(rd);
+    });
+    return Object.values(groupedMap);
+}
+
+function getCurrentDataset(view = currentView) {
+    if (view === 'visual' || view === 'combined') {
+        return lastSearchSets.multimodal || lastSearchSets.text;
+    }
+    return lastSearchSets.text || lastSearchSets.multimodal;
 }
 
 // Render result cards into the container (flat — kept for tab re-sort)
@@ -1516,12 +1866,16 @@ function createResultCard(result, index) {
     const timestamp = result.timestamp || '00:00:00';
     const text = result.text || '';
     const keyframePath = result.keyframe_path || '';
+    const sourceMeta = getResultSourceMeta(result);
 
     // Determine which score to highlight based on current view
     let primaryScore;
     let primaryLabel;
     if (currentView === 'text' && result.text_score !== undefined) {
         primaryScore = result.text_score;
+        primaryLabel = 'Text';
+    } else if (currentView === 'text') {
+        primaryScore = result.score || 0;
         primaryLabel = 'Text';
     } else if (currentView === 'visual' && result.vision_score !== undefined) {
         primaryScore = result.vision_score;
@@ -1575,6 +1929,7 @@ function createResultCard(result, index) {
             </div>
             <div class="result-meta">
                 <div class="result-timestamp">${timestamp}</div>
+                <div class="result-source source-${sourceMeta.id}">${sourceMeta.label}</div>
                 <div class="result-score">${primaryLabel}: ${primaryScore.toFixed(3)}</div>
             </div>
         </div>
@@ -1588,6 +1943,25 @@ function createResultCard(result, index) {
     });
 
     return card;
+}
+
+function getResultSourceMeta(result) {
+    const rid = result?.result_id;
+    const txt = (result?.text || '').toLowerCase();
+
+    if (typeof rid === 'string' && rid.startsWith('ocr_')) {
+        return { id: 'ocr', label: 'OCR' };
+    }
+    if (typeof rid === 'string' && rid.startsWith('visual_')) {
+        return { id: 'visual', label: 'Visual Caption' };
+    }
+    if (txt.startsWith('[ocr]')) {
+        return { id: 'ocr', label: 'OCR' };
+    }
+    if (txt.startsWith('[visual]')) {
+        return { id: 'visual', label: 'Visual Caption' };
+    }
+    return { id: 'transcript', label: 'Transcript' };
 }
 
 // ========================================
@@ -1610,32 +1984,25 @@ function attachTabListeners() {
         tabsContainer.querySelectorAll('.result-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
 
-        // Re-sort results based on selected view
-        const sorted = lastResults.slice();
+        // Resolve source dataset for selected tab
+        const selectedData = getCurrentDataset(view);
+        if (!selectedData || !Array.isArray(selectedData.results)) return;
+
+        const sorted = selectedData.results.slice();
         if (view === 'text') {
-            sorted.sort((a, b) => (b.text_score || 0) - (a.text_score || 0));
+            // Text-only tab: keep backend ranking (already optimized for lexical+semantic text quality)
         } else if (view === 'visual') {
             sorted.sort((a, b) => (b.vision_score || 0) - (a.vision_score || 0));
         } else {
             sorted.sort((a, b) => (b.combined_score || b.score || 0) - (a.combined_score || a.score || 0));
         }
 
-        // Re-render grouped cards (preserve strategy banner)
-        const strategy = lastSearchData?.search_strategy;
-        const message = lastSearchData?.search_message;
-
-        // Re-group sorted results
-        const groupedMap = {};
-        sorted.forEach(rd => {
-            const vid = rd.video_id;
-            if (!groupedMap[vid]) {
-                groupedMap[vid] = { video_id: vid, video_filename: rd.video_filename, occurrences: [] };
-            }
-            groupedMap[vid].occurrences.push(rd);
-        });
-        const regrouped = Object.values(groupedMap);
-
-        renderGroupedResults(regrouped, sorted, strategy, message);
+        renderGroupedResults(
+            buildGroupedResults(sorted),
+            sorted,
+            selectedData.search_strategy,
+            selectedData.search_message,
+        );
     });
 }
 

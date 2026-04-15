@@ -90,7 +90,7 @@ def init_db():
 
     print(f"Creating database tables on {DB_HOST}:{DB_PORT}/{DB_NAME}...")
     Base.metadata.create_all(bind=engine)
-    print("✓ Database initialized successfully")
+    print("[OK] Database initialized successfully")
 
 
 def test_connection():
@@ -99,8 +99,8 @@ def test_connection():
         with engine.connect() as conn:
             result = conn.execute(text("SELECT version();"))
             version = result.fetchone()[0]
-            print(f"✓ Connected to PostgreSQL: {version}")
+            print(f"[OK] Connected to PostgreSQL: {version}")
             return True
     except Exception as e:
-        print(f"✗ Database connection failed: {e}")
+        print(f"[ERROR] Database connection failed: {e}")
         return False

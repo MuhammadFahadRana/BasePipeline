@@ -17,7 +17,7 @@ if sys.platform == 'win32':
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from scene_detector import SceneDetector, SceneConfig
+from extract_visual_features import VisualFeatureExtractor
 from database.config import SessionLocal, test_connection
 from database.models import Scene
 
@@ -25,15 +25,12 @@ from database.models import Scene
 def backfill_ocr(dry_run: bool = False):
     """Run OCR on all existing keyframes and update results + DB."""
 
-    # Initialize scene detector (OCR only, no YOLO/CLIP needed)
-    config = SceneConfig(
-        enable_refinement=False,
-        enable_ocr=True,
-        ocr_languages=["en"],
-        ocr_use_gpu=True,
-        ocr_confidence_threshold=0.5,
+    # Use Qwen2-VL extractor for OCR from existing keyframes.
+    extractor = VisualFeatureExtractor(
+        model_name="Qwen/Qwen2-VL-2B-Instruct",
+        device="auto",
+        load_in_4bit=True,
     )
-    detector = SceneDetector(config=config)
 
     results_dir = Path("processed/results")
     if not results_dir.exists():
@@ -115,16 +112,8 @@ def backfill_ocr(dry_run: bool = False):
                 continue
 
             try:
-                ocr_reader = detector._ensure_ocr()
-                if ocr_reader is None:
-                    print("  [!] OCR reader not available")
-                    break
-
-                text = ocr_reader.extract_text(
-                    str(kf_path),
-                    confidence_threshold=config.ocr_confidence_threshold,
-                    clean=True,
-                )
+                out = extractor.analyze_image(str(kf_path))
+                text = (out or {}).get("ocr_text")
                 scene["ocr_text"] = text if text else None
                 if text:
                     ocr_added += 1

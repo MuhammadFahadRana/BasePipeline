@@ -160,19 +160,39 @@ class SceneDetector:
 
     def _ensure_qwen_vl(self):
         if self._qwen_vl is None:
-            try:
-                from extract_visual_features import VisualFeatureExtractor
+            from extract_visual_features import VisualFeatureExtractor
 
-                self._qwen_vl = VisualFeatureExtractor(
-                    model_name=self.config.qwen_vl_model,
-                    device=self.config.get_device(),
-                    load_in_4bit=self.config.qwen_vl_load_in_4bit,
-                )
-            except Exception as e:
+            primary_model = self.config.qwen_vl_model
+            fallback_model = "Qwen/Qwen2-VL-2B-Instruct"
+            model_candidates = [primary_model]
+            if primary_model != fallback_model:
+                model_candidates.append(fallback_model)
+
+            last_error = None
+            for model_name in model_candidates:
+                try:
+                    if model_name != primary_model:
+                        print(
+                            f"  Falling back to lighter visual enricher: {model_name}"
+                        )
+                    self._qwen_vl = VisualFeatureExtractor(
+                        model_name=model_name,
+                        device=self.config.get_device(),
+                        load_in_4bit=self.config.qwen_vl_load_in_4bit,
+                    )
+                    self.config.qwen_vl_model = model_name
+                    last_error = None
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    print(f"  Failed to load {model_name}: {exc}")
+
+            if self._qwen_vl is None:
                 import traceback
 
-                print(f"Failed to load VisualFeatureExtractor: {e}")
-                traceback.print_exc()
+                print("Failed to load any VisualFeatureExtractor model.")
+                if last_error is not None:
+                    traceback.print_exception(type(last_error), last_error, last_error.__traceback__)
                 print("Warning: Visual enrichment disabled.")
                 self.config.enable_visual_enrichment = False
                 return None
@@ -200,7 +220,7 @@ class SceneDetector:
         temp_dir = Path(tempfile.mkdtemp(prefix="scene_conv_"))
         temp_path = temp_dir / f"{video_path.stem}_converted.mp4"
 
-        print(f"  Converting {video_path.suffix} → .mp4 (FFmpeg)...")
+        print(f"  Converting {video_path.suffix} -> .mp4 (FFmpeg)...")
         cmd = [
             ffmpeg,
             "-y",
@@ -228,7 +248,7 @@ class SceneDetector:
                 return video_path, False
 
             print(
-                f"  ✓ Converted successfully ({temp_path.stat().st_size / 1e6:.1f} MB)"
+                f"  [OK] Converted successfully ({temp_path.stat().st_size / 1e6:.1f} MB)"
             )
             return temp_path, True
 
@@ -538,7 +558,7 @@ class SceneDetector:
         merge_count = len(scenes) - len(merged)
         if merge_count > 0:
             print(
-                f"  Merged {merge_count} similar consecutive scenes → {len(merged)} scenes"
+                f"  Merged {merge_count} similar consecutive scenes -> {len(merged)} scenes"
             )
         else:
             print(f"  No scenes merged ({len(merged)} scenes)")
@@ -593,7 +613,7 @@ class SceneDetector:
                 scene.setdefault("object_labels", [])
                 scene.setdefault("ocr_text", None)
 
-        print(f"  ✓ Visual enrichment complete: {count}/{len(scenes)} scenes processed")
+        print(f"  [OK] Visual enrichment complete: {count}/{len(scenes)} scenes processed")
         return scenes
 
     # ── 6. Full Pipeline ────────────────────────

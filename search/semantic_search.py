@@ -425,10 +425,12 @@ class SearchResult:
     )
     keyframe_path: str = ""  # Path to keyframe image for thumbnails
     facet: Optional[str] = None  # Optional facet label: oil_gas/tools/analytics/auto
+    evidence_time: Optional[float] = None  # Best frame/sample timestamp evidence
+    evidence_frame_role: Optional[str] = None  # start/mid/end/extra_n
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
-        return {
+        payload = {
             "segment_id": self.segment_id,
             "video_id": self.video_id,
             "video_filename": self.video_filename,
@@ -442,7 +444,19 @@ class SearchResult:
             "result_id": self.result_id,
             "keyframe_path": self.keyframe_path,
             "facet": self.facet,
+            "evidence_time": round(self.evidence_time, 2)
+            if self.evidence_time is not None
+            else None,
+            "evidence_frame_role": self.evidence_frame_role,
         }
+        for extra_key in ("text_score", "vision_score", "combined_score"):
+            val = getattr(self, extra_key, None)
+            if val is not None:
+                try:
+                    payload[extra_key] = round(float(val), 4)
+                except (TypeError, ValueError):
+                    payload[extra_key] = val
+        return payload
 
 
 class SemanticSearchEngine:
@@ -977,6 +991,13 @@ class SemanticSearchEngine:
         if len(words) > 1:
             metadata["tiers_tried"].append("decomposed")
             all_word_results = {}
+            active_facet = (facet or "auto").lower()
+            facet_labels = {
+                "auto": "All meanings",
+                "oil_gas": "Oil & gas",
+                "tools": "Tools",
+                "analytics": "Data / drill-down",
+            }
 
             for word in words:
                 word_results = self.search(
@@ -1005,10 +1026,16 @@ class SemanticSearchEngine:
             ):
                 results = decomposed_results
                 metadata["search_strategy"] = "expanded"
-                metadata["search_message"] = (
-                    f'Couldn\'t find "{search_query}" as a phrase. '
-                    f"Showing similar results for related terms."
-                )
+                if active_facet != "auto":
+                    metadata["search_message"] = (
+                        f'Showing related matches in "{facet_labels.get(active_facet, active_facet)}" '
+                        f'for "{search_query}".'
+                    )
+                else:
+                    metadata["search_message"] = (
+                        f'Couldn\'t find "{search_query}" as a phrase. '
+                        f"Showing similar results for related terms."
+                    )
             elif results:
                 metadata["search_strategy"] = "relaxed"
                 metadata["search_message"] = (
@@ -1056,14 +1083,29 @@ class SemanticSearchEngine:
                 v.file_path,
                 COALESCE(ts.start_time, s.start_time) as start_time,
                 COALESCE(ts.end_time, s.end_time) as end_time,
-                COALESCE(ts.text, '[Scene match: ocr/caption]') as text,
+                ts.text as transcript_text,
+                s.caption as scene_caption,
+                s.object_labels as scene_object_labels,
+                s.ocr_text as scene_ocr_text,
                 1 - (e.embedding <=> CAST(:query_embedding AS vector)) AS similarity,
                 s.scene_id,
                 ve.keyframe_path
             FROM embeddings e
             LEFT JOIN transcript_segments ts ON e.segment_id = ts.id
             LEFT JOIN scenes s ON (e.scene_id = s.id OR ts.scene_id = s.id)
-            LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
+            LEFT JOIN LATERAL (
+                SELECT ve1.keyframe_path
+                FROM visual_embeddings ve1
+                WHERE ve1.scene_id = s.id
+                ORDER BY CASE ve1.frame_role
+                    WHEN 'mid' THEN 0
+                    WHEN 'start' THEN 1
+                    WHEN 'end' THEN 2
+                    ELSE 3
+                END,
+                COALESCE(ve1.sample_time, 0)
+                LIMIT 1
+            ) ve ON TRUE
             JOIN videos v ON (ts.video_id = v.id OR s.video_id = v.id)
             WHERE 1=1 {query_filter}
             ORDER BY e.embedding <=> CAST(:query_embedding AS vector)
@@ -1085,7 +1127,46 @@ class SemanticSearchEngine:
             file_path = row.file_path
             start = row.start_time
             end = row.end_time
-            segment_text = row.text
+            if segment_id:
+                segment_text = row.transcript_text or ""
+            else:
+                scene_parts = []
+                scene_caption = str(row.scene_caption).strip() if row.scene_caption else ""
+                if scene_caption.lower() in {"none", "null", "n/a", "na"}:
+                    scene_caption = ""
+                if scene_caption:
+                    scene_parts.append(scene_caption)
+
+                labels_text = ""
+                if isinstance(row.scene_object_labels, list):
+                    labels_text = " ".join(
+                        str(lbl).strip()
+                        for lbl in row.scene_object_labels
+                        if str(lbl).strip()
+                    )
+                elif row.scene_object_labels:
+                    labels_text = (
+                        str(row.scene_object_labels)
+                        .replace("[", " ")
+                        .replace("]", " ")
+                        .replace('"', " ")
+                        .replace(",", " ")
+                    )
+                    labels_text = re.sub(r"\s+", " ", labels_text).strip()
+
+                if labels_text:
+                    scene_parts.append(labels_text)
+
+                scene_ocr = str(row.scene_ocr_text).strip() if row.scene_ocr_text else ""
+                if scene_ocr.lower() in {"none", "null", "n/a", "na"}:
+                    scene_ocr = ""
+                if scene_ocr:
+                    scene_parts.append(f"[OCR] {scene_ocr}")
+
+                scene_text = " ".join(scene_parts).strip()
+                segment_text = (
+                    f"[Visual] {scene_text}" if scene_text else "[Scene match: visual]"
+                )
             similarity = row.similarity
             scene_val = row.scene_id
             keyframe_path = row.keyframe_path
@@ -1178,7 +1259,19 @@ class SemanticSearchEngine:
                 FROM transcript_segments ts
                 JOIN videos v ON ts.video_id = v.id
                 LEFT JOIN scenes s ON ts.scene_id = s.id
-                LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
+                LEFT JOIN LATERAL (
+                    SELECT ve1.keyframe_path
+                    FROM visual_embeddings ve1
+                    WHERE ve1.scene_id = s.id
+                    ORDER BY CASE ve1.frame_role
+                        WHEN 'mid' THEN 0
+                        WHEN 'start' THEN 1
+                        WHEN 'end' THEN 2
+                        ELSE 3
+                    END,
+                    COALESCE(ve1.sample_time, 0)
+                    LIMIT 1
+                ) ve ON TRUE
                 WHERE to_tsvector({ts_cfg}, ts.text) @@ websearch_to_tsquery({ts_cfg}, :query)
                 {query_filter_ts}
 
@@ -1193,15 +1286,30 @@ class SemanticSearchEngine:
                     s.start_time,
                     s.end_time,
                     '[OCR] ' || s.ocr_text AS result_text,
-                    ts_rank(to_tsvector({ts_cfg}, s.ocr_text), websearch_to_tsquery({ts_cfg}, :query)) AS rank,
+                                        ts_rank(
+                                                to_tsvector({ts_cfg}, COALESCE(s.ocr_text_norm, s.ocr_text)),
+                                                websearch_to_tsquery({ts_cfg}, :query)
+                                        ) * (0.8 + 0.2 * COALESCE(s.ocr_confidence, 0.6)) AS rank,
                     s.ocr_text,
                     COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
                     'ocr' AS match_source
                 FROM scenes s
                 JOIN videos v ON s.video_id = v.id
-                LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
+                                LEFT JOIN LATERAL (
+                                        SELECT ve1.keyframe_path
+                                        FROM visual_embeddings ve1
+                                        WHERE ve1.scene_id = s.id
+                                        ORDER BY CASE ve1.frame_role
+                                                WHEN 'mid' THEN 0
+                                                WHEN 'start' THEN 1
+                                                WHEN 'end' THEN 2
+                                                ELSE 3
+                                        END,
+                                        COALESCE(ve1.sample_time, 0)
+                                        LIMIT 1
+                                ) ve ON TRUE
                 WHERE s.ocr_text IS NOT NULL
-                  AND to_tsvector({ts_cfg}, s.ocr_text) @@ websearch_to_tsquery({ts_cfg}, :query)
+                                    AND to_tsvector({ts_cfg}, COALESCE(s.ocr_text_norm, s.ocr_text)) @@ websearch_to_tsquery({ts_cfg}, :query)
                 {query_filter_ocr}
 
                 UNION ALL
@@ -1215,11 +1323,35 @@ class SemanticSearchEngine:
                     v.file_path,
                     s.start_time,
                     s.end_time,
-                    '[Visual] ' || s.caption AS result_text,
+                    '[Visual] ' || TRIM(BOTH ' ' FROM
+                        CASE
+                            WHEN s.caption IS NULL OR LOWER(BTRIM(s.caption)) IN ('none', 'null', 'n/a', 'na')
+                            THEN ''
+                            ELSE BTRIM(s.caption)
+                        END || ' ' ||
+                        COALESCE(regexp_replace(COALESCE(s.object_labels::text, '[]'), '[\\[\\]\"]', ' ', 'g'), '') || ' ' ||
+                        CASE
+                            WHEN s.ocr_text IS NULL OR LOWER(BTRIM(s.ocr_text)) IN ('none', 'null', 'n/a', 'na')
+                            THEN ''
+                            ELSE BTRIM(s.ocr_text)
+                        END
+                    ) AS result_text,
                     -- Boost Visual rank 6x so richer descriptions surface clearly
                     ts_rank(
                         to_tsvector({ts_cfg},
-                            s.caption || ' ' || COALESCE(s.object_labels::text, '[]')
+                            TRIM(BOTH ' ' FROM
+                                CASE
+                                    WHEN s.caption IS NULL OR LOWER(BTRIM(s.caption)) IN ('none', 'null', 'n/a', 'na')
+                                    THEN ''
+                                    ELSE BTRIM(s.caption)
+                                END || ' ' ||
+                                COALESCE(regexp_replace(COALESCE(s.object_labels::text, '[]'), '[\\[\\]\"]', ' ', 'g'), '') || ' ' ||
+                                CASE
+                                    WHEN s.ocr_text IS NULL OR LOWER(BTRIM(s.ocr_text)) IN ('none', 'null', 'n/a', 'na')
+                                    THEN ''
+                                    ELSE BTRIM(s.ocr_text)
+                                END
+                            )
                         ),
                         websearch_to_tsquery({ts_cfg}, :query)
                     ) * 6.0 AS rank,
@@ -1228,10 +1360,46 @@ class SemanticSearchEngine:
                     'visual' AS match_source
                 FROM scenes s
                 JOIN videos v ON s.video_id = v.id
-                LEFT JOIN visual_embeddings ve ON s.id = ve.scene_id
-                WHERE s.caption IS NOT NULL
+                                LEFT JOIN LATERAL (
+                                        SELECT ve1.keyframe_path
+                                        FROM visual_embeddings ve1
+                                        WHERE ve1.scene_id = s.id
+                                        ORDER BY CASE ve1.frame_role
+                                                WHEN 'mid' THEN 0
+                                                WHEN 'start' THEN 1
+                                                WHEN 'end' THEN 2
+                                                ELSE 3
+                                        END,
+                                        COALESCE(ve1.sample_time, 0)
+                                        LIMIT 1
+                                ) ve ON TRUE
+                WHERE (
+                        (
+                            s.caption IS NOT NULL
+                            AND BTRIM(s.caption) <> ''
+                            AND LOWER(BTRIM(s.caption)) NOT IN ('none', 'null', 'n/a', 'na')
+                        )
+                        OR (s.object_labels IS NOT NULL AND s.object_labels::text <> '[]')
+                        OR (
+                            s.ocr_text IS NOT NULL
+                            AND BTRIM(s.ocr_text) <> ''
+                            AND LOWER(BTRIM(s.ocr_text)) NOT IN ('none', 'null', 'n/a', 'na')
+                        )
+                      )
                   AND to_tsvector({ts_cfg},
-                        s.caption || ' ' || COALESCE(s.object_labels::text, '[]')
+                        TRIM(BOTH ' ' FROM
+                            CASE
+                                WHEN s.caption IS NULL OR LOWER(BTRIM(s.caption)) IN ('none', 'null', 'n/a', 'na')
+                                THEN ''
+                                ELSE BTRIM(s.caption)
+                            END || ' ' ||
+                            COALESCE(regexp_replace(COALESCE(s.object_labels::text, '[]'), '[\\[\\]\"]', ' ', 'g'), '') || ' ' ||
+                            CASE
+                                WHEN s.ocr_text IS NULL OR LOWER(BTRIM(s.ocr_text)) IN ('none', 'null', 'n/a', 'na')
+                                THEN ''
+                                ELSE BTRIM(s.ocr_text)
+                            END
+                        )
                       ) @@ websearch_to_tsquery({ts_cfg}, :query)
                 {query_filter_ocr}
             )
@@ -1397,18 +1565,35 @@ class SemanticSearchEngine:
                 semantic_weight * semantic_score + text_weight * fuzzy_score_norm
             ) + exact_boost
 
+            is_ocr_only = isinstance(key, str) and key.startswith("ocr_")
+            is_visual_only = isinstance(key, str) and key.startswith("visual_")
+            is_scene_semantic = isinstance(key, str) and key.startswith("scene_")
+
             # OCR-only matches (no semantic embedding) get a floor score
             # since exact text matches from keyframes are inherently high quality
-            is_ocr_only = isinstance(key, str) and key.startswith("ocr_")
             if is_ocr_only and semantic_score == 0 and fuzzy_score_norm > 0:
                 combined_score = max(combined_score, 0.60 * fuzzy_score_norm)
 
             # Visual-caption matches also get a floor — Qwen2-VL captions are
             # rich descriptions and deserve to surface even when no semantic
             # embedding exists for the scene yet.
-            is_visual_only = isinstance(key, str) and key.startswith("visual_")
             if is_visual_only and semantic_score == 0 and fuzzy_score_norm > 0:
                 combined_score = max(combined_score, 0.60 * fuzzy_score_norm)
+
+            # Component scores exposed to frontend badges/tabs.
+            text_component = max(
+                0.0,
+                min(1.0, max(float(semantic_score or 0.0), float(fuzzy_score_norm or 0.0))),
+            )
+            visual_component = (
+                max(0.0, min(1.0, fuzzy_score_norm))
+                if (is_ocr_only or is_visual_only)
+                else 0.0
+            )
+            if is_scene_semantic and semantic_score > 0:
+                visual_component = max(
+                    visual_component, max(0.0, min(1.0, float(semantic_score)))
+                )
 
             # Determine match type
             if semantic_score > 0.7:
@@ -1431,6 +1616,9 @@ class SemanticSearchEngine:
                 keyframe_path=keyframe_path or "",
                 result_id=key,  # Pass the unique key as result_id
             )
+            result.text_score = text_component
+            result.vision_score = visual_component
+            result.combined_score = combined_score
 
             combined.append(result)
 
@@ -1560,7 +1748,15 @@ class SemanticSearchEngine:
 
                 # Deserialize results
                 cached_data = row[0]
-                results = [SearchResult(**item) for item in cached_data]
+                allowed = set(SearchResult.__dataclass_fields__.keys())
+                results: List[SearchResult] = []
+                for item in cached_data:
+                    base_payload = {k: v for k, v in item.items() if k in allowed}
+                    result_obj = SearchResult(**base_payload)
+                    for extra_key in ("text_score", "vision_score", "combined_score"):
+                        if extra_key in item:
+                            setattr(result_obj, extra_key, item.get(extra_key))
+                    results.append(result_obj)
 
                 # Add to memory cache
                 self._memory_cache[cache_key] = (results, datetime.now())

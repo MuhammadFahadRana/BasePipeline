@@ -98,30 +98,36 @@ class VisualSearchEngine:
             query_filter = "AND v.filename = :video_filter"
         
         sql_query = text(f"""
-            SELECT * FROM (
-                SELECT DISTINCT ON (s.scene_id)
+            WITH ranked AS (
+                SELECT
                     ts.id as segment_id,
-                    ts.video_id,
+                    v.id as video_id,
                     v.filename,
                     v.file_path,
-                    ts.start_time,
-                    ts.end_time,
-                    ts.text,
+                    COALESCE(ts.start_time, s.start_time) as start_time,
+                    COALESCE(ts.end_time, s.end_time) as end_time,
+                    COALESCE(ts.text, '[Visual match]') as text,
                     s.scene_id,
                     ve.keyframe_path,
-                    1 - (ve.embedding <=> CAST(:query_embedding AS vector)) AS visual_similarity
+                    ve.sample_time,
+                    ve.frame_role,
+                    1 - (ve.embedding <=> CAST(:query_embedding AS vector)) AS visual_similarity,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY s.id
+                        ORDER BY ve.embedding <=> CAST(:query_embedding AS vector)
+                    ) as rn
                 FROM visual_embeddings ve
                 JOIN scenes s ON ve.scene_id = s.id
                 JOIN videos v ON s.video_id = v.id
-                -- Get corresponding transcript segment
                 LEFT JOIN transcript_segments ts ON (
                     ts.video_id = v.id
                     AND ts.start_time <= s.start_time + 1
                     AND ts.end_time >= s.start_time - 1
                 )
                 WHERE 1=1 {query_filter}
-                ORDER BY s.scene_id, ve.embedding <=> CAST(:query_embedding AS vector)
-            ) AS deduplicated
+            )
+            SELECT * FROM ranked
+            WHERE rn = 1
             ORDER BY visual_similarity DESC
             LIMIT :top_k
         """)
@@ -153,7 +159,9 @@ class VisualSearchEngine:
                     text=row.text if row.text else f"[Visual match: scene {row.scene_id}]",
                     score=float(row.visual_similarity),
                     match_type="visual",
-                    keyframe_path=row.keyframe_path or ""
+                    keyframe_path=row.keyframe_path or "",
+                    evidence_time=row.sample_time,
+                    evidence_frame_role=row.frame_role,
                 )
                 results.append(result)
             
@@ -188,6 +196,8 @@ class VisualSearchEngine:
                     s.start_time,
                     s.end_time,
                     ve.keyframe_path,
+                    ve.sample_time,
+                    ve.frame_role,
                     1 - (ve.embedding <=> CAST(:query_embedding AS vector)) AS similarity
                 FROM visual_embeddings ve
                 JOIN scenes s ON ve.scene_id = s.id  
@@ -217,6 +227,8 @@ class VisualSearchEngine:
                     'start_time': row.start_time,
                     'end_time': row.end_time,
                     'keyframe_path': row.keyframe_path,
+                    'sample_time': row.sample_time,
+                    'frame_role': row.frame_role,
                     'similarity': float(row.similarity)
                 }
                 for row in rows

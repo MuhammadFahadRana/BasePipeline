@@ -43,9 +43,10 @@ class FrameOCR:
         print(f"Loading EasyOCR model (languages: {self.languages})...")
         self._reader = easyocr.Reader(
             self.languages,
-            gpu=self.use_gpu
+            gpu=self.use_gpu,
+            verbose=False,
         )
-        print("✓ OCR model loaded")
+        print("[OK] OCR model loaded")
     
     def extract_text(
         self,

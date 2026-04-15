@@ -226,6 +226,7 @@ class BasicVideoPipeline:
         use_hash: bool = False,
         force: bool = False,
         generate_embeddings: bool = True,
+        generate_visual_embeddings: bool = True,
         _ingester=None,
     ):
         video_path = Path(video_path)
@@ -283,7 +284,12 @@ class BasicVideoPipeline:
 
                 # Only ingest if not already done
                 if not already_ingested and HAS_DB and not self.skip_ingest:
-                    self._ingest_results(results_file, generate_embeddings, _ingester)
+                    self._ingest_results(
+                        results_file,
+                        generate_embeddings=generate_embeddings,
+                        generate_visual_embeddings=generate_visual_embeddings,
+                        ingester=_ingester,
+                    )
                     # Mark ingestion complete in manifest
                     manifest["ingested"] = True
                     self._save_manifest(manifest_path, manifest)
@@ -382,7 +388,12 @@ class BasicVideoPipeline:
         # 5. Database Ingestion
         ingested = False
         if HAS_DB and not self.skip_ingest:
-            self._ingest_results(results_file, generate_embeddings, _ingester)
+            self._ingest_results(
+                results_file,
+                generate_embeddings=generate_embeddings,
+                generate_visual_embeddings=generate_visual_embeddings,
+                ingester=_ingester,
+            )
             ingested = True
 
         # Save manifest for caching
@@ -404,6 +415,7 @@ class BasicVideoPipeline:
         self,
         results_file: Path,
         generate_embeddings: bool = True,
+        generate_visual_embeddings: bool = True,
         ingester: "DataIngester | None" = None,
     ):
         print("\n5. Ingesting into database...")
@@ -412,7 +424,7 @@ class BasicVideoPipeline:
                 ingester.ingest_video(
                     results_file,
                     generate_embeddings=generate_embeddings,
-                    generate_visual_embeddings=generate_embeddings,
+                    generate_visual_embeddings=generate_visual_embeddings,
                     update_existing=True,
                 )
             else:
@@ -420,7 +432,7 @@ class BasicVideoPipeline:
                     ing.ingest_video(
                         results_file,
                         generate_embeddings=generate_embeddings,
-                        generate_visual_embeddings=generate_embeddings,
+                        generate_visual_embeddings=generate_visual_embeddings,
                         update_existing=True,
                     )
         except Exception as e:

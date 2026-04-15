@@ -10,7 +10,7 @@ import json
 import os
 import warnings
 from PIL import Image
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 
 try:
@@ -52,6 +52,11 @@ class VisualFeatureExtractor:
             
         self.model_name = model_name
         self.load_in_4bit = load_in_4bit
+        self._ocr_reader = None
+        self.enable_ocr_fallback = (
+            os.getenv("VISUAL_OCR_FALLBACK", "true").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
         
         print(f"\n{'='*60}")
         print(f"Qwen2-VL Visual Feature Extractor")
@@ -120,9 +125,57 @@ class VisualFeatureExtractor:
         if self.device == "cpu":
             self.model = self.model.to("cpu")
             
-        print(f"✓ {self.model_name} loaded successfully.")
+        print(f"[OK] {self.model_name} loaded successfully.")
 
-    def analyze_image(self, image_path: Union[str, Path]) -> Dict[str, any]:
+    def _get_ocr_reader(self):
+        """Lazy-load EasyOCR fallback reader."""
+        if not self.enable_ocr_fallback:
+            return None
+        if self._ocr_reader is not None:
+            return self._ocr_reader
+
+        try:
+            from embeddings.ocr import get_ocr_reader
+
+            use_gpu = self.device == "cuda"
+            self._ocr_reader = get_ocr_reader(languages=["en", "no"], use_gpu=use_gpu)
+        except Exception as exc:
+            print(f"Warning: OCR fallback unavailable: {exc}")
+            self._ocr_reader = None
+
+        return self._ocr_reader
+
+    def _fallback_ocr_text(self, image_path: Union[str, Path]) -> Optional[str]:
+        """Fallback OCR extraction when the vision model omits OCR text."""
+        reader = self._get_ocr_reader()
+        if reader is None:
+            return None
+
+        try:
+            detections = reader.extract_with_confidence(
+                str(image_path), confidence_threshold=0.35
+            )
+        except Exception as exc:
+            print(f"Warning: OCR fallback failed for {image_path}: {exc}")
+            return None
+
+        if not detections:
+            return None
+
+        text_parts = []
+        for det in detections:
+            txt = str(det.get("text", "")).strip()
+            if txt:
+                text_parts.append(txt)
+
+        merged = " ".join(text_parts).strip()
+        if not merged:
+            return None
+        if merged.lower() in {"none", "null", "n/a", "na", "no text"}:
+            return None
+        return merged
+
+    def analyze_image(self, image_path: Union[str, Path]) -> Dict[str, Any]:
         """
         Analyze an image to get a caption, object labels, and OCR text.
         
@@ -136,15 +189,30 @@ class VisualFeatureExtractor:
             return {"caption": "", "object_labels": [], "ocr_text": ""}
         
         try:
-            return self._run_inference(image_path)
+            result = self._run_inference(image_path)
+            if not result.get("caption"):
+                fallback_caption = self._run_caption_only(image_path)
+                if fallback_caption:
+                    result["caption"] = fallback_caption
+            if not result.get("ocr_text"):
+                ocr_fallback = self._fallback_ocr_text(image_path)
+                if ocr_fallback:
+                    result["ocr_text"] = ocr_fallback
+            return result
         except Exception as e:
             print(f"  Warning: analyze_image failed for {image_path}: {e}")
-            return {"caption": None, "object_labels": [], "ocr_text": None}
+            ocr_fallback = self._fallback_ocr_text(image_path)
+            return {
+                "caption": None,
+                "object_labels": [],
+                "ocr_text": ocr_fallback,
+            }
 
     def _run_inference(self, image_path) -> dict:
         """Internal: run the model on a single image."""
         query = (
-            "1. Describe this video scene in a short, descriptive sentence.\n"
+            "1. Describe this video scene in a short, descriptive sentence. "
+            "Always provide this sentence; do not answer 'None' for item 1.\n"
             "2. List all important objects visible in the scene as comma-separated tags.\n"
             "3. Extract all visible text (OCR) from the scene. If no text is visible, say 'None'."
         )
@@ -186,7 +254,57 @@ class VisualFeatureExtractor:
         # Parse output_text (heuristic parsing)
         return self._parse_output(output_text)
 
-    def _parse_output(self, text: str) -> Dict[str, any]:
+    def _run_caption_only(self, image_path) -> Optional[str]:
+        """Fallback caption pass when the structured response has no caption."""
+        prompt = (
+            "Describe what is visible in this video frame in one concise sentence. "
+            "Do not return JSON or numbered lists."
+        )
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": str(image_path)},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+
+        text_prompt = self.processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = self.processor(
+            text=[text_prompt],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        ).to(self.device)
+
+        with torch.no_grad():
+            generated_ids = self.model.generate(**inputs, max_new_tokens=128)
+
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):]
+            for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        output_text = self.processor.batch_decode(
+            generated_ids_trimmed,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )[0]
+
+        caption = output_text.strip()
+        if not caption:
+            return None
+        caption = " ".join(caption.split())
+        if caption.lower() in {"none", "null", "n/a", "na"}:
+            return None
+        return caption[:700]
+
+    def _parse_output(self, text: str) -> Dict[str, Any]:
         """
         Regex-anchored parser for the model's numbered-list output.
 
@@ -199,6 +317,26 @@ class VisualFeatureExtractor:
         content that happens to contain "2." (e.g. "25th year stand-up").
         """
         import re
+
+        # JSON fallback first (some checkpoints answer in JSON-like format).
+        stripped = (text or "").strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                payload = json.loads(stripped)
+                caption = payload.get("caption") or payload.get("description")
+                labels = payload.get("object_labels") or payload.get("labels") or []
+                ocr_text = payload.get("ocr_text") or payload.get("ocr") or None
+                if isinstance(labels, str):
+                    labels = [v.strip() for v in labels.split(",") if v.strip()]
+                elif not isinstance(labels, list):
+                    labels = [str(labels)] if labels else []
+                return {
+                    "caption": caption.strip() if isinstance(caption, str) else caption,
+                    "object_labels": labels,
+                    "ocr_text": ocr_text.strip() if isinstance(ocr_text, str) else ocr_text,
+                }
+            except Exception:
+                pass
 
         # Pattern: line starts with a digit 1-3, then '.' or ')', optional space
         SECTION_RE = re.compile(r'^([1-3])[.)]\s*(.*)', re.IGNORECASE)
@@ -271,6 +409,14 @@ class VisualFeatureExtractor:
         ocr_text = " ".join(ocr_parts).strip()
         if ocr_text.lower() in NONE_VALS:
             ocr_text = ""
+
+        # Last-resort fallback: if parsing failed completely, keep a concise
+        # description so retrieval still has a semantic text signal.
+        if not caption and not object_labels and not ocr_text:
+            fallback = re.sub(r"\s+", " ", stripped).strip()
+            fallback = re.sub(r"^[\-\*\d\.\)\s:]+", "", fallback).strip()
+            if fallback:
+                caption = fallback[:700]
 
         return {
             "caption":       caption or None,

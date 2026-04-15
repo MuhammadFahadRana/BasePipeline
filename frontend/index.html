@@ -99,7 +99,7 @@
                                 stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                         </svg>
                         <input type="text" id="searchInput" class="search-input"
-                            placeholder="Search videos... (e.g., 'drilling techniques', 'Omega Alpha well')"
+                            placeholder="Search videos..."
                             autocomplete="on" />
                         <button id="clearBtn" class="clear-btn" style="display: none;">
                             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -108,13 +108,13 @@
                             </svg>
                         </button>
                     </div>
-                    <button id="searchBtn" class="search-btn">
+                    <button id="searchBtn" class="search-btn" type="button" title="Search">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path
                                 d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z"
                                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
-                        <!-- <span>Search</span> -->
+                        <span class="search-btn-label">Search</span>
                     </button>
                 </div>
 
@@ -150,15 +150,6 @@
                 <div class="results-header">
                     <h2 id="resultsTitle">Search Results</h2>
                     <div class="results-header-right">
-                        <button id="askAiBtn" class="ask-ai-btn" title="Ask ATLAS AI about these results" style="display: none;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.0313 2.60091 15.9205 3.63818 17.5L2.5 21.5L6.5 20.3618C8.07954 21.3991 9.96875 22 12 22Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                <circle cx="8" cy="12" r="1" fill="currentColor"/>
-                                <circle cx="12" cy="12" r="1" fill="currentColor"/>
-                                <circle cx="16" cy="12" r="1" fill="currentColor"/>
-                            </svg>
-                            Ask AI
-                        </button>
                         <div class="translate-toggle">
                             <label for="translateLang">Language:</label>
                             <select id="translateLang" class="select-input select-input-sm">
@@ -170,26 +161,17 @@
                         <span class="results-count" id="resultsCount">0 results</span>
                     </div>
                 </div>
-                <!-- AI Answer Panel (ChatGPT-style summary) -->
-                <div class="answer-panel" id="answerPanel" style="display: none;">
-                    <div class="answer-panel-header">
-                        <span class="answer-label">ATLAS Answer</span>
-                    </div>
-                    <div class="answer-panel-body" id="answerBody">
-                        <!-- Answer text will be injected here -->
-                    </div>
-                </div>
                 <!-- Meaning Facet Chips (shown for ambiguous queries) -->
                 <div class="facet-chips" id="facetChips" style="display: none;"></div>
                 <!-- Result View Tabs -->
                 <div class="result-tabs" id="resultTabs" style="display: none;">
-                    <button class="result-tab active" data-view="combined">
+                    <button class="result-tab" data-view="combined">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         Combined
                     </button>
-                    <button class="result-tab" data-view="text">
+                    <button class="result-tab active" data-view="text">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 7V4H20V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 20H15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 4V20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        Text Embeddings
+                        Text Only
                     </button>
                     <button class="result-tab" data-view="visual">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/><path d="M21 15L16 10L5 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -204,7 +186,8 @@
             <!-- Loading State -->
             <div class="loading-state" id="loadingState" style="display: none;">
                 <div class="loading-spinner"></div>
-                <p>Searching...</p>
+                <p id="loadingMessage">Searching...</p>
+                <button id="stopSearchBtn" class="loading-stop-btn" type="button" style="display: none;">Stop Search</button>
             </div>
 
             <!-- Empty State -->
@@ -457,7 +440,12 @@
                 </div>
             </div>
             <div class="chat-input-area">
-                <textarea id="chatInput" rows="1" placeholder="Ask about your videos..."></textarea>
+                <textarea id="chatInput" rows="1" placeholder="Type here..."></textarea>
+                <button id="chatStopBtn" class="chat-stop-btn" title="Stop generation" style="display:none;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/>
+                    </svg>
+                </button>
                 <button id="chatSendBtn" class="chat-send-btn" title="Send">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>

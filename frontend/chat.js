@@ -11,10 +11,11 @@ const ChatAssistant = (() => {
     let chatHistory = [];
     let isGenerating = false;
     let isOpen = false;
+    let activeRequestController = null;
 
     // DOM refs
     let chatWidget, chatWindow, chatToggleBtn, chatCloseBtn;
-    let chatMessages, chatInput, chatSendBtn, chatClearBtn, chatLangSelect;
+    let chatMessages, chatInput, chatSendBtn, chatStopBtn, chatClearBtn, chatLangSelect;
 
     function init() {
         chatWidget = document.getElementById('chatWidget');
@@ -24,6 +25,7 @@ const ChatAssistant = (() => {
         chatMessages = document.getElementById('chatMessages');
         chatInput = document.getElementById('chatInput');
         chatSendBtn = document.getElementById('chatSendBtn');
+        chatStopBtn = document.getElementById('chatStopBtn');
         chatClearBtn = document.getElementById('chatClearBtn');
         chatLangSelect = document.getElementById('chatLangSelect');
 
@@ -45,6 +47,9 @@ const ChatAssistant = (() => {
         });
 
         chatSendBtn.addEventListener('click', sendMessage);
+        if (chatStopBtn) {
+            chatStopBtn.addEventListener('click', stopGeneration);
+        }
         chatClearBtn.addEventListener('click', clearChat);
     }
 
@@ -133,10 +138,13 @@ const ChatAssistant = (() => {
             const headers = { 'Content-Type': 'application/json' };
             const token = sessionStorage.getItem('atlas_token');
             if (token) headers['Authorization'] = `Bearer ${token}`;
+            const controller = new AbortController();
+            activeRequestController = controller;
 
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers,
+                signal: controller.signal,
                 body: JSON.stringify({
                     model: 'ATLAS',
                     messages: chatHistory,
@@ -181,22 +189,46 @@ const ChatAssistant = (() => {
             chatHistory.push({ role: 'assistant', content: fullResponse });
 
         } catch (err) {
+            if (err.name === 'AbortError') {
+                bubble.classList.remove('streaming');
+                if (fullResponse.trim()) {
+                    bubble.innerHTML = formatMarkdown(fullResponse);
+                    chatHistory.push({ role: 'assistant', content: fullResponse });
+                } else {
+                    wrapper.remove();
+                }
+                return;
+            }
+
             console.error('Chat error:', err);
             bubble.classList.remove('streaming');
             bubble.innerHTML = `<span class="chat-error">Failed to get response: ${err.message}</span>`;
         } finally {
+            activeRequestController = null;
             setGenerating(false);
         }
+    }
+
+    function stopGeneration() {
+        if (!isGenerating || !activeRequestController) return;
+        activeRequestController.abort();
     }
 
     function setGenerating(state) {
         isGenerating = state;
         chatSendBtn.disabled = state;
         chatInput.disabled = state;
+        if (chatSendBtn) {
+            chatSendBtn.style.display = state ? 'none' : 'flex';
+        }
+        if (chatStopBtn) {
+            chatStopBtn.style.display = state ? 'flex' : 'none';
+        }
         if (!state) chatInput.focus();
     }
 
     function clearChat() {
+        stopGeneration();
         chatHistory = [];
         chatMessages.innerHTML = `
             <div class="chat-msg chat-msg--assistant">

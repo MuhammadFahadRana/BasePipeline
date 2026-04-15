@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS scenes (
     end_frame INTEGER,
     keyframe_path TEXT,
     ocr_text TEXT,
+    ocr_text_norm TEXT,
+    ocr_confidence FLOAT,
+    ocr_processed_at TIMESTAMP,
     object_labels JSONB,
     caption TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -79,9 +82,13 @@ CREATE TABLE IF NOT EXISTS visual_embeddings (
     id SERIAL PRIMARY KEY,
     scene_id INTEGER REFERENCES scenes(id) ON DELETE CASCADE,
     keyframe_path TEXT NOT NULL,
+    sample_time FLOAT,
+    frame_role VARCHAR(20) DEFAULT 'mid',
+    frame_index INTEGER,
     embedding vector(768), -- SigLIP dimension
     embedding_model VARCHAR(100) DEFAULT 'google/siglip-base-patch16-224',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_scene_visual_embedding UNIQUE (scene_id, embedding_model, frame_role, sample_time)
 );
 
 -- Query cache table: Store query results for performance

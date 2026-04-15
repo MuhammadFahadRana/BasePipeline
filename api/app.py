@@ -70,6 +70,9 @@ def _server_capabilities() -> dict:
     return {
         "compute_device": "cuda" if has_cuda else "cpu",
         "has_cuda": has_cuda,
+        "default_search_mode": "text_only",
+        "deep_search_policy": "disabled",
+        "multimodal_enabled": True,
     }
 
 
@@ -2201,14 +2204,7 @@ async def visual_search(
 
 
 @app.get("/search/hybrid")
-async def hybrid_search(
-    q: str = Query(..., description="Search query", min_length=1),
-    limit: int = Query(10, description="Number of results", ge=1, le=50),
-    mode: str = Query("auto", description="Search mode: auto, visual, text, balanced"),
-    video: Optional[str] = Query(None, description="Filter by video filename"),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+async def hybrid_search():
     """
     Truly hybrid search - combines text + semantic + visual!
 
@@ -2217,65 +2213,12 @@ async def hybrid_search(
     - "discussed drilling" → Text-heavy (70% text, 30% visual)
     - "oil rig" → Balanced (50% text, 50% visual)
 
-    **Modes:**
-    - `auto`: Automatically detects query type (recommended)
-    - `visual`: Force visual-heavy search
-    - `text`: Force text-heavy search
-    - `balanced`: Equal weights
-
-    **Example:**
-    ```
-    GET /search/hybrid?q=oil+rig&mode=auto&limit=10
-    ```
+    Deprecated endpoint retained only to return a migration hint.
     """
-    start_time = time.time()
-
-    try:
-        from search.visual_search import HybridSearchEngine
-
-        # Set weights based on mode
-        if mode == "visual":
-            hybrid_engine = HybridSearchEngine(
-                db, text_weight=0.1, semantic_weight=0.2, visual_weight=0.7
-            )
-            auto_mode = False
-        elif mode == "text":
-            hybrid_engine = HybridSearchEngine(
-                db, text_weight=0.4, semantic_weight=0.5, visual_weight=0.1
-            )
-            auto_mode = False
-        elif mode == "balanced":
-            hybrid_engine = HybridSearchEngine(
-                db, text_weight=0.33, semantic_weight=0.33, visual_weight=0.34
-            )
-            auto_mode = False
-        else:  # auto
-            hybrid_engine = HybridSearchEngine(db)
-            auto_mode = True
-
-        results = hybrid_engine.search(
-            query=q, top_k=limit, video_filter=video, auto_mode=auto_mode
-        )
-        allowed_filenames = _get_allowed_filenames(user, db)
-        results = _filter_results(results, allowed_filenames)
-
-        search_time = time.time() - start_time
-
-        return {
-            "query": q,
-            "search_type": "hybrid",
-            "mode": mode,
-            "results_count": len(results),
-            "results": [r.to_dict() for r in results],
-            "search_time_seconds": round(search_time, 3),
-        }
-
-    except Exception as e:
-        print(f"Hybrid search error: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Hybrid search failed: {str(e)}")
+    raise HTTPException(
+        status_code=410,
+        detail="`/search/hybrid` is deprecated. Use `/search/quick` for main search or `/search/multimodal/quick` explicitly.",
+    )
 
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
