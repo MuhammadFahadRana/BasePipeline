@@ -1,6 +1,7 @@
 // API Configuration
 const API_BASE_URL = 'http://localhost:8000';
 const ENABLE_INLINE_SEARCH_ANSWER = false;
+const MAIN_TAB_STORAGE_KEY = 'atlas_active_main_tab';
 
 // ============================================
 // AUTH STATE
@@ -53,10 +54,6 @@ function handleAtlasHomeClick(event) {
     if (searchTab) {
         searchTab.click();
     }
-    searchInput.value = '';
-    clearBtn.style.display = 'none';
-    hideLoading();
-    showEmpty();
 }
 
 // DOM Elements
@@ -110,6 +107,7 @@ let activeAiController = null;
 let isSearchRunning = false;
 let isAiGenerating = false;
 let isAnswerCollapsed = false;
+let _setMainTabView = null;
 
 function getSearchButtonMarkup(isStop = false) {
     if (isStop) {
@@ -265,15 +263,37 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshBtn.addEventListener('click', () => loadVideos(true));
     }
 
-    // If we already have a saved token, validate it
+    // If we already have a saved token, render optimistically from session state
+    // to avoid login-page flicker, then validate in background.
+    if (authToken && currentUser) {
+        showApp();
+        initializeApp();
+        authFetch(`${API_BASE_URL}/auth/me`)
+            .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+            .then(user => {
+                currentUser = user;
+                saveAuth(authToken, user);
+                document.getElementById('currentUsername').textContent = currentUser?.username || '-';
+            })
+            .catch(() => { showLogin(); });
+        return;
+    }
+
+    // Fallback path when token exists but user profile is missing from session.
     if (authToken) {
         authFetch(`${API_BASE_URL}/auth/me`)
             .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-            .then(user => { currentUser = user; saveAuth(authToken, user); showApp(); initializeApp(); })
+            .then(user => {
+                currentUser = user;
+                saveAuth(authToken, user);
+                showApp();
+                initializeApp();
+            })
             .catch(() => { showLogin(); });
-    } else {
-        showLogin();
+        return;
     }
+
+    showLogin();
 });
 
 function attachLoginListeners() {
@@ -378,6 +398,15 @@ async function getVideos({ force = false } = {}) {
 }
 
 async function initializeApp() {
+    // Restore the last active main tab immediately to avoid visual flicker
+    // to Search/front page during startup API calls.
+    const savedTab = sessionStorage.getItem(MAIN_TAB_STORAGE_KEY) || 'search';
+    const allowedTab =
+        savedTab === 'admin' && currentUser?.role !== 'admin' ? 'search' : savedTab;
+    if (typeof _setMainTabView === 'function') {
+        _setMainTabView(allowedTab, { persist: false });
+    }
+
     await checkHealth();
     await refreshVideoCount();
     // Only fetch the video count on startup — do NOT load full grid here.
@@ -500,29 +529,42 @@ function attachMainNavListeners() {
     const adminTab = document.getElementById('adminTab');
     const tabs = document.querySelectorAll('.main-nav-tab');
 
+    const setActiveMainTab = (tabName, { persist = true } = {}) => {
+        const targetTab = Array.from(tabs).find(t => t.dataset.tab === tabName)
+            || Array.from(tabs).find(t => t.dataset.tab === 'search');
+        if (!targetTab) return;
+
+        tabs.forEach(t => t.classList.remove('active'));
+        targetTab.classList.add('active');
+
+        mainContent.style.display = 'none';
+        videosTab.style.display = 'none';
+        adminTab.style.display = 'none';
+
+        if (targetTab.dataset.tab === 'videos') {
+            videosTab.style.display = 'block';
+            // Only load/render if not already cached
+            if (!_videosLoaded) {
+                loadVideos();
+            } else {
+                renderVideosGrid(videos);
+            }
+        } else if (targetTab.dataset.tab === 'admin') {
+            adminTab.style.display = 'block';
+            loadAdminPanel();
+        } else {
+            mainContent.style.display = '';
+        }
+
+        if (persist) {
+            sessionStorage.setItem(MAIN_TAB_STORAGE_KEY, targetTab.dataset.tab);
+        }
+    };
+    _setMainTabView = setActiveMainTab;
+
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-
-            mainContent.style.display = 'none';
-            videosTab.style.display = 'none';
-            adminTab.style.display = 'none';
-
-            if (tab.dataset.tab === 'videos') {
-                videosTab.style.display = 'block';
-                // Only load/render if not already cached
-                if (!_videosLoaded) {
-                    loadVideos();
-                } else {
-                    renderVideosGrid(videos);
-                }
-            } else if (tab.dataset.tab === 'admin') {
-                adminTab.style.display = 'block';
-                loadAdminPanel();
-            } else {
-                mainContent.style.display = '';
-            }
+            setActiveMainTab(tab.dataset.tab);
         });
     });
 }
@@ -537,6 +579,17 @@ function formatDuration(seconds) {
 }
 // captureFirstFrame REMOVED — replaced by server-side thumbnails below.
 // Old approach loaded a hidden <video> for EVERY card, consuming bandwidth and memory.
+
+// Video browser helpers.
+function getVideoDisplayName(video) {
+    const rawName = (video?.filename || '').trim();
+    if (!rawName) return 'Untitled video';
+    return rawName.replace(/\.[^/.]+$/, '');
+}
+
+function getVideoSiteLabel(video) {
+    return (video?.label || '').trim();
+}
 
 /**
  * Derive an installation / category name from a video object.
@@ -570,17 +623,31 @@ function buildVideoCard(video) {
         durHtml = `<span class="video-duration-badge">${staticDur}</span>`;
     }
 
-    // Show label if available, otherwise filename
-    const displayName = video.label || video.filename;
-    const labelBadge = video.label
-        ? `<span class="video-label-badge" title="Label: ${escapeHtml(video.label)}">${escapeHtml(video.label)}</span>`
+    const displayName = getVideoDisplayName(video);
+    const siteLabel = getVideoSiteLabel(video);
+    const categoryLabel = (video.category || '').trim();
+    const badgeParts = [];
+    if (siteLabel) {
+        badgeParts.push(`<span class="video-meta-badge video-meta-badge-site" title="Site label: ${escapeHtml(siteLabel)}">Site: ${escapeHtml(siteLabel)}</span>`);
+    }
+    if (categoryLabel) {
+        badgeParts.push(`<span class="video-meta-badge video-meta-badge-category" title="Category: ${escapeHtml(categoryLabel)}">Category: ${escapeHtml(categoryLabel)}</span>`);
+    }
+    const badgeRow = badgeParts.length
+        ? `<div class="video-thumb-badges">${badgeParts.join('')}</div>`
         : '';
+    const details = [];
+    if (siteLabel) details.push(`Site: ${siteLabel}`);
+    if (categoryLabel) details.push(`Category: ${categoryLabel}`);
+    details.push(`File: ${video.filename}`);
+    const cardTitle = details.join(' | ');
 
     // Use server-side thumbnail endpoint instead of client-side video capture
     const thumbUrl = `${API_BASE_URL}/video/thumbnail/${video.id}?token=${authToken}`;
 
     card.innerHTML = `
         <div class="video-browser-thumb">
+            ${badgeRow}
             <img class="video-thumb-img" src="${thumbUrl}" loading="lazy" alt="${escapeHtml(video.filename)}"
                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
             <div class="video-thumb-fallback">
@@ -596,11 +663,11 @@ function buildVideoCard(video) {
             </div>
         </div>
         <div class="video-browser-info">
-            <p class="video-browser-name" title="${escapeHtml(video.filename)}">${escapeHtml(displayName)}</p>
+            <p class="video-browser-name" title="${escapeHtml(cardTitle)}">${escapeHtml(displayName)}</p>
             <div class="video-browser-meta">
-                ${labelBadge}
                 ${durHtml}
             </div>
+            <p class="video-browser-filehint" title="${escapeHtml(video.filename)}">${escapeHtml(video.filename)}</p>
         </div>
     `;
 
@@ -2559,7 +2626,7 @@ function renderVideoLabelsTable(videos) {
 
         tr.innerHTML = `
             <td class="vl-filename" title="${escapeHtml(v.filename)}">${escapeHtml(v.filename)}</td>
-            <td><input type="text" class="vl-label-input" value="${escapeHtml(v.label || '')}" placeholder="e.g. Yggdrasil Installation"></td>
+            <td><input type="text" class="vl-label-input" value="${escapeHtml(v.label || '')}" placeholder="Site Name e.g. Yggdrasil"></td>
             <td><select class="vl-category-select">${catOptions}</select></td>
             <td><button class="admin-save-btn small vl-save-btn">Save</button></td>
         `;

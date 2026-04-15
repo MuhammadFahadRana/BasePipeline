@@ -49,7 +49,7 @@ class Video(Base):
     scene_threshold = Column(Float)
     processed_at = Column(DateTime, default=datetime.utcnow)
     video_fingerprint = Column(JSON)  # {size_bytes, mtime, sha256}
-    label = Column(String(255))  # Human-readable label, e.g. "Yggdrasil Installation"
+    label = Column(String(255))  # Human-readable site label, e.g. "Yggdrasil"
     category_id = Column(Integer, ForeignKey("video_categories.id", ondelete="SET NULL"))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

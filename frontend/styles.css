@@ -1678,6 +1678,46 @@ select {
     overflow: hidden;
 }
 
+.video-thumb-badges {
+    position: absolute;
+    top: 0.6rem;
+    left: 0.6rem;
+    right: 0.6rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.video-meta-badge {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.67rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+
+.video-meta-badge-site {
+    color: #f8fafc;
+    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.video-meta-badge-category {
+    color: #1e3a8a;
+    background: rgba(219, 234, 254, 0.92);
+    border: 1px solid rgba(147, 197, 253, 0.85);
+}
+
 .video-browser-thumb .play-overlay {
     display: flex;
     align-items: center;
@@ -1747,6 +1787,15 @@ select {
     align-items: center;
     font-size: 0.75rem;
     color: var(--text-tertiary);
+}
+
+.video-browser-filehint {
+    margin: 0.45rem 0 0;
+    font-size: 0.73rem;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .video-duration-badge {

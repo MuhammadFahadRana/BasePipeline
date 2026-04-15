@@ -9,6 +9,7 @@ yielded one-by-one instead of waiting for the full answer.
 import json
 import time
 import threading
+import queue
 from typing import Iterator, Optional, Dict, List
 
 import torch
@@ -146,7 +147,7 @@ class StreamingVideoQA(VideoQA):
             self.tokenizer,
             skip_prompt=True,
             skip_special_tokens=True,
-            timeout=60.0,
+            timeout=300.0,
         )
 
         gen_kwargs = {
@@ -158,15 +159,35 @@ class StreamingVideoQA(VideoQA):
         }
 
         # Run generation in a background thread so we can yield from main thread
-        thread = threading.Thread(target=self.model.generate, kwargs=gen_kwargs)
+        generation_error: Dict[str, Exception] = {}
+
+        def _generate_in_thread() -> None:
+            try:
+                self.model.generate(**gen_kwargs)
+            except Exception as exc:
+                generation_error["error"] = exc
+
+        thread = threading.Thread(target=_generate_in_thread)
         thread.start()
 
-        # Yield tokens as they arrive
-        for token_text in streamer:
+        # Yield tokens as they arrive. On CPU, streamer timeouts can happen
+        # between token batches for longer generations, so we tolerate them.
+        streamer_iter = iter(streamer)
+        while True:
+            try:
+                token_text = next(streamer_iter)
+            except StopIteration:
+                break
+            except queue.Empty:
+                if thread.is_alive():
+                    continue
+                break
             if token_text:
                 yield _chunk(token_text)
 
         thread.join()
+        if "error" in generation_error:
+            raise generation_error["error"]
 
         # ── 5. Append formatted source citations ────────────────────────
         citations = _build_citation_block(selected_results)

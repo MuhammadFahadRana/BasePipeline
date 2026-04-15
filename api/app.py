@@ -1037,7 +1037,7 @@ async def update_video_metadata(
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Set label and/or category on a video (admin only)."""
+    """Set site label and/or category on a video (admin only)."""
     video = db.query(Video).filter(Video.id == video_id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")

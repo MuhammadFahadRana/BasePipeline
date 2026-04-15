@@ -80,6 +80,7 @@ class VideoQA:
         except Exception as e:
             print(f"[ERROR] Failed to connect to shared LLM in VideoQA: {e}")
             raise e
+        self._sanitize_generation_config()
 
         # Set up token limits after connecting to the model
         inferred_limit = self._infer_model_context_limit(default=max_input_tokens)
@@ -193,7 +194,6 @@ class VideoQA:
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
-                temperature=0.1,
                 do_sample=False,
                 repetition_penalty=1.1,
                 pad_token_id=self.tokenizer.pad_token_id,
@@ -514,6 +514,21 @@ class VideoQA:
             return next(self.model.parameters()).device
         except StopIteration:
             return torch.device(self.device)
+
+    def _sanitize_generation_config(self) -> None:
+        """
+        Keep deterministic generation config clean so Transformers
+        does not warn about sampling-only flags in greedy mode.
+        """
+        gen_cfg = getattr(self.model, "generation_config", None)
+        if gen_cfg is None:
+            return
+
+        gen_cfg.do_sample = False
+        # Sampling-only fields can trigger noisy warnings on newer Transformers.
+        for attr in ("temperature", "top_p", "top_k", "typical_p"):
+            if hasattr(gen_cfg, attr):
+                setattr(gen_cfg, attr, None)
 
     def _get_result_score(self, result: SearchResult) -> Optional[float]:
         """
