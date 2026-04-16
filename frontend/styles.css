@@ -1112,6 +1112,13 @@ select {
     letter-spacing: 0.01em;
 }
 
+.result-source-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+}
+
 .source-transcript {
     color: #0f766e;
     background: rgba(15, 118, 110, 0.12);

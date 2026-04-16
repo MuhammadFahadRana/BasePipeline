@@ -1798,14 +1798,15 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
             const row = document.createElement('div');
             row.className = 'occurrence-row';
             if (idx >= 2) row.classList.add('occurrence-hidden');
-            const sourceMeta = getResultSourceMeta(occ);
+            const textMeta = getResultTextMeta(occ);
+            const sourceMeta = textMeta.sourceMeta;
 
             const thumbnailHtml = occ.keyframe_path
                 ? `<img class="occurrence-thumb" src="${API_BASE_URL}/keyframe?path=${encodeURIComponent(occ.keyframe_path)}&token=${authToken}" 
                        alt="" onerror="this.style.display='none'" />`
                 : '';
 
-            const highlightedText = highlightText(occ.text || '', currentQuery);
+            const highlightedText = highlightText(textMeta.displayText, currentQuery);
             const scoreVal = occ.combined_score || occ.score || 0;
             const hasMultiScores = occ.text_score !== undefined && occ.vision_score !== undefined;
 
@@ -1827,7 +1828,10 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
                 <div class="occurrence-body">
                     <div class="occurrence-ts-row">
                         <span class="occurrence-timestamp">${escapeHtml(occ.timestamp || '00:00:00')}</span>
-                        <span class="result-source source-${sourceMeta.id}">${sourceMeta.label}</span>
+                        <span class="result-source-group">
+                            <span class="result-source source-${sourceMeta.id}">${sourceMeta.label}</span>
+                            ${textMeta.hasOcrTag ? '<span class="result-source source-ocr">OCR</span>' : ''}
+                        </span>
                         ${scoreHtml}
                     </div>
                     <div class="occurrence-text">${highlightedText}</div>
@@ -1947,9 +1951,10 @@ function createResultCard(result, index) {
 
     const videoName = result.video_filename || 'Unknown';
     const timestamp = result.timestamp || '00:00:00';
-    const text = result.text || '';
+    const rawText = result.text || '';
     const keyframePath = result.keyframe_path || '';
-    const sourceMeta = getResultSourceMeta(result);
+    const textMeta = getResultTextMeta(result);
+    const sourceMeta = textMeta.sourceMeta;
 
     // Determine which score to highlight based on current view
     let primaryScore;
@@ -1969,7 +1974,7 @@ function createResultCard(result, index) {
     }
 
     // Highlight query terms in text
-    const highlightedText = highlightText(text, currentQuery);
+    const highlightedText = highlightText(textMeta.displayText, currentQuery);
 
     // Build thumbnail HTML if keyframe exists
     const thumbnailHtml = keyframePath
@@ -2012,7 +2017,10 @@ function createResultCard(result, index) {
             </div>
             <div class="result-meta">
                 <div class="result-timestamp">${timestamp}</div>
-                <div class="result-source source-${sourceMeta.id}">${sourceMeta.label}</div>
+                <div class="result-source-group">
+                    <div class="result-source source-${sourceMeta.id}">${sourceMeta.label}</div>
+                    ${textMeta.hasOcrTag ? '<div class="result-source source-ocr">OCR</div>' : ''}
+                </div>
                 <div class="result-score">${primaryLabel}: ${primaryScore.toFixed(3)}</div>
             </div>
         </div>
@@ -2045,6 +2053,28 @@ function getResultSourceMeta(result) {
         return { id: 'visual', label: 'Visual Caption' };
     }
     return { id: 'transcript', label: 'Transcript' };
+}
+
+function stripResultTextMarkers(text) {
+    if (!text) return '';
+
+    return text
+        .replace(/\[visual\]\s*/gi, '')
+        .replace(/\[ocr\]\s*/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+function getResultTextMeta(result) {
+    const rawText = result?.text || '';
+    const sourceMeta = getResultSourceMeta(result);
+    const hasOcrTag = /\[ocr\]/i.test(rawText);
+
+    return {
+        sourceMeta,
+        hasOcrTag,
+        displayText: stripResultTextMarkers(rawText),
+    };
 }
 
 // ========================================
