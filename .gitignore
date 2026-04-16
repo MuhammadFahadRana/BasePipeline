@@ -68,6 +68,8 @@ _benchmark_temp_*.wav
 # Database locals
 *.db
 *.sqlite
+*.dump
+basepipeline.dump
 
 # Notebook artifacts
 .ipynb_checkpoints/

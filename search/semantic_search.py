@@ -427,10 +427,12 @@ class SearchResult:
     facet: Optional[str] = None  # Optional facet label: oil_gas/tools/analytics/auto
     evidence_time: Optional[float] = None  # Best frame/sample timestamp evidence
     evidence_frame_role: Optional[str] = None  # start/mid/end/extra_n
+    source_type: str = "video"  # "video" or "document"
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
         payload = {
+            "source_type": self.source_type,
             "segment_id": self.segment_id,
             "video_id": self.video_id,
             "video_filename": self.video_filename,
@@ -722,14 +724,23 @@ class SemanticSearchEngine:
                 top_k=top_k * 3,
                 video_filter=video_filter,
             )
+            doc_future = self._executor.submit(
+                self._document_semantic_search,
+                query_embedding,
+                top_k=top_k,
+            )
             semantic_results = semantic_future.result()
             fuzzy_results = fuzzy_future.result()
+            doc_results = doc_future.result()
         else:
             semantic_results = self._semantic_search(
                 query_embedding, top_k=top_k * 3, video_filter=video_filter
             )
             fuzzy_results = self._fuzzy_text_search(
                 fuzzy_query, top_k=top_k * 3, video_filter=video_filter
+            )
+            doc_results = self._document_semantic_search(
+                query_embedding, top_k=top_k
             )
 
         # Combine and re-rank results
@@ -740,6 +751,10 @@ class SemanticSearchEngine:
             semantic_weight=semantic_weight,
             text_weight=text_weight,
         )
+
+        # Merge document results into combined results
+        if doc_results:
+            combined_results.extend(doc_results)
 
         # Filter out extremely short noisy segments (e.g. "Talking", "Except")
         combined_results = [r for r in combined_results if len(r.text.strip()) > 7]
@@ -1190,6 +1205,67 @@ class SemanticSearchEngine:
             semantic_scores[key] = (similarity, segment, keyframe_path)
 
         return semantic_scores
+
+    def _document_semantic_search(
+        self, query_embedding, top_k: int = 10
+    ) -> List["SearchResult"]:
+        """
+        Search document embeddings for matching chunks.
+        Returns a list of SearchResult objects with source_type='document'.
+        """
+        try:
+            sql_query = text("""
+                SELECT
+                    dc.id AS chunk_id,
+                    d.id AS document_id,
+                    d.filename,
+                    d.file_path,
+                    dc.chunk_index,
+                    dc.page_number,
+                    dc.section_heading,
+                    dc.text,
+                    dc.summary,
+                    1 - (de.embedding <=> CAST(:query_embedding AS vector)) AS similarity
+                FROM document_embeddings de
+                JOIN document_chunks dc ON de.chunk_id = dc.id
+                JOIN documents d ON dc.document_id = d.id
+                ORDER BY de.embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :top_k
+            """)
+
+            params = {"query_embedding": query_embedding.tolist(), "top_k": top_k}
+            rows = self.db.execute(sql_query, params).fetchall()
+        except Exception as e:
+            # Table may not exist yet — fail silently
+            return []
+
+        results = []
+        for row in rows:
+            display_text = row.text or ""
+            if row.summary:
+                display_text = f"{row.summary}\n{display_text}"
+            if row.section_heading:
+                display_text = f"[{row.section_heading}] {display_text}"
+            display_text = f"[Document: {row.filename}" + (
+                f", p.{row.page_number}" if row.page_number else ""
+            ) + f"] {display_text}"
+
+            sr = SearchResult(
+                segment_id=row.chunk_id,
+                video_id=row.document_id,  # repurpose field for doc ID
+                video_filename=row.filename,
+                video_path=row.file_path,
+                start_time=0.0,
+                end_time=0.0,
+                text=display_text,
+                score=float(row.similarity),
+                match_type="semantic",
+                result_id=row.chunk_id,
+                source_type="document",
+            )
+            results.append(sr)
+
+        return results
 
     def _is_norwegian_query(self, query: str) -> bool:
         """Heuristic: return True if the query looks Norwegian."""

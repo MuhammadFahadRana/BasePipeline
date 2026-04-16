@@ -307,6 +307,12 @@ def _filter_results(results, allowed_filenames, limit=None):
     """Filter search results to only include videos the user may access."""
     filtered = []
     for result in results:
+        # Document results are always passed through (no playability check)
+        if getattr(result, "source_type", "video") == "document":
+            filtered.append(result)
+            if limit and len(filtered) >= limit:
+                break
+            continue
         if (
             allowed_filenames is not None
             and getattr(result, "video_filename", None) not in allowed_filenames
@@ -325,6 +331,12 @@ def _filter_result_dicts(result_dicts, allowed_filenames, limit=None):
     """Filter dict-form search results to only include videos the user may access."""
     filtered = []
     for result in result_dicts:
+        # Document results are always passed through
+        if result.get("source_type") == "document":
+            filtered.append(result)
+            if limit and len(filtered) >= limit:
+                break
+            continue
         if (
             allowed_filenames is not None
             and result.get("video_filename") not in allowed_filenames
@@ -2808,7 +2820,6 @@ async def enrich_captions(
             except Exception as e:
                 print(f"  Failed to enrich scene {scene.id}: {e}")
                 continue
-
         db.commit()
 
         return {
@@ -2851,6 +2862,122 @@ async def caption_stats(
         "caption_coverage_pct": round(with_caption / total * 100, 1) if total else 0,
     }
 
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  DOCUMENT PIPELINE ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class DocumentInfo(BaseModel):
+    """Document information model."""
+    id: int
+    filename: str
+    file_type: str
+    file_size_mb: Optional[float] = None
+    total_pages: Optional[int] = None
+    extraction_method: Optional[str] = None
+    label: Optional[str] = None
+    processed_at: Optional[str] = None
+
+
+@app.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload and process a document (PDF, DOCX, PPTX, image).
+    Extracts text, generates embeddings, and stores in DB.
+    """
+    allowed_ext = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".png", ".jpg", ".jpeg", ".tiff"}
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in allowed_ext:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {suffix}. Allowed: {', '.join(sorted(allowed_ext))}",
+        )
+
+    # Save to documents folder
+    upload_dir = PROJECT_ROOT / "documents"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = upload_dir / file.filename
+
+    with open(dest_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+
+    # Run document pipeline
+    try:
+        from document_pipeline import DocumentPipeline
+
+        pipeline = DocumentPipeline()
+        results = pipeline.process_file(str(dest_path))
+
+        return {
+            "status": "ok",
+            "filename": file.filename,
+            "chunks": len(results.get("chunks", [])),
+            "pages": results.get("metadata", {}).get("total_pages", 0),
+            "extraction_method": results.get("metadata", {}).get("extraction_method"),
+        }
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Document processing failed: {str(e)}")
+
+
+@app.get("/documents", response_model=List[DocumentInfo])
+async def list_documents(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List all ingested documents."""
+    try:
+        from database.document_models import Document as DocumentModel
+
+        docs = db.query(DocumentModel).order_by(DocumentModel.created_at.desc()).all()
+        return [
+            DocumentInfo(
+                id=d.id,
+                filename=d.filename,
+                file_type=d.file_type,
+                file_size_mb=d.file_size_mb,
+                total_pages=d.total_pages,
+                extraction_method=d.extraction_method,
+                label=d.label,
+                processed_at=d.processed_at.isoformat() if d.processed_at else None,
+            )
+            for d in docs
+        ]
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/documents/{doc_id}")
+async def delete_document(
+    doc_id: int,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Delete a document and its chunks/embeddings (admin only)."""
+    try:
+        from database.document_models import Document as DocumentModel
+
+        doc = db.query(DocumentModel).filter(DocumentModel.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        filename = doc.filename
+        db.delete(doc)  # Cascade deletes chunks & embeddings
+        db.commit()
+        return {"status": "ok", "message": f"Document '{filename}' deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Serve the frontend
 @app.get("/")
