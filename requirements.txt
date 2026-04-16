@@ -11,7 +11,7 @@ librosa==0.11.0
 moviepy==2.2.1
 numpy==2.3.5
 open_clip_torch==3.2.0
-openai-whisper==20240930
+openai-whisper==20250625
 opencv-python==4.10.0.84
 peft==0.18.1
 pgvector==0.3.6
