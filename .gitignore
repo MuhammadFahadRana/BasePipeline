@@ -78,6 +78,5 @@ _benchmark_temp_*.wav
 # Data tables / exports
 *.csv
 
-# Keep these large external repos locally only (do not push to GitHub)
-Extras/models/TransNetV2/
-Extras/models/VibeVoice/
+# Archived/non-runtime material kept locally only
+Extras/
