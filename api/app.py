@@ -2912,7 +2912,7 @@ async def upload_document(
     try:
         from document_pipeline import DocumentPipeline
 
-        pipeline = DocumentPipeline()
+        pipeline = DocumentPipeline(skip_ingest=False)
         results = pipeline.process_file(str(dest_path))
 
         return {

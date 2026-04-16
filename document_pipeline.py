@@ -6,7 +6,7 @@ Supports single-file and folder-wide processing:
 3. Optional page enrichment
 4. Chunking
 5. Optional result persistence
-6. Optional DB ingestion
+6. Optional DB ingestion (disabled by default for batch/Slurm usage)
 """
 
 import argparse
@@ -65,7 +65,7 @@ class DocumentPipeline:
     def __init__(
         self,
         force_ocr: bool = False,
-        skip_ingest: bool = False,
+        skip_ingest: bool = True,
         save_results: bool = True,
     ):
         self.force_ocr = force_ocr
@@ -231,11 +231,19 @@ class DocumentPipeline:
         else:
             print(f"[OK] Document processed in {processing_time:.2f}s")
 
-        # 5. Ingestion
-        if HAS_DB and not self.skip_ingest:
+        # 5. Ingestion (optional)
+        if self.skip_ingest:
+            print("4. Skipping database ingestion (extraction-only mode).")
+        elif not HAS_DB:
+            print("4. Skipping database ingestion (ingester module unavailable).")
+        else:
             print("4. Ingesting to database...")
-            with DocumentIngester() as ingester:
-                ingester.ingest_document(results)
+            try:
+                with DocumentIngester() as ingester:
+                    ingester.ingest_document(results)
+            except Exception as e:
+                # Keep extraction pipeline successful even when DB is unreachable.
+                print(f"[WARN] Database ingestion failed, continuing: {e}")
 
         # Cleanup document temp directory if empty.
         if temp_dir.exists():
@@ -313,7 +321,16 @@ if __name__ == "__main__":
         help="Base output folder for saved results",
     )
     parser.add_argument("--force-ocr", action="store_true", help="Force OCR on all pages")
-    parser.add_argument("--skip-db", action="store_true", help="Skip database ingestion")
+    parser.add_argument(
+        "--skip-db",
+        action="store_true",
+        help="Skip database ingestion (default behavior; kept for compatibility)",
+    )
+    parser.add_argument(
+        "--ingest-db",
+        action="store_true",
+        help="Enable database ingestion after extraction",
+    )
     parser.add_argument("--no-save", action="store_true", help="Do not save results JSON")
     parser.add_argument(
         "--recursive",
@@ -323,9 +340,17 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # Default mode is extraction + save only (no DB).
+    # --ingest-db can enable ingestion; --skip-db keeps it disabled.
+    skip_ingest = True
+    if args.ingest_db:
+        skip_ingest = False
+    if args.skip_db:
+        skip_ingest = True
+
     pipeline = DocumentPipeline(
         force_ocr=args.force_ocr,
-        skip_ingest=args.skip_db,
+        skip_ingest=skip_ingest,
         save_results=not args.no_save,
     )
 
