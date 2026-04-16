@@ -53,10 +53,19 @@ class VisualFeatureExtractor:
         self.model_name = model_name
         self.load_in_4bit = load_in_4bit
         self._ocr_reader = None
+        self._surya_initialized = False
+        self._surya_available = False
+        self._surya_run_ocr = None
+        self._surya_det_model = None
+        self._surya_rec_model = None
+        self._surya_rec_processor = None
         self.enable_ocr_fallback = (
             os.getenv("VISUAL_OCR_FALLBACK", "true").strip().lower()
             in ("1", "true", "yes", "on")
         )
+        self.ocr_fallback_engine = os.getenv(
+            "VISUAL_OCR_FALLBACK_ENGINE", "surya_easyocr"
+        ).strip().lower()
         
         print(f"\n{'='*60}")
         print(f"Qwen2-VL Visual Feature Extractor")
@@ -127,6 +136,77 @@ class VisualFeatureExtractor:
             
         print(f"[OK] {self.model_name} loaded successfully.")
 
+    def _ensure_surya_ocr(self) -> bool:
+        """Lazy-load Surya OCR for fallback extraction."""
+        if self._surya_initialized:
+            return self._surya_available
+
+        self._surya_initialized = True
+        try:
+            from surya.ocr import run_ocr
+            from surya.model.detection.model import load_model as load_det_model
+            from surya.model.recognition.model import load_model as load_rec_model
+            from surya.model.recognition.processor import (
+                load_processor as load_rec_processor,
+            )
+
+            print("Loading Surya OCR fallback for visual extraction...")
+            self._surya_run_ocr = run_ocr
+            self._surya_det_model = load_det_model()
+            self._surya_rec_model = load_rec_model()
+            self._surya_rec_processor = load_rec_processor()
+            self._surya_available = True
+            print("[OK] Surya OCR fallback ready.")
+        except Exception as exc:
+            self._surya_available = False
+            print(f"Warning: Surya OCR fallback unavailable: {exc}")
+
+        return self._surya_available
+
+    def _fallback_ocr_text_surya(self, image_path: Union[str, Path]) -> Optional[str]:
+        """Extract OCR text via Surya."""
+        if not self._ensure_surya_ocr():
+            return None
+
+        try:
+            image = Image.open(str(image_path)).convert("RGB")
+            predictions = self._surya_run_ocr(
+                [image],
+                [["en", "no"]],
+                self._surya_det_model,
+                self._surya_rec_model,
+                self._surya_rec_processor,
+            )
+        except Exception as exc:
+            print(f"Warning: Surya OCR fallback failed for {image_path}: {exc}")
+            return None
+
+        if not predictions:
+            return None
+
+        result = predictions[0]
+        text_lines = getattr(result, "text_lines", None)
+        if text_lines is None and isinstance(result, dict):
+            text_lines = result.get("text_lines") or result.get("lines")
+
+        if not text_lines:
+            return None
+
+        parts = []
+        for line in text_lines:
+            txt = getattr(line, "text", None)
+            if txt is None and isinstance(line, dict):
+                txt = line.get("text")
+            if txt:
+                parts.append(str(txt).strip())
+
+        merged = " ".join(parts).strip()
+        if not merged:
+            return None
+        if merged.lower() in {"none", "null", "n/a", "na", "no text"}:
+            return None
+        return merged
+
     def _get_ocr_reader(self):
         """Lazy-load EasyOCR fallback reader."""
         if not self.enable_ocr_fallback:
@@ -147,33 +227,47 @@ class VisualFeatureExtractor:
 
     def _fallback_ocr_text(self, image_path: Union[str, Path]) -> Optional[str]:
         """Fallback OCR extraction when the vision model omits OCR text."""
-        reader = self._get_ocr_reader()
-        if reader is None:
+        if not self.enable_ocr_fallback:
             return None
 
-        try:
-            detections = reader.extract_with_confidence(
-                str(image_path), confidence_threshold=0.35
-            )
-        except Exception as exc:
-            print(f"Warning: OCR fallback failed for {image_path}: {exc}")
-            return None
+        # Prefer Surya (document OCR) when available, then fall back to EasyOCR.
+        if self.ocr_fallback_engine in {"surya", "surya_easyocr", "auto"}:
+            text = self._fallback_ocr_text_surya(image_path)
+            if text:
+                return text
+            if self.ocr_fallback_engine == "surya":
+                return None
 
-        if not detections:
-            return None
+        if self.ocr_fallback_engine in {"easyocr", "surya_easyocr", "auto"}:
+            reader = self._get_ocr_reader()
+            if reader is None:
+                return None
 
-        text_parts = []
-        for det in detections:
-            txt = str(det.get("text", "")).strip()
-            if txt:
-                text_parts.append(txt)
+            try:
+                detections = reader.extract_with_confidence(
+                    str(image_path), confidence_threshold=0.35
+                )
+            except Exception as exc:
+                print(f"Warning: OCR fallback failed for {image_path}: {exc}")
+                return None
 
-        merged = " ".join(text_parts).strip()
-        if not merged:
-            return None
-        if merged.lower() in {"none", "null", "n/a", "na", "no text"}:
-            return None
-        return merged
+            if not detections:
+                return None
+
+            text_parts = []
+            for det in detections:
+                txt = str(det.get("text", "")).strip()
+                if txt:
+                    text_parts.append(txt)
+
+            merged = " ".join(text_parts).strip()
+            if not merged:
+                return None
+            if merged.lower() in {"none", "null", "n/a", "na", "no text"}:
+                return None
+            return merged
+
+        return None
 
     def analyze_image(self, image_path: Union[str, Path]) -> Dict[str, Any]:
         """
