@@ -1,0 +1,15 @@
+\begin{table}[H]
+\centering
+\caption{Paired Significance Tests on WER vs. Whisper-Large-v3 (Wilcoxon + Bootstrap CI)}
+\label{tab:asr_significance}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Model} & $n$ & $W$ & $p$ & $q$ & $\Delta\overline{\mathrm{WER}}$ [95\% CI]\\
+\midrule
+Voxtral-Mini-4B & 1 & -- & -- & -- & -- \\
+Vosk-En & 22 & 0.0 & 4.01e-05 & 4.01e-05 & 34.49 [24.49, 46.54] \\
+Qwen-qwen2-audio & 22 & 0.0 & 4.01e-05 & 4.01e-05 & 89.62 [84.87, 94.40] \\
+SpeechT5-ASR & 22 & 0.0 & 4.01e-05 & 4.01e-05 & 207.00 [79.69, 452.14] \\
+\bottomrule
+\end{tabular}
+\end{table}

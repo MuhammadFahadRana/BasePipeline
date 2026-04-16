@@ -1,11 +1,10 @@
-# Python
+# Python cache/build
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 build/
-develop-eggs/
 dist/
 downloads/
 eggs/
@@ -19,20 +18,25 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
 
-# Virtual Environment
+# Virtual environments
 .venv/
 .venv-linux/
 venv/
 ENV/
 env/
 
-# Environment variables
+# Environment and secrets
 .env
 .env.local
 .jwt_secret
 
-# IDE
+# IDE/editor
 .vscode/
 .idea/
 *.swp
@@ -43,45 +47,37 @@ env/
 .DS_Store
 Thumbs.db
 
-# Project specific
+# Runtime outputs
 processed/
+logs/
+*.log
+
+# Local media/test assets
 videos/*.mp4
 videos/*.avi
 videos/*.mov
+videos/*.mkv
+videos/*.webm
+videos/*.ts
 !videos/.gitkeep
-
-# Model cache
-.cache/
-models/
-
-# Logs
-*.log
-logs/
-
-# Database
-*.db
-*.sqlite
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Temp files
 temp_*.wav
 temp_*.mp3
 _benchmark_temp_*.wav
 *.tmp
 
-# Videos
-*.ts
+# Database locals
+*.db
+*.sqlite
 
-# All the csv files
+# Notebook artifacts
+.ipynb_checkpoints/
+
+# Caches
+.cache/
+
+# Data tables / exports
 *.csv
 
-# Docs folder and its contents
-docs/
-
-TransNetV2/
-VibeVoice/
-
-# TensorFlow
-TensorFlow Projection/
+# Keep these large external repos locally only (do not push to GitHub)
+Extras/models/TransNetV2/
+Extras/models/VibeVoice/

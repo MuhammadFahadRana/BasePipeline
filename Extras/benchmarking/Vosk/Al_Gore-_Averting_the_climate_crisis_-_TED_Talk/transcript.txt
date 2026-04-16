@@ -1,0 +1,134 @@
+Model: Vosk
+Source: Al Gore- Averting the climate crisis - TED Talk.ts
+Processing Time: 97.31s
+============================================================
+
+[0:00:06 → 0:00:22] thank you so much grass and it's a it's a truly a great honor to have the opportunity to come to this stage twice i'm extremely grateful i have been blown away by this conference and i want to thank all of you for the the many
+[0:00:23 → 0:00:28] nice comments about what i had to say the the other night and i and i say that sincerely
+[0:00:29 → 0:00:30] partly because
+[0:00:31 → 0:00:32] and need that
+[0:00:38 → 0:00:40] put yourselves in my position
+[0:00:47 → 0:00:49] i flew on air force to for eight years
+[0:00:51 → 0:00:54] now i have to take off my shoes or boots to get on an airplane
+[0:01:04 → 0:01:06] i'll tell you one quick story to illustrate
+[0:01:06 → 0:01:08] what that's been like for me
+[0:01:10 → 0:01:12] as a true story every bit of this is true
+[0:01:13 → 0:01:15] soon after different i left the
+[0:01:16 → 0:01:17] what else i
+[0:01:19 → 0:01:26] we were driving from our home in nashville to a little farm we have fifty miles east of nashville
+[0:01:27 → 0:01:28] you're hunting ourselves
+[0:01:31 → 0:01:34] i know it sounds like a little thing to you but
+[0:01:39 → 0:01:40] hi
+[0:01:42 → 0:01:44] i looked in the rearview mirror and
+[0:01:45 → 0:01:50] all of a sudden it just hit me there was no motorcade back there
+[0:01:53 → 0:01:54] you've heard of phantom limb pain
+[0:01:59 → 0:02:00] this
+[0:02:02 → 0:02:04] this was a rented ford taurus
+[0:02:07 → 0:02:11] it was dinnertime and we started looking for a to the
+[0:02:12 → 0:02:19] we're on i forty we got to exit to thirty eight lebanon tennessee we got the actually started looking to we found a shown his restaurant
+[0:02:20 → 0:02:24] low costs family restaurant chain for those we don't know it
+[0:02:25 → 0:02:31] we went in and sat down at the in the waitress came over how made a big commotion over tipper
+[0:02:34 → 0:02:41] she took our order and then went to the couple in the booth next to us and she lowered her voice so much i had a really strange to hear what you're saying
+[0:02:42 → 0:02:46] and she said yes that's former vice president al gore and his wife tipper
+[0:02:47 → 0:02:50] and the man said he's come down a long way
+[0:03:00 → 0:03:03] there's been kind of a series of a pair for news
+[0:03:04 → 0:03:12] the very next day continuing the totally true story i got on a g five to fly to africa
+[0:03:12 → 0:03:24] to make a speech in nigeria in the city of legos on the topic of energy and i began the speech by telling them the story of what had just happened the day before in nashville
+[0:03:24 → 0:03:27] and i told it pretty much the same web just shared it with you
+[0:03:28 → 0:03:33] given our driving ourselves shown he is low cost family restaurant chain with the man said they laughed
+[0:03:34 → 0:03:50] i gave my speech then went back out to the airport to fly back home i fell asleep on the plane until during the middle of the night we landed on the a's or as islands for refueling i woke up they open the door i went out to get some fresh air and i looked and there was a man running across the runway
+[0:03:51 → 0:03:56] and he was waving a piece of paper and he was yelling call washington
+[0:03:56 → 0:03:58] call washington
+[0:03:59 → 0:04:06] and i thought to myself the middle of the night middle of the atlantic what in the world could be wrong and wash and then i remembered it could be a bunch of things
+[0:04:08 → 0:04:08] ham
+[0:04:13 → 0:04:20] but but what it turned out to be was that my staff was extremely upset because a
+[0:04:21 → 0:04:32] one of the wire services in nigeria had already written a story about my speech and it had already been printed in cities all across the united states of america is printed in monterey i checked
+[0:04:34 → 0:04:34] and
+[0:04:35 → 0:04:44] the story began former vice president al gore announced in nigeria yesterday quote my wife tipper and i have opened a low cost family restaurant
+[0:04:46 → 0:04:49] and i'm shown his and we are running it ourselves
+[0:04:53 → 0:05:01] before i could get back to us soil david letterman and jay leno had already started in one of them had me in a big white chef's hat
+[0:05:02 → 0:05:04] tipper was saying one more burger with fries
+[0:05:06 → 0:05:16] three days later i got a nice long handwritten letter from my friend and partner and colleague bill clinton saying congratulations on the new restaurant out
+[0:05:22 → 0:05:25] we like to celebrate each other successes and live
+[0:05:32 → 0:05:42] so you to talk about information ecology but i was thinking that sense i plan to make a lifelong habit of coming back to ted that maybe i could talk about that another try
+[0:05:45 → 0:05:45] dale
+[0:05:48 → 0:05:50] i want to focus
+[0:05:51 → 0:05:59] on what many of you have said you would like me to elaborate on what can you do about the climate crisis
+[0:06:00 → 0:06:02] i want to start with a couple of
+[0:06:03 → 0:06:07] i'm going to show some new images and i'm going to recapitulate
+[0:06:08 → 0:06:09] just as
+[0:06:10 → 0:06:10] four five
+[0:06:11 → 0:06:31] now oh this slideshow i update the slideshow every time i give it i add new images because i learned more about it every time i given eyes like beach combing you know every time the tide comes in and out you'll find some more shells the just in the last two days we got the new temperature records in jan
+[0:06:31 → 0:06:41] new wary this is just for the united states of america star cool average for january's is thirty one degrees last month was thirty nine point five degrees
+[0:06:42 → 0:06:46] now i know that you wanted some more bad news about the environment
+[0:06:47 → 0:06:47] i'm kidding
+[0:06:49 → 0:06:57] but these are the recapitulation slides and then i'm going to go into a new material about what you can do but i wanted to elaborate on a couple of these
+[0:06:58 → 0:07:18] first of all this is where we are projected to go with the us contribution to global warming under business as usual efficiency in induce electricity and in use of all energy is the low hanging fruit efficiency and conservation it's not a cost it's a profit the sign it
+[0:07:18 → 0:07:28] is wrong it's not negative it's positive these or investments that pay for themselves but they are also very effective in deflecting our path
+[0:07:29 → 0:07:35] cars and trucks i talked about that and the slideshow but i want you to put it in perspective
+[0:07:36 → 0:07:48] it's an easy visible target of concern and it should be but there is more global warming pollution that comes from buildings then from cars and trucks
+[0:07:49 → 0:08:09] cars and trucks are very significant and we have the lowest standards in the world and so we should address that but it's part of the puzzle other transportation is efficiency is as important as cars and trucks renewables at the current levels of technological efficiency can make this much difference and with
+[0:08:09 → 0:08:12] what of a node and some are and
+[0:08:12 → 0:08:21] john door and others many of you hear a lot of people directly involved in this this wedges going to grow much more rapidly than the current projections shows it
+[0:08:22 → 0:08:28] carbon capture and sequestration that's what ccs stands for it
+[0:08:28 → 0:08:32] is likely to become the killer app
+[0:08:33 → 0:08:41] that will enable us to continue to use fossil fuels in a way that is safe
+[0:08:43 → 0:08:45] not quite there yet okay now
+[0:08:46 → 0:08:47] oh what can you do
+[0:08:50 → 0:08:51] reduce emissions in your home
+[0:08:52 → 0:08:56] most of these expenditures are also profitable
+[0:08:57 → 0:09:02] installation better design by green electricity where where you can
+[0:09:03 → 0:09:04] i mentioned automobiles
+[0:09:05 → 0:09:08] by a hybrid use light rail
+[0:09:09 → 0:09:12] figure out some of the other options that are much better it's important
+[0:09:13 → 0:09:27] be a green consumer you have choices with everything you buy between things that have a harsh effect or i'm much less harsh effect on the on the a global climate crisis
+[0:09:28 → 0:09:29] consider this
+[0:09:30 → 0:09:33] make a decision to live a carbon neutral life
+[0:09:34 → 0:09:48] those of you who are good at branding i'd love to get your advice and help on how to say this in a way that connects with the most people it is easier than you think it really is
+[0:09:50 → 0:10:09] a lot of us in here have made that decision and it is really pretty easy it means it means reduce your carbon dioxide emissions with the full range of choices that you make and then purchase or acquire offsets for the remain
+[0:10:10 → 0:10:18] there are that you have not completely reduce and what what it means he is elaborated at climate crisis dot net
+[0:10:19 → 0:10:22] there is a carbon calculator
+[0:10:23 → 0:10:39] participant productions convened we with my active involvement the leading software writers in the world on this arcane science of carbon calculation to construct a consumer friendly carbon calculator
+[0:10:39 → 0:10:59] you can you can very precisely calculate what your c o two emissions are and then you you will be given options to reduce and in by the time the movie comes out in may this will be updated to two point zero and we will have click through purchases of offsets next consider making your
+[0:10:59 → 0:11:05] or business carbon neutral again some of us have done that and it's not as hard as you think
+[0:11:06 → 0:11:22] integrate climate solutions into all of your innovations whether you are from the technology or entertainment or design and architecture community invest sustainably majora mentioned this listen if you
+[0:11:22 → 0:11:35] have invested money with managers who you compensate on the basis of their annual performance don't ever again complain about quarterly report ceo management
+[0:11:36 → 0:11:38] overtime people do what you pay them to do
+[0:11:40 → 0:11:44] and if they judge how much they're going to get paid on your
+[0:11:45 → 0:11:52] it your your capital that they've invested based on the short term returns you're going to get short term decisions
+[0:11:54 → 0:11:58] lot more to be said about that become a catalyst of change teach others
+[0:11:59 → 0:12:01] learn about it talk about it
+[0:12:02 → 0:12:08] the movie comes out the movie as a movie version of the slideshow that it gave two nights ago except it's a lot more entertaining
+[0:12:10 → 0:12:16] and it comes out and may many of you here have the opportunity to ensure that a lot of people see it
+[0:12:18 → 0:12:20] consider sending somebody
+[0:12:21 → 0:12:22] to nashville
+[0:12:22 → 0:12:23] pick well
+[0:12:25 → 0:12:44] and i am personally going to train people to give this slideshow re purpose with some of the personal stories obviously replaced with a generic approach and it's there it's not just the slides it's what they mean and it's how they linked together and so i'm going to be conducting a course the summer
+[0:12:45 → 0:13:04] for a group of people that are nominated by different folks to come and then give it in mass and communities all across the country and we're going to update the the slideshow for all of them every single week to keep it right on the cutting edge working with larry lessig it it will be at somewhere in that price
+[0:13:04 → 0:13:08] as posted with tools and limited use
+[0:13:08 → 0:13:15] the copyrights so that young people can remix it and use it and do it in their own way
+[0:13:18 → 0:13:36] where did anybody get the idea that you ought to stay arm's length from politics it doesn't mean that i'm trying to convey if you're a republican that i'm trying to convince you to be a democrat we need republicans as well this are used to be a bipartisan issue and and i know that in this group it really has become politically active make our democracy
+[0:13:36 → 0:13:46] work that way it's supposed to work support the idea of capping carbon dioxide emissions global warming pollution and trading it here's why
+[0:13:47 → 0:13:49] as long as the united states is out of the world's system
+[0:13:50 → 0:13:53] it's not a closed system once it becomes a closed system
+[0:13:54 → 0:14:02] with us participation then everybody who's on a board of directors how many people here are serves serve on the board of directors of a corporation
+[0:14:04 → 0:14:08] once it's a closed system you will have legal liability if you do not
+[0:14:09 → 0:14:16] urge your ceo to get the maximum income from reducing and trading the carbon emissions that can be avoided
+[0:14:17 → 0:14:19] the market will work to solve this problem
+[0:14:22 → 0:14:24] if if we can accomplish this
+[0:14:26 → 0:14:36] help with a mass persuasion campaign that will start this spring we have to change the minds of the american people because presently the politicians do not have permission to do what needs to to be done
+[0:14:36 → 0:14:52] and in our modern country the role of logic and reason no long no longer includes mediating between wealth and power the way it once did it's now repetition of short hot button thirty second twenty eight second television ads we have to buy a lot of those ads
+[0:14:53 → 0:14:55] let's rebrand global warming
+[0:14:56 → 0:15:04] as many of you have suggested i like climate crisis instead of climate collapse but again those of you who are good at branding i need your help on this
+[0:15:05 → 0:15:15] somebody said the test we're facing now scientists told me is whether the combination of unopposed will farm and and neocortex is a viable combination
+[0:15:17 → 0:15:18] that's really true
+[0:15:21 → 0:15:23] i said the other night and know
+[0:15:24 → 0:15:28] repeat now this is not a political issue again the republicans here
+[0:15:30 → 0:15:36] the shouldn't be partisan you have more influence than some of us who are democrats do
+[0:15:36 → 0:15:45] this is an opportunity to just this but connected to the ideas that are here to bring more coherence to them
+[0:15:46 → 0:15:46] we are one
+[0:15:47 → 0:15:49] thank you very much i prefer
+
+============================================================
+FULL TEXT:
+thank you so much grass and it's a it's a truly a great honor to have the opportunity to come to this stage twice i'm extremely grateful i have been blown away by this conference and i want to thank all of you for the the many nice comments about what i had to say the the other night and i and i say that sincerely partly because and need that put yourselves in my position i flew on air force to for eight years now i have to take off my shoes or boots to get on an airplane i'll tell you one quick story to illustrate what that's been like for me as a true story every bit of this is true soon after different i left the what else i we were driving from our home in nashville to a little farm we have fifty miles east of nashville you're hunting ourselves i know it sounds like a little thing to you but hi i looked in the rearview mirror and all of a sudden it just hit me there was no motorcade back there you've heard of phantom limb pain this this was a rented ford taurus it was dinnertime and we started looking for a to the we're on i forty we got to exit to thirty eight lebanon tennessee we got the actually started looking to we found a shown his restaurant low costs family restaurant chain for those we don't know it we went in and sat down at the in the waitress came over how made a big commotion over tipper she took our order and then went to the couple in the booth next to us and she lowered her voice so much i had a really strange to hear what you're saying and she said yes that's former vice president al gore and his wife tipper and the man said he's come down a long way there's been kind of a series of a pair for news the very next day continuing the totally true story i got on a g five to fly to africa to make a speech in nigeria in the city of legos on the topic of energy and i began the speech by telling them the story of what had just happened the day before in nashville and i told it pretty much the same web just shared it with you given our driving ourselves shown he is low cost family restaurant chain with the man said they laughed i gave my speech then went back out to the airport to fly back home i fell asleep on the plane until during the middle of the night we landed on the a's or as islands for refueling i woke up they open the door i went out to get some fresh air and i looked and there was a man running across the runway and he was waving a piece of paper and he was yelling call washington call washington and i thought to myself the middle of the night middle of the atlantic what in the world could be wrong and wash and then i remembered it could be a bunch of things ham but but what it turned out to be was that my staff was extremely upset because a one of the wire services in nigeria had already written a story about my speech and it had already been printed in cities all across the united states of america is printed in monterey i checked and the story began former vice president al gore announced in nigeria yesterday quote my wife tipper and i have opened a low cost family restaurant and i'm shown his and we are running it ourselves before i could get back to us soil david letterman and jay leno had already started in one of them had me in a big white chef's hat tipper was saying one more burger with fries three days later i got a nice long handwritten letter from my friend and partner and colleague bill clinton saying congratulations on the new restaurant out we like to celebrate each other successes and live so you to talk about information ecology but i was thinking that sense i plan to make a lifelong habit of coming back to ted that maybe i could talk about that another try dale i want to focus on what many of you have said you would like me to elaborate on what can you do about the climate crisis i want to start with a couple of i'm going to show some new images and i'm going to recapitulate just as four five now oh this slideshow i update the slideshow every time i give it i add new images because i learned more about it every time i given eyes like beach combing you know every time the tide comes in and out you'll find some more shells the just in the last two days we got the new temperature records in jan new wary this is just for the united states of america star cool average for january's is thirty one degrees last month was thirty nine point five degrees now i know that you wanted some more bad news about the environment i'm kidding but these are the recapitulation slides and then i'm going to go into a new material about what you can do but i wanted to elaborate on a couple of these first of all this is where we are projected to go with the us contribution to global warming under business as usual efficiency in induce electricity and in use of all energy is the low hanging fruit efficiency and conservation it's not a cost it's a profit the sign it is wrong it's not negative it's positive these or investments that pay for themselves but they are also very effective in deflecting our path cars and trucks i talked about that and the slideshow but i want you to put it in perspective it's an easy visible target of concern and it should be but there is more global warming pollution that comes from buildings then from cars and trucks cars and trucks are very significant and we have the lowest standards in the world and so we should address that but it's part of the puzzle other transportation is efficiency is as important as cars and trucks renewables at the current levels of technological efficiency can make this much difference and with what of a node and some are and john door and others many of you hear a lot of people directly involved in this this wedges going to grow much more rapidly than the current projections shows it carbon capture and sequestration that's what ccs stands for it is likely to become the killer app that will enable us to continue to use fossil fuels in a way that is safe not quite there yet okay now oh what can you do reduce emissions in your home most of these expenditures are also profitable installation better design by green electricity where where you can i mentioned automobiles by a hybrid use light rail figure out some of the other options that are much better it's important be a green consumer you have choices with everything you buy between things that have a harsh effect or i'm much less harsh effect on the on the a global climate crisis consider this make a decision to live a carbon neutral life those of you who are good at branding i'd love to get your advice and help on how to say this in a way that connects with the most people it is easier than you think it really is a lot of us in here have made that decision and it is really pretty easy it means it means reduce your carbon dioxide emissions with the full range of choices that you make and then purchase or acquire offsets for the remain there are that you have not completely reduce and what what it means he is elaborated at climate crisis dot net there is a carbon calculator participant productions convened we with my active involvement the leading software writers in the world on this arcane science of carbon calculation to construct a consumer friendly carbon calculator you can you can very precisely calculate what your c o two emissions are and then you you will be given options to reduce and in by the time the movie comes out in may this will be updated to two point zero and we will have click through purchases of offsets next consider making your or business carbon neutral again some of us have done that and it's not as hard as you think integrate climate solutions into all of your innovations whether you are from the technology or entertainment or design and architecture community invest sustainably majora mentioned this listen if you have invested money with managers who you compensate on the basis of their annual performance don't ever again complain about quarterly report ceo management overtime people do what you pay them to do and if they judge how much they're going to get paid on your it your your capital that they've invested based on the short term returns you're going to get short term decisions lot more to be said about that become a catalyst of change teach others learn about it talk about it the movie comes out the movie as a movie version of the slideshow that it gave two nights ago except it's a lot more entertaining and it comes out and may many of you here have the opportunity to ensure that a lot of people see it consider sending somebody to nashville pick well and i am personally going to train people to give this slideshow re purpose with some of the personal stories obviously replaced with a generic approach and it's there it's not just the slides it's what they mean and it's how they linked together and so i'm going to be conducting a course the summer for a group of people that are nominated by different folks to come and then give it in mass and communities all across the country and we're going to update the the slideshow for all of them every single week to keep it right on the cutting edge working with larry lessig it it will be at somewhere in that price as posted with tools and limited use the copyrights so that young people can remix it and use it and do it in their own way where did anybody get the idea that you ought to stay arm's length from politics it doesn't mean that i'm trying to convey if you're a republican that i'm trying to convince you to be a democrat we need republicans as well this are used to be a bipartisan issue and and i know that in this group it really has become politically active make our democracy work that way it's supposed to work support the idea of capping carbon dioxide emissions global warming pollution and trading it here's why as long as the united states is out of the world's system it's not a closed system once it becomes a closed system with us participation then everybody who's on a board of directors how many people here are serves serve on the board of directors of a corporation once it's a closed system you will have legal liability if you do not urge your ceo to get the maximum income from reducing and trading the carbon emissions that can be avoided the market will work to solve this problem if if we can accomplish this help with a mass persuasion campaign that will start this spring we have to change the minds of the american people because presently the politicians do not have permission to do what needs to to be done and in our modern country the role of logic and reason no long no longer includes mediating between wealth and power the way it once did it's now repetition of short hot button thirty second twenty eight second television ads we have to buy a lot of those ads let's rebrand global warming as many of you have suggested i like climate crisis instead of climate collapse but again those of you who are good at branding i need your help on this somebody said the test we're facing now scientists told me is whether the combination of unopposed will farm and and neocortex is a viable combination that's really true i said the other night and know repeat now this is not a political issue again the republicans here the shouldn't be partisan you have more influence than some of us who are democrats do this is an opportunity to just this but connected to the ideas that are here to bring more coherence to them we are one thank you very much i prefer

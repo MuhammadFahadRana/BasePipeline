@@ -9,9 +9,6 @@ from typing import Dict, Optional, List
 from datetime import timedelta, datetime
 import time
 
-# Import from transcribe_all for multi-model support
-# from transcribe_all import SimpleTranscriber
-
 from transcriber import SimpleTranscriber
 from scene_detector import SceneDetector, SceneConfig
 
@@ -46,7 +43,7 @@ class BasicVideoPipeline:
         Initialize pipeline with selected ASR backend and scene detector.
 
         Args:
-            backend: ASR backend (whisper/whisperx/distil-whisper/wav2vec/nemo)
+            backend: ASR backend (whisper/whisperx/distil-whisper)
             model_variant: Model variant dict (e.g., {'name': 'base'})
             scene_threshold: Scene detection threshold
             device: Device for models ("auto", "cpu", "cuda")

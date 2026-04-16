@@ -1,0 +1,14 @@
+{
+  "text": "the stale smell of old beer lingers it takes heat to bring out the odor a cold dip restores health and zest a salt pickled tastes fine with ham tacos al pastor are my favorite a zestful food is the hot cross buns",
+  "segments": [
+    {
+      "start": 1.26,
+      "end": 17.61,
+      "text": "the stale smell of old beer lingers it takes heat to bring out the odor a cold dip restores health and zest a salt pickled tastes fine with ham tacos al pastor are my favorite a zestful food is the hot cross buns"
+    }
+  ],
+  "model": "Vosk",
+  "source_file": "audio only.wav",
+  "processing_time_seconds": 3.77,
+  "num_segments": 1
+}

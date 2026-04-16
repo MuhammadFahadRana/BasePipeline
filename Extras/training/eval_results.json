@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-03-24T10:31:06.153767",
+  "config": {
+    "base_model": "Qwen/Qwen3-Embedding-0.6B",
+    "method": "lora",
+    "loss": "mnrl",
+    "epochs": 3,
+    "batch_size": 16,
+    "learning_rate": 2e-05,
+    "enrichment_mode": "transcript_only"
+  },
+  "train_samples": 561,
+  "eval_samples": 99,
+  "baseline": {
+    "recall@1": 0.6061,
+    "recall@5": 0.899,
+    "recall@10": 0.9192,
+    "mrr": 0.7404,
+    "eval_samples": 99
+  },
+  "trained": {
+    "recall@1": 0.697,
+    "recall@5": 0.9596,
+    "recall@10": 0.9798,
+    "mrr": 0.8158,
+    "eval_samples": 99
+  },
+  "improvement": {
+    "recall@1": 0.0909,
+    "recall@5": 0.0606,
+    "recall@10": 0.0606,
+    "mrr": 0.0754
+  }
+}

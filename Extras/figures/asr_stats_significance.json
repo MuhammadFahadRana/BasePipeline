@@ -1,0 +1,50 @@
+[
+  {
+    "model": "Voxtral-Mini-4B",
+    "baseline": "Whisper-Large-v3",
+    "n_common": 1,
+    "wilcoxon_W": null,
+    "p_value": null,
+    "q_value": null,
+    "mean_diff": null,
+    "ci_low": null,
+    "ci_high": null,
+    "note": "Insufficient overlap for paired test"
+  },
+  {
+    "model": "Vosk-En",
+    "baseline": "Whisper-Large-v3",
+    "n_common": 22,
+    "wilcoxon_W": 0.0,
+    "p_value": 4.009964816464873e-05,
+    "q_value": 4.009964816464873e-05,
+    "mean_diff": 34.48863636363637,
+    "ci_low": 24.48944318181818,
+    "ci_high": 46.54370454545453,
+    "note": ""
+  },
+  {
+    "model": "Qwen-qwen2-audio",
+    "baseline": "Whisper-Large-v3",
+    "n_common": 22,
+    "wilcoxon_W": 0.0,
+    "p_value": 4.009964816464873e-05,
+    "q_value": 4.009964816464873e-05,
+    "mean_diff": 89.6190909090909,
+    "ci_low": 84.86726136363637,
+    "ci_high": 94.39706818181816,
+    "note": ""
+  },
+  {
+    "model": "SpeechT5-ASR",
+    "baseline": "Whisper-Large-v3",
+    "n_common": 22,
+    "wilcoxon_W": 0.0,
+    "p_value": 4.009964816464873e-05,
+    "q_value": 4.009964816464873e-05,
+    "mean_diff": 206.9977272727273,
+    "ci_low": 79.68863636363638,
+    "ci_high": 452.1416249999999,
+    "note": ""
+  }
+]

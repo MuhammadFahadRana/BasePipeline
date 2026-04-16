@@ -1,0 +1,24 @@
+{
+  "text": "it comes to divide crystal constructional it via to me it still dick or push eight years you traditional do little top another get like talk wow",
+  "segments": [
+    {
+      "start": 48.9,
+      "end": 56.97,
+      "text": "it comes to divide crystal constructional it via to me it still dick or push eight years you traditional do little top another get"
+    },
+    {
+      "start": 145.35,
+      "end": 145.92,
+      "text": "like talk"
+    },
+    {
+      "start": 146.88,
+      "end": 147.27,
+      "text": "wow"
+    }
+  ],
+  "model": "Vosk",
+  "source_file": "AkerBP 2.mp4",
+  "processing_time_seconds": 49.59,
+  "num_segments": 3
+}
