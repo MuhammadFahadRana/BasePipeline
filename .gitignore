@@ -78,7 +78,7 @@ basepipeline.dump
 .cache/
 
 # Data tables / exports
-*.csv
+# *.csv
 
 # Archived/non-runtime material kept locally only
 Extras/
