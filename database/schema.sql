@@ -14,6 +14,22 @@ INSERT INTO video_categories (name) VALUES ('Maintenance') ON CONFLICT (name) DO
 INSERT INTO video_categories (name) VALUES ('Installation') ON CONFLICT (name) DO NOTHING;
 INSERT INTO video_categories (name) VALUES ('Operations') ON CONFLICT (name) DO NOTHING;
 
+-- Auth / access-control tables
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'viewer',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_category_access (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category VARCHAR(100) NOT NULL,
+    CONSTRAINT uq_user_category UNIQUE(user_id, category)
+);
+
 -- Videos table: Store video metadata
 CREATE TABLE IF NOT EXISTS videos (
     id SERIAL PRIMARY KEY,
@@ -115,6 +131,61 @@ CREATE TABLE IF NOT EXISTS search_queries (
     search_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Search request logs: one row per user-visible search response (Phase 1 telemetry)
+CREATE TABLE IF NOT EXISTS search_requests (
+    id SERIAL PRIMARY KEY,
+    request_uuid VARCHAR(64) NOT NULL UNIQUE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    query_text TEXT NOT NULL,
+    search_mode VARCHAR(40) NOT NULL DEFAULT 'text',
+    facet VARCHAR(30),
+    filters JSONB,
+    results_count INTEGER DEFAULT 0,
+    latency_ms FLOAT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Search impressions: each ranked item shown for a specific request
+CREATE TABLE IF NOT EXISTS search_impressions (
+    id SERIAL PRIMARY KEY,
+    request_id INTEGER NOT NULL REFERENCES search_requests(id) ON DELETE CASCADE,
+    impression_rank INTEGER NOT NULL,
+    source_type VARCHAR(20) DEFAULT 'video',
+    result_segment_id INTEGER,
+    result_video_id INTEGER,
+    result_video_filename VARCHAR(255),
+    result_start_time FLOAT,
+    result_end_time FLOAT,
+    result_score FLOAT,
+    result_payload JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_search_impression_rank UNIQUE (request_id, impression_rank)
+);
+
+-- Search interactions: implicit behavioral signals (clicks, dwell, opens, etc.)
+CREATE TABLE IF NOT EXISTS search_interactions (
+    id SERIAL PRIMARY KEY,
+    request_id INTEGER NOT NULL REFERENCES search_requests(id) ON DELETE CASCADE,
+    impression_id INTEGER REFERENCES search_impressions(id) ON DELETE SET NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    interaction_type VARCHAR(40) NOT NULL,
+    dwell_ms INTEGER,
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Search feedback: explicit user feedback labels (relevant / irrelevant)
+CREATE TABLE IF NOT EXISTS search_feedback (
+    id SERIAL PRIMARY KEY,
+    request_id INTEGER NOT NULL REFERENCES search_requests(id) ON DELETE CASCADE,
+    impression_id INTEGER REFERENCES search_impressions(id) ON DELETE SET NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    feedback_value INTEGER NOT NULL, -- -1 irrelevant, +1 relevant
+    comment TEXT,
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Search image cache: Store uploaded image embeddings for re-ranking and history
 CREATE TABLE IF NOT EXISTS search_image_cache (
     id SERIAL PRIMARY KEY,
@@ -148,6 +219,12 @@ CREATE INDEX IF NOT EXISTS idx_search_image_cache_vector ON search_image_cache U
 -- Partitioning support: composite index for fast lookup by model
 CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(embedding_model);
 CREATE INDEX IF NOT EXISTS idx_visual_embeddings_model ON visual_embeddings(embedding_model);
+CREATE INDEX IF NOT EXISTS idx_search_requests_uuid ON search_requests(request_uuid);
+CREATE INDEX IF NOT EXISTS idx_search_requests_mode_time ON search_requests(search_mode, created_at);
+CREATE INDEX IF NOT EXISTS idx_search_impressions_request ON search_impressions(request_id);
+CREATE INDEX IF NOT EXISTS idx_search_interactions_request ON search_interactions(request_id);
+CREATE INDEX IF NOT EXISTS idx_search_interactions_type ON search_interactions(interaction_type);
+CREATE INDEX IF NOT EXISTS idx_search_feedback_request ON search_feedback(request_id);
 
 -- Cleanup function: remove orphaned visual embeddings (stale data from re-processing)
 CREATE OR REPLACE FUNCTION cleanup_stale_visual_embeddings()

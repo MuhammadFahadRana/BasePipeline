@@ -256,6 +256,149 @@ class SearchImageCache(Base):
 # Access Control models
 # ──────────────────────────────────────────────────────────────────────────
 
+# -----------------------------------------------------------------------------
+# Feedback/learning telemetry models (Phase 1)
+# -----------------------------------------------------------------------------
+
+
+class SearchRequestLog(Base):
+    """One row per user-visible search response."""
+
+    __tablename__ = "search_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_uuid = Column(String(64), nullable=False, unique=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    query_text = Column(Text, nullable=False)
+    search_mode = Column(String(40), nullable=False, default="text", index=True)
+    facet = Column(String(30))
+    filters = Column(JSON)
+    results_count = Column(Integer, default=0)
+    latency_ms = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    request_impressions = relationship(
+        "SearchImpression",
+        back_populates="search_request",
+        cascade="all, delete-orphan",
+    )
+    request_interactions = relationship(
+        "SearchInteraction",
+        back_populates="search_request",
+        cascade="all, delete-orphan",
+    )
+    request_feedback = relationship(
+        "SearchFeedback",
+        back_populates="search_request",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self):
+        return (
+            f"<SearchRequestLog(id={self.id}, mode='{self.search_mode}', "
+            f"query='{self.query_text[:60]}...')>"
+        )
+
+
+class SearchImpression(Base):
+    """A ranked result shown to the user for a specific request."""
+
+    __tablename__ = "search_impressions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_id = Column(
+        Integer, ForeignKey("search_requests.id", ondelete="CASCADE"), nullable=False
+    )
+    impression_rank = Column(Integer, nullable=False)
+    source_type = Column(String(20), default="video")  # video, document, image, etc.
+    result_segment_id = Column(Integer)  # transcript segment id OR document chunk id
+    result_video_id = Column(Integer)
+    result_video_filename = Column(String(255))
+    result_start_time = Column(Float)
+    result_end_time = Column(Float)
+    result_score = Column(Float)
+    result_payload = Column(JSON)  # lightweight serialized result as shown to user
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    search_request = relationship("SearchRequestLog", back_populates="request_impressions")
+    impression_interactions = relationship(
+        "SearchInteraction",
+        back_populates="search_impression",
+        cascade="all, delete-orphan",
+    )
+    impression_feedback = relationship(
+        "SearchFeedback",
+        back_populates="search_impression",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("request_id", "impression_rank", name="uq_search_impression_rank"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<SearchImpression(id={self.id}, request_id={self.request_id}, "
+            f"rank={self.impression_rank})>"
+        )
+
+
+class SearchInteraction(Base):
+    """Implicit behavior signal (click, dwell, open video, etc.)."""
+
+    __tablename__ = "search_interactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_id = Column(
+        Integer, ForeignKey("search_requests.id", ondelete="CASCADE"), nullable=False
+    )
+    impression_id = Column(
+        Integer, ForeignKey("search_impressions.id", ondelete="SET NULL")
+    )
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    interaction_type = Column(String(40), nullable=False, index=True)
+    dwell_ms = Column(Integer)
+    event_metadata = Column("metadata", JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    search_request = relationship("SearchRequestLog", back_populates="request_interactions")
+    search_impression = relationship("SearchImpression", back_populates="impression_interactions")
+
+    def __repr__(self):
+        return (
+            f"<SearchInteraction(id={self.id}, type='{self.interaction_type}', "
+            f"request_id={self.request_id})>"
+        )
+
+
+class SearchFeedback(Base):
+    """Explicit user judgment signal (relevant / not relevant)."""
+
+    __tablename__ = "search_feedback"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_id = Column(
+        Integer, ForeignKey("search_requests.id", ondelete="CASCADE"), nullable=False
+    )
+    impression_id = Column(
+        Integer, ForeignKey("search_impressions.id", ondelete="SET NULL")
+    )
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    feedback_value = Column(Integer, nullable=False)  # -1 = irrelevant, +1 = relevant
+    comment = Column(Text)
+    feedback_metadata = Column("metadata", JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    search_request = relationship("SearchRequestLog", back_populates="request_feedback")
+    search_impression = relationship("SearchImpression", back_populates="impression_feedback")
+
+    def __repr__(self):
+        return (
+            f"<SearchFeedback(id={self.id}, value={self.feedback_value}, "
+            f"request_id={self.request_id})>"
+        )
+
+
 class User(Base):
     """Application users with role-based access control."""
 

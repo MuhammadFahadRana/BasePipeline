@@ -10,7 +10,7 @@ import numpy as np
 from pathlib import Path
 from datetime import timedelta
 
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
 
 # Ensure ffmpeg is in PATH and named correctly for Whisper
@@ -51,7 +51,7 @@ class SimpleTranscriber:
         model_variant: dict = None,
         model_size: str = "large",
         device: str = "auto",
-        language: str | None = "en",
+        language: str | None = None,
         task: str = "transcribe",
     ):
         if device == "auto":
@@ -75,9 +75,7 @@ class SimpleTranscriber:
             self.model_name = f"Whisper-{self.model_size.capitalize()}"
 
             # local LoRA adapter path
-            lora_path = os.getenv("ASR_LORA_PATH")
-            if lora_path:
-                lora_path = str(Path(lora_path).resolve())
+            lora_path = self._resolve_lora_path(os.getenv("ASR_LORA_PATH"))
 
             if lora_path and os.path.exists(lora_path):
                 print(f"Loading Hugging Face Whisper + LoRA from: {lora_path}")
@@ -88,6 +86,13 @@ class SimpleTranscriber:
                 base_model_id = peft_config.base_model_name_or_path or f"openai/whisper-{self.model_size}"
 
                 print(f"Base model from adapter config: {base_model_id}")
+                requested_variant = str(self.model_size).lower()
+                if requested_variant and requested_variant not in base_model_id.lower():
+                    print(
+                        "Warning: Adapter base model does not match requested variant "
+                        f"('{self.model_size}' vs '{base_model_id}'). "
+                        "This can reduce quality."
+                    )
 
                 self.processor = AutoProcessor.from_pretrained(base_model_id)
 
@@ -99,9 +104,11 @@ class SimpleTranscriber:
 
                 self.model = PeftModel.from_pretrained(base_model, lora_path)
                 self.model.eval()
+                self._init_hf_asr_pipeline()
 
                 adapter_tag = Path(lora_path).name
-                self.model_name = f"Whisper-{self.model_size.capitalize()}-LoRA-{adapter_tag}"
+                base_variant = base_model_id.split("/")[-1].replace("whisper-", "")
+                self.model_name = f"Whisper-{base_variant.capitalize()}-LoRA-{adapter_tag}"
                 self._backend_type = "hf_whisper"
                 self.lora_path = lora_path
 
@@ -109,6 +116,10 @@ class SimpleTranscriber:
                 print(f"[OK] Effective model name: {self.model_name}")
 
             else:
+                if os.getenv("ASR_LORA_PATH"):
+                    print(
+                        f"Warning: ASR_LORA_PATH was set but not found: {os.getenv('ASR_LORA_PATH')}"
+                    )
                 print(f"Loading OpenAI Whisper {self.model_name} on {device}")
                 self.model = whisper.load_model(self.model_size, device=device)
                 self._backend_type = "openai_whisper"
@@ -139,6 +150,7 @@ class SimpleTranscriber:
                 torch_dtype=torch.float16 if device == "cuda" else torch.float32,
                 use_safetensors=True,
             ).to(device)
+            self._init_hf_asr_pipeline()
             print(f"{self.model_name} loaded successfully")
 
         else:
@@ -148,6 +160,58 @@ class SimpleTranscriber:
             self.model = whisper.load_model(self.model_size, device=device)
             self._backend_type = "openai_whisper"
             self.lora_path = None
+
+    def _resolve_lora_path(self, raw_path: str | None) -> str | None:
+        """Resolve LoRA adapter path robustly across root/Extras working directories."""
+        if not raw_path:
+            return None
+
+        raw = Path(raw_path).expanduser()
+        base_dir = Path(__file__).resolve().parent
+        project_root = base_dir
+
+        candidates = []
+        if raw.is_absolute():
+            candidates.append(raw)
+        else:
+            candidates.extend(
+                [
+                    Path.cwd() / raw,
+                    project_root / raw,
+                    project_root / "Extras" / raw,
+                ]
+            )
+
+        seen = set()
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            if resolved.exists():
+                return str(resolved)
+
+        return None
+
+    def _init_hf_asr_pipeline(self):
+        """Initialize chunked HF ASR pipeline for Distil/LoRA Whisper decoding."""
+        device_index = 0 if self.device == "cuda" else -1
+        torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
+        self.hf_asr_pipeline = pipeline(
+            task="automatic-speech-recognition",
+            model=self.model,
+            tokenizer=self.processor.tokenizer,
+            feature_extractor=self.processor.feature_extractor,
+            device=device_index,
+            torch_dtype=torch_dtype,
+        )
+
+    def _hf_generate_kwargs(self) -> dict:
+        """Build generation kwargs shared by HF Whisper backends."""
+        generate_kwargs = {"task": self.task}
+        if self.language:
+            generate_kwargs["language"] = self.language
+        return generate_kwargs
 
     def transcribe_video(self, file_path: str, output_dir: str = "processed"):
         """
@@ -243,7 +307,7 @@ class SimpleTranscriber:
             str(audio_path),
             word_timestamps=True,
             verbose=False,
-            language=None,  # Auto-detect language (supports 99+ languages including Norwegian)
+            language=self.language,  # None means auto-detect
         )
 
     def _transcribe_whisperx(self, audio_path: Path):
@@ -279,8 +343,77 @@ class SimpleTranscriber:
 
     def _transcribe_hf_model(self, audio_path: Path):
         """
+        HF Whisper transcription using chunked pipeline decoding.
+        Falls back to legacy VAD chunking if pipeline decoding fails.
+        """
+        decode_mode = os.getenv("ASR_HF_DECODE_MODE", "pipeline").strip().lower()
+        if decode_mode == "legacy":
+            return self._transcribe_hf_model_legacy(audio_path)
+
+        try:
+            result = self.hf_asr_pipeline(
+                str(audio_path),
+                chunk_length_s=25,
+                stride_length_s=(5, 2),
+                return_timestamps=True,
+                generate_kwargs=self._hf_generate_kwargs(),
+            )
+
+            segments = []
+            audio_duration = self._get_audio_duration_seconds(audio_path)
+            for chunk in result.get("chunks", []):
+                timestamp = chunk.get("timestamp")
+                text = (chunk.get("text") or "").strip()
+                if not timestamp or not text:
+                    continue
+
+                start_time = 0.0 if timestamp[0] is None else float(timestamp[0])
+                if timestamp[1] is None:
+                    end_time = audio_duration if audio_duration > start_time else start_time
+                else:
+                    end_time = float(timestamp[1])
+
+                if end_time <= start_time:
+                    continue
+
+                segments.append(
+                    {"start": round(start_time, 3), "end": round(end_time, 3), "text": text}
+                )
+
+            full_text = (result.get("text") or "").strip()
+            if not segments and full_text:
+                end_time = audio_duration if audio_duration > 0 else 0.0
+                segments = [{"start": 0.0, "end": end_time, "text": full_text}]
+
+            return {
+                "text": full_text,
+                "segments": segments,
+                "language": self.language or "unknown",
+            }
+
+        except Exception as e:
+            print(f"  Warning: HF pipeline decode failed ({e}), falling back to legacy decoder")
+            return self._transcribe_hf_model_legacy(audio_path)
+
+    def _get_audio_duration_seconds(self, audio_path: Path) -> float:
+        """Read audio duration in seconds with lightweight fallbacks."""
+        try:
+            import soundfile as sf
+
+            info = sf.info(str(audio_path))
+            return float(info.duration or 0.0)
+        except Exception:
+            try:
+                import librosa
+
+                return float(librosa.get_duration(path=str(audio_path)))
+            except Exception:
+                return 0.0
+
+    def _transcribe_hf_model_legacy(self, audio_path: Path):
+        """
         HuggingFace model transcription (for Distil-Whisper or standard Whisper with LoRA).
-        Note: Returns only full transcript, no segment-level timestamps.
+        Legacy VAD-chunking decoder kept as a fallback for compatibility.
         """
         import soundfile as sf
 
@@ -362,8 +495,6 @@ class SimpleTranscriber:
                 "task": self.task,
             }
 
-            # TED is English, so keep this explicit for stable decoding.
-            # If you want multilingual auto-behavior later, set self.language = None.
             if self.language:
                 generate_kwargs["language"] = self.language
 

@@ -90,6 +90,8 @@ const videoModalTitle = document.getElementById('videoModalTitle');
 const videoModalTimestamp = document.getElementById('videoModalTimestamp');
 const videoModalText = document.getElementById('videoModalText');
 const copyTimestampBtn = document.getElementById('copyTimestampBtn');
+const feedbackRelevantBtn = document.getElementById('feedbackRelevantBtn');
+const feedbackIrrelevantBtn = document.getElementById('feedbackIrrelevantBtn');
 
 // State
 let currentQuery = '';
@@ -108,6 +110,8 @@ let isSearchRunning = false;
 let isAiGenerating = false;
 let isAnswerCollapsed = false;
 let _setMainTabView = null;
+let activeSearchRequestId = null; // Backend telemetry request_id for current result set
+let modalOpenedAtMs = null; // Track dwell on open video modal
 
 function getSearchButtonMarkup(isStop = false) {
     if (isStop) {
@@ -246,6 +250,76 @@ function abortActiveAi({ notify = false } = {}) {
     activeAiController.abort();
     if (notify) {
         showNotification('ATLAS answer stopped.', 'info');
+    }
+}
+
+function _getImpressionId(result) {
+    if (!result) return null;
+    const id = Number(result.impression_id);
+    return Number.isFinite(id) ? id : null;
+}
+
+async function logFeedbackEvent(interactionType, result = null, extras = {}) {
+    if (!activeSearchRequestId) return;
+
+    const payload = {
+        request_id: activeSearchRequestId,
+        impression_id: _getImpressionId(result) ?? null,
+        interaction_type: interactionType,
+        dwell_ms: Number.isFinite(extras.dwell_ms) ? Math.max(0, Math.floor(extras.dwell_ms)) : null,
+        metadata: extras.metadata || {},
+    };
+
+    try {
+        await authFetch(`${API_BASE_URL}/feedback/event`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+    } catch (err) {
+        // Telemetry must never block UX.
+        console.debug('feedback/event failed', err);
+    }
+}
+
+async function submitExplicitFeedback(result, feedbackValue, comment = '') {
+    if (!activeSearchRequestId || !result) {
+        showNotification('Feedback unavailable for this result.', 'warning');
+        return;
+    }
+    if (![1, -1].includes(feedbackValue)) return;
+
+    try {
+        const response = await authFetch(`${API_BASE_URL}/feedback/rating`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                request_id: activeSearchRequestId,
+                impression_id: _getImpressionId(result),
+                feedback_value: feedbackValue,
+                comment: comment || null,
+                metadata: {
+                    query: currentQuery || null,
+                    view: currentView || 'text',
+                },
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        await logFeedbackEvent('result_feedback_click', result, {
+            metadata: { feedback_value: feedbackValue },
+        });
+
+        showNotification(
+            feedbackValue > 0 ? 'Marked as relevant.' : 'Marked as not relevant.',
+            'success'
+        );
+    } catch (err) {
+        console.error('feedback/rating failed', err);
+        showNotification('Failed to save feedback.', 'error');
     }
 }
 
@@ -968,6 +1042,7 @@ async function performImageSearch() {
 
     const controller = new AbortController();
     activeSearchController = controller;
+    activeSearchRequestId = null;
     setSearchButtonState(true);
     currentQuery = textQuery || `Image: ${selectedImageFile.name}`;
     showLoading();
@@ -1158,6 +1233,7 @@ async function performSearch() {
 
     const controller = new AbortController();
     activeSearchController = controller;
+    activeSearchRequestId = null;
     setSearchButtonState(true);
     hideAnswerPanel({ clearContent: true });
     if (askAiBtn) {
@@ -1489,6 +1565,11 @@ function displayResults(data, qaData = null) {
     hideEmpty();
 
     const { query, results, results_count, search_time_seconds, search_strategy, search_message } = data;
+    activeSearchRequestId =
+        data?.request_id ||
+        data?.search_sets?.text?.request_id ||
+        data?.search_sets?.multimodal?.request_id ||
+        null;
 
     // Store dual datasets for tab switching (text-only vs multimodal views)
     lastSearchSets = {
@@ -1838,7 +1919,15 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
                 </div>
             `;
 
-            row.addEventListener('click', () => openVideoPlayer(occ));
+            row.addEventListener('click', () => {
+                logFeedbackEvent('result_click', occ, {
+                    metadata: {
+                        view: currentView,
+                        source: 'grouped_occurrence',
+                    },
+                });
+                openVideoPlayer(occ);
+            });
             occList.appendChild(row);
         });
 
@@ -2030,6 +2119,12 @@ function createResultCard(result, index) {
 
     // Add click handler to open video player
     card.addEventListener('click', () => {
+        logFeedbackEvent('result_click', result, {
+            metadata: {
+                view: currentView,
+                source: 'flat_card',
+            },
+        });
         openVideoPlayer(result);
     });
 
@@ -2136,9 +2231,33 @@ function attachModalEventListeners() {
         e.stopPropagation();
         if (currentVideoResult) {
             copyToClipboard(`${currentVideoResult.video_filename} at ${currentVideoResult.timestamp}`);
+            logFeedbackEvent('copy_timestamp', currentVideoResult, {
+                metadata: {
+                    video_id: currentVideoResult.video_id,
+                    timestamp: currentVideoResult.timestamp,
+                },
+            });
             showNotification('Copied to clipboard!', 'success');
         }
     });
+
+    if (feedbackRelevantBtn) {
+        feedbackRelevantBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (currentVideoResult) {
+                submitExplicitFeedback(currentVideoResult, 1);
+            }
+        });
+    }
+
+    if (feedbackIrrelevantBtn) {
+        feedbackIrrelevantBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (currentVideoResult) {
+                submitExplicitFeedback(currentVideoResult, -1);
+            }
+        });
+    }
 
     // Close on Escape key
     document.addEventListener('keydown', (e) => {
@@ -2151,6 +2270,15 @@ function attachModalEventListeners() {
 // Open Video Player
 function openVideoPlayer(result) {
     currentVideoResult = result;
+    modalOpenedAtMs = Date.now();
+
+    logFeedbackEvent('video_open', result, {
+        metadata: {
+            view: currentView,
+            start_time: result?.start_time ?? null,
+            source_type: result?.source_type ?? null,
+        },
+    });
 
     // Update modal content
     videoModalTitle.textContent = result.video_filename;
@@ -2195,6 +2323,18 @@ function openVideoPlayer(result) {
 
 // Close Video Player
 function closeVideoPlayer() {
+    if (currentVideoResult && modalOpenedAtMs) {
+        const dwellMs = Math.max(0, Date.now() - modalOpenedAtMs);
+        logFeedbackEvent('video_close', currentVideoResult, {
+            dwell_ms: dwellMs,
+            metadata: {
+                playback_position: Number.isFinite(videoPlayer.currentTime)
+                    ? Number(videoPlayer.currentTime.toFixed(2))
+                    : null,
+            },
+        });
+    }
+
     videoPlayer.pause();
     videoPlayer.onloadedmetadata = null;
     videoPlayer.onerror = null;
@@ -2202,6 +2342,7 @@ function closeVideoPlayer() {
     videoModal.style.display = 'none';
     document.body.style.overflow = ''; // Restore scrolling
     currentVideoResult = null;
+    modalOpenedAtMs = null;
 }
 
 // Stop words to exclude from highlighting (mirrors backend STOP_WORDS)

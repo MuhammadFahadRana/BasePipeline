@@ -16,10 +16,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from fastapi import FastAPI, Depends, HTTPException, Query, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, PlainTextResponse
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Tuple
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 import os
+import uuid
 
 from database.config import get_db, test_connection
 from database.models import (
@@ -28,6 +29,10 @@ from database.models import (
     User,
     UserCategoryAccess,
     TranscriptSegment,
+    SearchRequestLog,
+    SearchImpression,
+    SearchInteraction,
+    SearchFeedback,
 )
 from search.semantic_search import SemanticSearchEngine, SearchResult
 from search.multi_modal_search import MultiModalSearchEngine
@@ -350,6 +355,116 @@ def _filter_result_dicts(result_dicts, allowed_filenames, limit=None):
     return filtered[:limit] if limit else filtered
 
 
+def _to_result_dict(item: Any) -> Dict[str, Any]:
+    """Convert result object/dict to a serializable dict without mutating the source."""
+    if item is None:
+        return {}
+    if isinstance(item, dict):
+        return dict(item)
+    if hasattr(item, "to_dict"):
+        try:
+            return dict(item.to_dict())
+        except Exception:
+            pass
+    data = getattr(item, "__dict__", None)
+    if isinstance(data, dict):
+        return dict(data)
+    return {}
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _log_search_request_with_impressions(
+    db: Session,
+    user: Optional[User],
+    query_text: str,
+    search_mode: str,
+    results: List[Any],
+    latency_seconds: float,
+    facet: Optional[str] = None,
+    filters: Optional[Dict[str, Any]] = None,
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """
+    Persist Phase-1 telemetry:
+      - one search request row
+      - one impression row per returned result
+    Returns (request_uuid, serialized_results_with_impression_ids).
+    """
+    serialized_results = [_to_result_dict(r) for r in (results or [])]
+
+    try:
+        request_row = SearchRequestLog(
+            request_uuid=uuid.uuid4().hex,
+            user_id=getattr(user, "id", None),
+            query_text=query_text or "",
+            search_mode=search_mode,
+            facet=facet,
+            filters=filters or {},
+            results_count=len(serialized_results),
+            latency_ms=round(max(0.0, latency_seconds) * 1000.0, 2),
+        )
+        db.add(request_row)
+        db.flush()
+
+        impression_rows: List[SearchImpression] = []
+        for rank, item in enumerate(serialized_results, start=1):
+            score_val = item.get("combined_score", item.get("score"))
+            imp = SearchImpression(
+                request_id=request_row.id,
+                impression_rank=rank,
+                source_type=item.get("source_type") or "video",
+                result_segment_id=item.get("segment_id"),
+                result_video_id=item.get("video_id"),
+                result_video_filename=item.get("video_filename"),
+                result_start_time=_safe_float(item.get("start_time")),
+                result_end_time=_safe_float(item.get("end_time")),
+                result_score=_safe_float(score_val),
+                result_payload=item,
+            )
+            db.add(imp)
+            impression_rows.append(imp)
+
+        db.flush()
+
+        for item, imp in zip(serialized_results, impression_rows):
+            item["request_id"] = request_row.request_uuid
+            item["impression_id"] = imp.id
+
+        db.commit()
+        return request_row.request_uuid, serialized_results
+
+    except Exception as e:
+        # Never fail search for telemetry issues.
+        print(f"[feedback] Warning: failed to log request telemetry: {e}")
+        db.rollback()
+        return None, serialized_results
+
+
+def _resolve_search_request_for_user(
+    db: Session, user: User, request_uuid: str
+) -> Optional[SearchRequestLog]:
+    request_row = (
+        db.query(SearchRequestLog)
+        .filter(SearchRequestLog.request_uuid == request_uuid)
+        .first()
+    )
+    if request_row is None:
+        return None
+
+    # Admin can inspect/label anything; viewers can only write to their own request rows.
+    if user.role != "admin" and request_row.user_id and request_row.user_id != user.id:
+        return None
+
+    return request_row
+
+
 # Pydantic models for API
 class SearchRequest(BaseModel):
     """Search request model."""
@@ -394,6 +509,10 @@ class SearchResponse(BaseModel):
     """Search response model."""
 
     query: str
+    request_id: Optional[str] = Field(
+        None,
+        description="Telemetry id used by the frontend to log click/dwell/feedback signals.",
+    )
     results_count: int
     results: List[dict]
     search_time_seconds: float = Field(
@@ -432,6 +551,26 @@ class QA_Response(BaseModel):
     answer: str
     citations: List[dict]
     metadata: dict
+
+
+class FeedbackEventRequest(BaseModel):
+    """Implicit interaction event payload."""
+
+    request_id: str = Field(..., min_length=8, max_length=64)
+    impression_id: Optional[int] = None
+    interaction_type: str = Field(..., min_length=2, max_length=40)
+    dwell_ms: Optional[int] = Field(None, ge=0)
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class FeedbackRatingRequest(BaseModel):
+    """Explicit relevance label payload."""
+
+    request_id: str = Field(..., min_length=8, max_length=64)
+    impression_id: Optional[int] = None
+    feedback_value: int = Field(..., ge=-1, le=1)
+    comment: Optional[str] = Field(None, max_length=2000)
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class VideoInfo(BaseModel):
@@ -1559,11 +1698,28 @@ async def search(
         results = _filter_results(results, allowed_filenames, limit=request.top_k)
 
         search_time = time.time() - start_time
+        request_id, result_dicts = _log_search_request_with_impressions(
+            db=db,
+            user=user,
+            query_text=request.query,
+            search_mode="search_api",
+            results=results,
+            latency_seconds=search_time,
+            facet=None,
+            filters={
+                "video_filter": request.video_filter,
+                "semantic_weight": request.semantic_weight,
+                "text_weight": request.text_weight,
+                "min_score": request.min_score,
+                "top_k": request.top_k,
+            },
+        )
 
         return SearchResponse(
             query=request.query,
-            results_count=len(results),
-            results=[r.to_dict() for r in results],
+            request_id=request_id,
+            results_count=len(result_dicts),
+            results=result_dicts,
             search_time_seconds=round(search_time, 3),
         )
 
@@ -1641,8 +1797,25 @@ async def quick_search(
         metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
 
+        request_id, result_dicts = _log_search_request_with_impressions(
+            db=db,
+            user=user,
+            query_text=q,
+            search_mode="search_quick",
+            results=results,
+            latency_seconds=search_time,
+            facet=metadata.get("facet_applied") or (facet or "auto"),
+            filters={
+                "limit": limit,
+                "video_filter": video,
+                "category": cats,
+                "site": sites,
+                "label": label,
+                "tiers_tried": metadata.get("tiers_tried") or [],
+            },
+        )
+
         # Build grouped-by-video structure
-        result_dicts = [r.to_dict() for r in results]
         grouped_by_video = {}
         for rd in result_dicts:
             vid = rd["video_id"]
@@ -1657,6 +1830,7 @@ async def quick_search(
 
         return {
             "query": q,
+            "request_id": request_id,
             "results_count": len(result_dicts),
             "results": result_dicts,
             "grouped_results": grouped_results,
@@ -1749,6 +1923,31 @@ async def browse_by_category(
         )
 
     search_time = time.time() - start_time
+    request_id, result_dicts = _log_search_request_with_impressions(
+        db=db,
+        user=user,
+        query_text=f"[browse] categories={cats or []}; sites={sites or []}",
+        search_mode="search_browse",
+        results=result_dicts,
+        latency_seconds=search_time,
+        facet=None,
+        filters={"category": cats, "site": sites, "limit": limit},
+    )
+
+    # Rebuild grouped payload from telemetry-enriched result rows (has impression ids).
+    grouped_results = []
+    grouped_map: Dict[int, Dict[str, Any]] = {}
+    for row in result_dicts:
+        vid = row["video_id"]
+        if vid not in grouped_map:
+            grouped_map[vid] = {
+                "video_id": vid,
+                "video_filename": row["video_filename"],
+                "occurrences": [],
+            }
+        grouped_map[vid]["occurrences"].append(row)
+    grouped_results = list(grouped_map.values())
+
     browse_parts = []
     if cats:
         browse_parts.append(", ".join(cats))
@@ -1756,6 +1955,7 @@ async def browse_by_category(
         browse_parts.append(", ".join(sites))
     return {
         "query": f"[Browse: {' / '.join(browse_parts)}]",
+        "request_id": request_id,
         "results_count": len(result_dicts),
         "results": result_dicts,
         "grouped_results": grouped_results,
@@ -1785,11 +1985,21 @@ async def exact_search(
         results = _filter_results(results, allowed_filenames)
 
         search_time = time.time() - start_time
+        request_id, result_dicts = _log_search_request_with_impressions(
+            db=db,
+            user=user,
+            query_text=phrase,
+            search_mode="search_exact",
+            results=results,
+            latency_seconds=search_time,
+            filters={"video_filter": video},
+        )
 
         return {
             "phrase": phrase,
-            "results_count": len(results),
-            "results": [r.to_dict() for r in results],
+            "request_id": request_id,
+            "results_count": len(result_dicts),
+            "results": result_dicts,
             "search_time_seconds": round(search_time, 3),
         }
 
@@ -1852,11 +2062,28 @@ async def multimodal_search(
         metadata = fallback_data["search_metadata"]
 
         search_time = time.time() - start_time
+        request_id, result_dicts = _log_search_request_with_impressions(
+            db=db,
+            user=user,
+            query_text=request.query,
+            search_mode="search_multimodal",
+            results=results,
+            latency_seconds=search_time,
+            facet=metadata.get("facet_applied"),
+            filters={
+                "top_k": request.top_k,
+                "video_filter": request.video_filter,
+                "text_weight": request.text_weight,
+                "vision_weight": request.vision_weight,
+                "use_llm": request.use_llm,
+            },
+        )
 
         return SearchResponse(
             query=request.query,
-            results_count=len(results),
-            results=[r.to_dict() if hasattr(r, "to_dict") else r for r in results],
+            request_id=request_id,
+            results_count=len(result_dicts),
+            results=result_dicts,
             search_time_seconds=round(search_time, 3),
             search_metadata=metadata,
         )
@@ -1883,10 +2110,23 @@ async def multimodal_search(
             )
             results = _filter_results(results, allowed_filenames, limit=request.top_k)
             search_time = time.time() - start_time
+            request_id, result_dicts = _log_search_request_with_impressions(
+                db=db,
+                user=user,
+                query_text=request.query,
+                search_mode="search_multimodal_fallback_text",
+                results=results,
+                latency_seconds=search_time,
+                filters={
+                    "top_k": request.top_k,
+                    "video_filter": request.video_filter,
+                },
+            )
             return SearchResponse(
                 query=request.query,
-                results_count=len(results),
-                results=[r.to_dict() for r in results],
+                request_id=request_id,
+                results_count=len(result_dicts),
+                results=result_dicts,
                 search_time_seconds=round(search_time, 3),
             )
         else:
@@ -1986,8 +2226,27 @@ async def quick_multimodal_search(
         metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
 
+        request_id, result_dicts = _log_search_request_with_impressions(
+            db=db,
+            user=user,
+            query_text=q,
+            search_mode="search_multimodal_quick",
+            results=results,
+            latency_seconds=search_time,
+            facet=metadata.get("facet_applied") or (facet or "auto"),
+            filters={
+                "limit": limit,
+                "video_filter": video,
+                "category": cats,
+                "site": sites,
+                "label": label,
+                "use_llm": use_llm,
+                "text_weight": text_weight,
+                "vision_weight": vision_weight,
+            },
+        )
+
         # Build grouped-by-video structure so the frontend can show all occurrences
-        result_dicts = [r.to_dict() for r in results]
         grouped_by_video = {}
         for rd in result_dicts:
             vid = rd["video_id"]
@@ -2002,6 +2261,7 @@ async def quick_multimodal_search(
 
         return {
             "query": q,
+            "request_id": request_id,
             "weights": {"text": text_weight, "vision": vision_weight},
             "results_count": len(result_dicts),
             "results": result_dicts,
@@ -2040,7 +2300,22 @@ async def quick_multimodal_search(
             metadata = fallback_data["search_metadata"]
             search_time = time.time() - start_time
 
-            result_dicts = [r.to_dict() for r in results]
+            request_id, result_dicts = _log_search_request_with_impressions(
+                db=db,
+                user=user,
+                query_text=q,
+                search_mode="search_multimodal_quick_fallback_text",
+                results=results,
+                latency_seconds=search_time,
+                facet=metadata.get("facet_applied") or (facet or "auto"),
+                filters={
+                    "limit": limit,
+                    "video_filter": video,
+                    "category": cats,
+                    "site": sites,
+                    "label": label,
+                },
+            )
             grouped_by_video = {}
             for rd in result_dicts:
                 vid = rd["video_id"]
@@ -2054,6 +2329,7 @@ async def quick_multimodal_search(
 
             return {
                 "query": q,
+                "request_id": request_id,
                 "weights": {"text": 1.0, "vision": 0.0},
                 "results_count": len(result_dicts),
                 "results": result_dicts,
@@ -2102,6 +2378,15 @@ async def visual_image_search(
         results = _filter_results(results, allowed_filenames)
 
         search_time = time.time() - start_time
+        request_id, result_dicts = _log_search_request_with_impressions(
+            db=db,
+            user=user,
+            query_text=f"[image] {file.filename or 'uploaded_image'}",
+            search_mode="search_visual_image",
+            results=results,
+            latency_seconds=search_time,
+            filters={"limit": limit, "video_filter": video},
+        )
 
         # Cache image embedding for re-ranking / "find more like this"
         try:
@@ -2143,9 +2428,10 @@ async def visual_image_search(
 
         return {
             "query": f"Image: {file.filename}",
+            "request_id": request_id,
             "search_type": "reverse_image_search",
-            "results_count": len(results),
-            "results": [r.to_dict() for r in results],
+            "results_count": len(result_dicts),
+            "results": result_dicts,
             "search_time_seconds": round(search_time, 3),
         }
 
@@ -2202,6 +2488,20 @@ async def visual_combined_search(
         results = _filter_results(results, allowed_filenames)
 
         search_time = time.time() - start_time
+        request_id, result_dicts = _log_search_request_with_impressions(
+            db=db,
+            user=user,
+            query_text=text_query or f"[image] {file.filename or 'uploaded_image'}",
+            search_mode="search_visual_combined",
+            results=results,
+            latency_seconds=search_time,
+            filters={
+                "limit": limit,
+                "video_filter": video,
+                "image_weight": image_weight,
+                "text_weight": text_weight,
+            },
+        )
 
         # Log
         try:
@@ -2220,13 +2520,14 @@ async def visual_combined_search(
 
         return {
             "query": text_query or f"Image: {file.filename}",
+            "request_id": request_id,
             "search_type": "combined_image_text"
             if text_query.strip()
             else "reverse_image_search",
             "image_weight": image_weight,
             "text_weight": text_weight,
-            "results_count": len(results),
-            "results": [r.to_dict() for r in results],
+            "results_count": len(result_dicts),
+            "results": result_dicts,
             "search_time_seconds": round(search_time, 3),
         }
     except Exception as e:
@@ -2275,12 +2576,22 @@ async def visual_search(
         results = _filter_results(results, allowed_filenames)
 
         search_time = time.time() - start_time
+        request_id, result_dicts = _log_search_request_with_impressions(
+            db=db,
+            user=user,
+            query_text=q,
+            search_mode="search_visual_only",
+            results=results,
+            latency_seconds=search_time,
+            filters={"limit": limit, "video_filter": video},
+        )
 
         return {
             "query": q,
+            "request_id": request_id,
             "search_type": "visual_only",
-            "results_count": len(results),
-            "results": [r.to_dict() for r in results],
+            "results_count": len(result_dicts),
+            "results": result_dicts,
             "search_time_seconds": round(search_time, 3),
         }
 
@@ -2313,6 +2624,99 @@ async def hybrid_search():
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  OpenAI-compatible chat completions endpoints                            ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
+
+
+@app.post("/feedback/event")
+async def log_feedback_event(
+    payload: FeedbackEventRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Log an implicit interaction signal (click, open, dwell, copy, etc.)."""
+    if not re.match(r"^[a-z0-9_:\-]{2,40}$", payload.interaction_type):
+        raise HTTPException(
+            status_code=400,
+            detail="interaction_type must match ^[a-z0-9_:\\-]{2,40}$",
+        )
+
+    request_row = _resolve_search_request_for_user(db, user, payload.request_id)
+    if request_row is None:
+        raise HTTPException(status_code=404, detail="Search request not found")
+
+    impression_row = None
+    if payload.impression_id is not None:
+        impression_row = (
+            db.query(SearchImpression)
+            .filter(
+                SearchImpression.id == payload.impression_id,
+                SearchImpression.request_id == request_row.id,
+            )
+            .first()
+        )
+        if impression_row is None:
+            raise HTTPException(status_code=404, detail="Impression not found")
+
+    try:
+        event = SearchInteraction(
+            request_id=request_row.id,
+            impression_id=impression_row.id if impression_row else None,
+            user_id=user.id,
+            interaction_type=payload.interaction_type,
+            dwell_ms=payload.dwell_ms,
+            event_metadata=payload.metadata or {},
+        )
+        db.add(event)
+        db.commit()
+        return {"status": "ok", "event_id": event.id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to log event: {e}")
+
+
+@app.post("/feedback/rating")
+async def log_feedback_rating(
+    payload: FeedbackRatingRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Log explicit user relevance label for a shown result."""
+    if payload.feedback_value not in (-1, 1):
+        raise HTTPException(
+            status_code=400, detail="feedback_value must be -1 or 1"
+        )
+
+    request_row = _resolve_search_request_for_user(db, user, payload.request_id)
+    if request_row is None:
+        raise HTTPException(status_code=404, detail="Search request not found")
+
+    impression_row = None
+    if payload.impression_id is not None:
+        impression_row = (
+            db.query(SearchImpression)
+            .filter(
+                SearchImpression.id == payload.impression_id,
+                SearchImpression.request_id == request_row.id,
+            )
+            .first()
+        )
+        if impression_row is None:
+            raise HTTPException(status_code=404, detail="Impression not found")
+
+    try:
+        feedback = SearchFeedback(
+            request_id=request_row.id,
+            impression_id=impression_row.id if impression_row else None,
+            user_id=user.id,
+            feedback_value=payload.feedback_value,
+            comment=(payload.comment or "").strip() or None,
+            feedback_metadata=payload.metadata or {},
+        )
+        db.add(feedback)
+        db.commit()
+        return {"status": "ok", "feedback_id": feedback.id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to log feedback: {e}")
 
 
 class ChatMessage(BaseModel):

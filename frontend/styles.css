@@ -986,6 +986,15 @@ select {
     color: white;
 }
 
+.modal-feedback-btn {
+    width: auto;
+    min-width: 30px;
+    padding: 0 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
 .modal-close-btn {
     display: flex;
     align-items: center;
