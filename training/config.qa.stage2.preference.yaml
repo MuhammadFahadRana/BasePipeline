@@ -1,0 +1,16 @@
+qa_stage2_preference:
+  base_from: "qa_stage1_sft_best_checkpoint"
+  method: "dpo_or_orpo"
+
+  data:
+    preference_pairs: "training/qa/preference_pairs.jsonl"
+    labels:
+      - "grounded_preferred"
+      - "hallucinated_rejected"
+
+  optimization:
+    lr: 5.0e-6
+    batch_size: 4
+    grad_accum: 8
+    epochs: 1
+    beta: 0.1

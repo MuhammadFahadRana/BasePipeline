@@ -1,0 +1,14 @@
+options.log_dir = "training/scene/logs"
+options.log_name = "transnetv2_oilgas_stage2"
+options.n_epochs = 50
+options.trn_files = ["training/scene/tfrecords/train/trainset-*.tfrecord"]
+options.tst_files = {"val": ["training/scene/tfrecords/val/*.tfrecord"]}
+options.input_shape = [100, 27, 48, 3]
+
+training.log_freq = 100
+training.grad_clipping = 10.0
+training.n_batches_per_epoch = 2000
+
+loss.transition_weight = 5.0
+loss.many_hot_loss_weight = 0.3
+loss.l2_loss_weight = 1e-6

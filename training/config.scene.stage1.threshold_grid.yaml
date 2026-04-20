@@ -1,0 +1,28 @@
+scene_tuning_grid:
+  threshold:
+    - 16.0
+    - 18.0
+    - 20.0
+    - 22.0
+    - 24.0
+  min_scene_len:
+    - 12
+    - 15
+    - 18
+  max_scene_duration:
+    - 45.0
+    - 60.0
+  clip_sim_merge_threshold:
+    - 0.86
+    - 0.90
+    - 0.93
+
+evaluation:
+  boundary_tolerances_sec:
+    - 0.5
+    - 1.0
+  report_fields:
+    - "boundary_f1"
+    - "scene_count"
+    - "over_segmentation_rate"
+    - "under_segmentation_rate"

@@ -1,0 +1,33 @@
+reranker_stage1:
+  model_name: "BAAI/bge-reranker-base"
+  method: "lora_or_qlora"
+
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+
+  quantization:
+    load_in_4bit: true
+    bnb_4bit_compute_dtype: "bfloat16"
+    bnb_4bit_quant_type: "nf4"
+
+  data:
+    train_pairs: "training/reranker/train_pairs.jsonl"
+    dev_pairs: "training/reranker/dev_pairs.jsonl"
+    max_query_chars: 256
+    max_doc_chars: 1024
+    negatives_per_query: 8
+
+  optimization:
+    lr: 2.0e-5
+    batch_size: 16
+    grad_accum: 2
+    epochs: 3
+    weight_decay: 0.01
+    warmup_ratio: 0.06
