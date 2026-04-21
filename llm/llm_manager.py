@@ -3,6 +3,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from typing import Optional, Any, List, Dict
 import threading
 import re
+import os
+
+
+DEFAULT_SHARED_LLM_MODEL = os.getenv(
+    "SHARED_LLM_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"
+)
 
 class LLMManager:
     """
@@ -10,10 +16,11 @@ class LLMManager:
     Ensures that heavy weights are only loaded into VRAM/RAM once across all components.
     """
     _instance = None
+    _instances_by_model: Dict[str, "LLMManager"] = {}
     _lock = threading.Lock()
 
-    def __init__(self):
-        self.model_name = "Qwen/Qwen2.5-1.5B-Instruct"
+    def __init__(self, model_name: Optional[str] = None):
+        self.model_name = model_name or DEFAULT_SHARED_LLM_MODEL
         self.tokenizer = None
         self.model = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -25,6 +32,19 @@ class LLMManager:
             if cls._instance is None:
                 cls._instance = cls()
             return cls._instance
+
+    @classmethod
+    def get_for_model(cls, model_name: str):
+        """Return a cached manager dedicated to a specific model name."""
+        with cls._lock:
+            if model_name == DEFAULT_SHARED_LLM_MODEL:
+                if cls._instance is None:
+                    cls._instance = cls(model_name=model_name)
+                return cls._instance
+
+            if model_name not in cls._instances_by_model:
+                cls._instances_by_model[model_name] = cls(model_name=model_name)
+            return cls._instances_by_model[model_name]
 
     def load_model(self):
         """Load the model if it hasn't been loaded yet."""
@@ -121,7 +141,13 @@ SCORE:"""
             return max(0.0, min(1.0, score))
         return 0.5  # Neutral fallback
 
-    def rerank(self, query: str, results: List[Any], top_n: int = 10) -> List[Any]:
+    def rerank(
+        self,
+        query: str,
+        results: List[Any],
+        top_n: int = 10,
+        llm_weight: float = 0.7,
+    ) -> List[Any]:
         """
         Rerank a list of search results using the LLM.
         """
@@ -134,6 +160,9 @@ SCORE:"""
         candidates = results[:top_n]
         remainder = results[top_n:]
         
+        llm_weight = max(0.0, min(1.0, float(llm_weight)))
+        original_weight = 1.0 - llm_weight
+
         for res in candidates:
             # We use the raw text and the query
             text = getattr(res, "text", "")
@@ -142,9 +171,8 @@ SCORE:"""
                 
             llm_score = self.score_relevance(query, text)
             
-            # Blend with original score (70% LLM, 30% original)
-            # This ensures that even if LLM is slightly off, the vector similarity still counts
-            res.score = (0.7 * llm_score) + (0.3 * res.score)
+            # Blend with original score (hybrid mode).
+            res.score = (llm_weight * llm_score) + (original_weight * res.score)
             res.match_type = f"smart_{res.match_type}"
 
         # Sort again
@@ -152,11 +180,12 @@ SCORE:"""
         reranked.sort(key=lambda x: x.score, reverse=True)
         return reranked
 
-def get_shared_llm():
-    """Helper to get the singleton model components."""
-    return LLMManager.get_instance().get_model_and_tokenizer()
+def get_shared_llm(model_name: Optional[str] = None):
+    """Helper to get model components for the shared/default or a specific model."""
+    return get_llm_manager(model_name=model_name).get_model_and_tokenizer()
 
-def get_llm_manager():
-    """Helper to get the manager instance."""
+def get_llm_manager(model_name: Optional[str] = None):
+    """Helper to get the default shared manager or a model-specific manager."""
+    if model_name:
+        return LLMManager.get_for_model(model_name)
     return LLMManager.get_instance()
-

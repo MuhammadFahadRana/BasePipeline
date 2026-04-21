@@ -1,39 +1,62 @@
 """Generate embeddings for text using sentence-transformers."""
 
+import os
+from typing import List, Optional, Tuple, Union
+
+import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
-from typing import List, Union
-import numpy as np
-import os
-import peft
+
+
+DEFAULT_EMBEDDING_MODEL = os.getenv(
+    "TEXT_EMBEDDING_MODEL",
+    os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
+)
 
 
 class EmbeddingGenerator:
     """Generate text embeddings for semantic search."""
 
     def __init__(
-        self, model_name: str = "Qwen/Qwen3-Embedding-0.6B", device: str = "auto"
+        self,
+        model_name: Optional[str] = None,
+        device: str = "auto",
     ):
         """
         Initialize embedding model.
 
         Args:
-            model_name: HuggingFace model name (default: Qwen/Qwen3-Embedding-0.6B)
+            model_name: HuggingFace model name
             device: "auto", "cpu", or "cuda"
         """
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        model_name = model_name or DEFAULT_EMBEDDING_MODEL
         self.device = device
         self.model_name = model_name
 
         device_tag = "[GPU]" if "cuda" in device else "[CPU]"
         print(f"{device_tag} Loading text embedding model: {model_name} on {device}")
 
-        # Note: Qwen3-Embedding models are compatible with SentenceTransformer
-        self.model = SentenceTransformer(
-            model_name, device=device, trust_remote_code=True
-        )
+        # Note: Qwen3-Embedding models are compatible with SentenceTransformer.
+        # Fall back to CPU if CUDA cannot reserve enough memory for the model.
+        try:
+            self.model = SentenceTransformer(
+                model_name, device=device, trust_remote_code=True
+            )
+        except Exception as exc:
+            exc_text = str(exc).lower()
+            if "cuda" in device and ("out of memory" in exc_text or "memoryallocation" in exc_text):
+                print(
+                    f"[WARN] CUDA OOM while loading {model_name}; retrying on CPU."
+                )
+                self.device = "cpu"
+                self.model = SentenceTransformer(
+                    model_name, device="cpu", trust_remote_code=True
+                )
+            else:
+                raise
         
         # Load LoRA Adapter if specified in environment
         lora_path = os.getenv("EMBEDDING_LORA_PATH")
@@ -104,15 +127,22 @@ class EmbeddingGenerator:
         return self.encode(text, instruction=instruction)[0]
 
 
-# Global instance (lazy loaded)
-_embedding_generator = None
+# Global instances (lazy loaded, keyed by model/device)
+_embedding_generators = {}
 
 
 def get_embedding_generator(
-    model_name: str = "Qwen/Qwen3-Embedding-0.6B",
+    model_name: Optional[str] = None,
+    device: str = "auto",
 ) -> EmbeddingGenerator:
-    """Get or create global embedding generator instance."""
-    global _embedding_generator
-    if _embedding_generator is None:
-        _embedding_generator = EmbeddingGenerator(model_name=model_name)
-    return _embedding_generator
+    """Get or create embedding generator instance for the given model/device."""
+    resolved_model_name = model_name or DEFAULT_EMBEDDING_MODEL
+    cache_key: Tuple[str, str] = (resolved_model_name, device)
+
+    if cache_key not in _embedding_generators:
+        _embedding_generators[cache_key] = EmbeddingGenerator(
+            model_name=resolved_model_name,
+            device=device,
+        )
+
+    return _embedding_generators[cache_key]

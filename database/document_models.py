@@ -108,7 +108,7 @@ class DocumentEmbedding(Base):
         ForeignKey("document_chunks.id", ondelete="CASCADE"),
         nullable=False,
     )
-    embedding = Column(Vector(1024))  # Same dim as Qwen3-Embedding-0.6B
+    embedding = Column(Vector(4096))
     embedding_model = Column(String(100), default="Qwen/Qwen3-Embedding-0.6B")
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -1,8 +1,8 @@
 """
-Qwen2-VL Visual Feature Extractor
+Visual feature extractor for image/video frames.
 
-Uses Alibaba's Qwen2-VL model to extract semantic information from video keyframes,
-including descriptive captions and a list of detected objects.
+Primarily designed for Qwen-VL checkpoints, but can also load other
+Hugging Face vision-language models that support image-text generation.
 """
 
 import torch
@@ -14,16 +14,20 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 
 try:
-    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+    from transformers import AutoModelForVision2Seq, AutoProcessor
+except ImportError:
+    raise ImportError("Required libraries missing. Run: pip install transformers accelerate")
+
+try:
     from qwen_vl_utils import process_vision_info
 except ImportError:
-    raise ImportError("Required libraries missing. Run: pip install transformers accelerate qwen-vl-utils")
+    process_vision_info = None
 
 warnings.filterwarnings("ignore")
 
 class VisualFeatureExtractor:
     """
-    Extracts visual features (captions, labels) using Qwen2-VL.
+    Extracts visual features (captions, labels) using a HF vision-language model.
     """
     
     DEFAULT_MODEL = "Qwen/Qwen2-VL-7B-Instruct"
@@ -33,16 +37,18 @@ class VisualFeatureExtractor:
         model_name: str = DEFAULT_MODEL,
         device: str = "auto",
         load_in_4bit: bool = False,
-        trust_remote_code: bool = True
+        trust_remote_code: bool = True,
+        torch_dtype: str = "auto",
     ):
         """
-        Initialize Qwen2-VL extractor.
+        Initialize visual feature extractor.
         
         Args:
             model_name: HuggingFace model ID
             device: "auto", "cuda", or "cpu"
             load_in_4bit: Whether to use 4-bit quantization (requires bitsandbytes)
             trust_remote_code: Whether to trust remote code from HF
+            torch_dtype: "auto", "bf16", "fp16", or "fp32"
         """
         if device == "auto":
             from transcriber_utils import get_device
@@ -52,6 +58,7 @@ class VisualFeatureExtractor:
             
         self.model_name = model_name
         self.load_in_4bit = load_in_4bit
+        self.torch_dtype_name = (torch_dtype or "auto").strip().lower()
         self._ocr_reader = None
         self._surya_initialized = False
         self._surya_available = False
@@ -68,17 +75,18 @@ class VisualFeatureExtractor:
         ).strip().lower()
         
         print(f"\n{'='*60}")
-        print(f"Qwen2-VL Visual Feature Extractor")
+        print("Visual Feature Extractor")
         print(f"{'='*60}")
         print(f"Model: {model_name}")
         print(f"Device: {self.device}")
         print(f"4-bit:  {load_in_4bit}")
+        print(f"Dtype:  {self.torch_dtype_name}")
         print(f"{'='*60}\n")
         
         self._load_model(trust_remote_code)
 
     def _load_model(self, trust_remote_code: bool):
-        """Load Qwen2-VL model and processor."""
+        """Load model + processor for visual inference."""
         print(f"Loading {self.model_name}...")
         
         # Quantization config if requested
@@ -97,9 +105,10 @@ class VisualFeatureExtractor:
                 self.load_in_4bit = False
 
         self.processor = AutoProcessor.from_pretrained(self.model_name, trust_remote_code=trust_remote_code)
+        model_dtype = self._resolve_torch_dtype()
         
         model_kwargs = {
-            "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
+            "torch_dtype": model_dtype,
             "trust_remote_code": trust_remote_code,
         }
         
@@ -109,7 +118,7 @@ class VisualFeatureExtractor:
             model_kwargs["device_map"] = "auto"
             
         try:
-            self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+            self.model = AutoModelForVision2Seq.from_pretrained(
                 self.model_name,
                 **model_kwargs
             )
@@ -124,7 +133,7 @@ class VisualFeatureExtractor:
                 if "quantization_config" in model_kwargs:
                     del model_kwargs["quantization_config"]
                 
-                self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+                self.model = AutoModelForVision2Seq.from_pretrained(
                     self.model_name,
                     **model_kwargs
                 )
@@ -135,6 +144,107 @@ class VisualFeatureExtractor:
             self.model = self.model.to("cpu")
             
         print(f"[OK] {self.model_name} loaded successfully.")
+
+    def _resolve_torch_dtype(self):
+        """Resolve user-configured dtype to a torch dtype."""
+        name = self.torch_dtype_name
+        alias = {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}
+        name = alias.get(name, name)
+
+        if self.device != "cuda":
+            return torch.float32
+
+        if name == "auto":
+            bf16_supported = False
+            try:
+                bf16_supported = (
+                    torch.cuda.is_available()
+                    and hasattr(torch.cuda, "is_bf16_supported")
+                    and torch.cuda.is_bf16_supported()
+                )
+            except Exception:
+                bf16_supported = False
+            return torch.bfloat16 if bf16_supported else torch.float16
+        if name == "bfloat16":
+            return torch.bfloat16
+        if name == "float32":
+            return torch.float32
+        return torch.float16
+
+    def _build_model_inputs(self, image_path: Union[str, Path], prompt: str):
+        """Prepare model inputs with Qwen-first path and generic fallback."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": str(image_path)},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+
+        text_prompt = prompt
+        if hasattr(self.processor, "apply_chat_template"):
+            try:
+                text_prompt = self.processor.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            except Exception:
+                text_prompt = prompt
+
+        # Best path for Qwen-VL processors.
+        if process_vision_info is not None and "qwen" in self.model_name.lower():
+            try:
+                image_inputs, video_inputs = process_vision_info(messages)
+                return self.processor(
+                    text=[text_prompt],
+                    images=image_inputs,
+                    videos=video_inputs,
+                    padding=True,
+                    return_tensors="pt",
+                ).to(self.device)
+            except Exception as exc:
+                print(
+                    "Warning: qwen_vl_utils preprocessing failed; using generic path "
+                    f"instead ({exc})"
+                )
+
+        # Generic fallback for other HF VLM checkpoints.
+        image = Image.open(str(image_path)).convert("RGB")
+        try:
+            return self.processor(
+                text=[text_prompt],
+                images=[image],
+                padding=True,
+                return_tensors="pt",
+            ).to(self.device)
+        except Exception:
+            return self.processor(
+                text=text_prompt,
+                images=image,
+                return_tensors="pt",
+            ).to(self.device)
+
+    def _decode_generated_text(self, inputs, generated_ids) -> str:
+        """Decode generation and trim prompt tokens when possible."""
+        try:
+            generated_ids_trimmed = [
+                out_ids[len(in_ids):]
+                for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+            ]
+            return self.processor.batch_decode(
+                generated_ids_trimmed,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )[0]
+        except Exception:
+            return self.processor.batch_decode(
+                generated_ids,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )[0]
 
     def _ensure_surya_ocr(self) -> bool:
         """Lazy-load Surya OCR for fallback extraction."""
@@ -310,40 +420,14 @@ class VisualFeatureExtractor:
             "2. List all important objects visible in the scene as comma-separated tags.\n"
             "3. Extract all visible text (OCR) from the scene. If no text is visible, say 'None'."
         )
-        
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": str(image_path)},
-                    {"type": "text", "text": query},
-                ],
-            }
-        ]
-        
-        # Process inputs
-        text_prompt = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        image_inputs, video_inputs = process_vision_info(messages)
-        
-        inputs = self.processor(
-            text=[text_prompt],
-            images=image_inputs,
-            videos=video_inputs,
-            padding=True,
-            return_tensors="pt",
-        )
-        inputs = inputs.to(self.device)
+
+        inputs = self._build_model_inputs(image_path=image_path, prompt=query)
         
         # Generate response
         with torch.no_grad():
             generated_ids = self.model.generate(**inputs, max_new_tokens=512)
-            
-        generated_ids_trimmed = [
-            out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-        ]
-        output_text = self.processor.batch_decode(
-            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-        )[0]
+
+        output_text = self._decode_generated_text(inputs, generated_ids)
         
         # Parse output_text (heuristic parsing)
         return self._parse_output(output_text)
@@ -354,41 +438,11 @@ class VisualFeatureExtractor:
             "Describe what is visible in this video frame in one concise sentence. "
             "Do not return JSON or numbered lists."
         )
-
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": str(image_path)},
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ]
-
-        text_prompt = self.processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        image_inputs, video_inputs = process_vision_info(messages)
-        inputs = self.processor(
-            text=[text_prompt],
-            images=image_inputs,
-            videos=video_inputs,
-            padding=True,
-            return_tensors="pt",
-        ).to(self.device)
+        inputs = self._build_model_inputs(image_path=image_path, prompt=prompt)
 
         with torch.no_grad():
             generated_ids = self.model.generate(**inputs, max_new_tokens=128)
-
-        generated_ids_trimmed = [
-            out_ids[len(in_ids):]
-            for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-        ]
-        output_text = self.processor.batch_decode(
-            generated_ids_trimmed,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )[0]
+        output_text = self._decode_generated_text(inputs, generated_ids)
 
         caption = output_text.strip()
         if not caption:

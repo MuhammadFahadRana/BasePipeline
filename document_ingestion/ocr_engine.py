@@ -12,7 +12,12 @@ class DocumentOCREngine:
     """Wrapper for Document OCR."""
 
     def __init__(self, force_easyocr: bool = False):
-        self.device = "cuda" # assuming CUDA, adapt as needed from transcriber_utils
+        try:
+            from transcriber_utils import get_device
+
+            self.device = get_device()
+        except Exception:
+            self.device = "cpu"
         self.force_easyocr = force_easyocr
         self._surya_model = None
         self._surya_processor = None
@@ -51,8 +56,17 @@ class DocumentOCREngine:
             return True
 
         print("Loading EasyOCR (fallback)...")
-        from embeddings.ocr import get_ocr_reader
-        self._easy_reader = get_ocr_reader(languages=["en", "no"], use_gpu=(self.device == "cuda"))
+        try:
+            import easyocr
+        except ImportError:
+            print("EasyOCR is not installed. Install with: pip install easyocr")
+            return False
+
+        self._easy_reader = easyocr.Reader(
+            ["en", "no"],
+            gpu=(self.device == "cuda"),
+            verbose=False,
+        )
         return True
 
     def extract_text_from_image(self, image: Image.Image, langs: List[str] = ["en", "no"]) -> Tuple[str, float]:
@@ -86,12 +100,23 @@ class DocumentOCREngine:
 
         # Fallback to EasyOCR
         if self._ensure_easyocr():
-            # EasyOCR works on paths or numpy arrays. Convert PIL to numpy-like if needed or save temp.
-            # Easiest is saving to temp, or we can use numpy.
             import numpy as np
             img_np = np.array(image)
-            
-            detections = self._easy_reader.extract_with_confidence(img_np, confidence_threshold=0.35)
+
+            # easyocr.Reader.readtext returns tuples: [bbox, text, confidence]
+            raw_results = self._easy_reader.readtext(img_np)
+            detections = []
+            for item in raw_results:
+                try:
+                    bbox = item[0] if len(item) > 0 else None
+                    text = item[1] if len(item) > 1 else ""
+                    conf = float(item[2]) if len(item) > 2 else 1.0
+                except (TypeError, ValueError):
+                    continue
+                if conf >= 0.35 and str(text).strip():
+                    detections.append(
+                        {"text": str(text).strip(), "confidence": conf, "bbox": bbox}
+                    )
             if not detections:
                 return "", 0.0
                 
@@ -103,7 +128,7 @@ class DocumentOCREngine:
                 if conf is not None:
                     confidences.append(float(conf))
                     
-            text = " ".join(text_parts).strip()
+            text = "\n".join(text_parts).strip()
             avg_conf = sum(confidences) / len(confidences) if confidences else 1.0
             
             return text, avg_conf
@@ -115,8 +140,17 @@ class DocumentOCREngine:
         Render a PDF page to image and perform OCR.
         page_num is 0-indexed.
         """
-        import PyMuPDF
-        doc = PyMuPDF.open(pdf_path)
+        try:
+            import fitz as pymupdf
+        except ImportError:
+            try:
+                import pymupdf
+            except ImportError as exc:
+                raise ImportError(
+                    "PyMuPDF is not installed. Run: pip install pymupdf"
+                ) from exc
+
+        doc = pymupdf.open(pdf_path)
         if page_num >= len(doc):
             return "", 0.0
             
@@ -124,7 +158,7 @@ class DocumentOCREngine:
         
         # Render at ~300 DPI for good OCR quality
         zoom = 300 / 72 
-        mat = PyMuPDF.Matrix(zoom, zoom)
+        mat = pymupdf.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=mat)
         
         # Convert to PIL

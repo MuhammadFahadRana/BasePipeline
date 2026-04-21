@@ -75,7 +75,7 @@ class VideoQA:
         print(f"Connecting to shared QA LLM: {model_name}...")
         
         try:
-            self.model, self.tokenizer = get_shared_llm()
+            self.model, self.tokenizer = get_shared_llm(model_name=self.model_name)
             print(f"✓ Video QA system connected (shared {model_name})")
         except Exception as e:
             print(f"[ERROR] Failed to connect to shared LLM in VideoQA: {e}")

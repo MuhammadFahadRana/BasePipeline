@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
     id SERIAL PRIMARY KEY,
     segment_id INTEGER REFERENCES transcript_segments(id) ON DELETE CASCADE,
     scene_id INTEGER REFERENCES scenes(id) ON DELETE CASCADE,
-    embedding vector(1024), -- Qwen3-Embedding-0.6B dimension
+    embedding vector(4096), -- Qwen3-Embedding-8B dimension
     embedding_model VARCHAR(100) DEFAULT 'Qwen/Qwen3-Embedding-0.6B',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_embedding_source UNIQUE(segment_id, scene_id, embedding_model)
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS query_cache (
 CREATE TABLE IF NOT EXISTS search_queries (
     id SERIAL PRIMARY KEY,
     query_text TEXT NOT NULL,
-    query_embedding vector(1024), -- Unified dimension
+    query_embedding vector(4096), -- Unified text embedding dimension
     search_type VARCHAR(20) DEFAULT 'text',  -- text, visual, image, hybrid
     results_count INTEGER,
     top_result_id INTEGER REFERENCES transcript_segments(id),
@@ -272,7 +272,7 @@ CREATE TRIGGER update_videos_updated_at BEFORE UPDATE ON videos
 -- Function to search with fuzzy text matching + semantic similarity
 CREATE OR REPLACE FUNCTION hybrid_search(
     query_text TEXT,
-    query_embedding vector(1024),
+    query_embedding vector(4096),
     text_weight FLOAT DEFAULT 0.3,
     semantic_weight FLOAT DEFAULT 0.7,
     limit_results INTEGER DEFAULT 10

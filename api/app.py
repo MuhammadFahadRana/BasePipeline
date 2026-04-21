@@ -4,6 +4,7 @@ import sys
 import subprocess
 import asyncio
 import json
+import mimetypes
 from pathlib import Path
 from functools import lru_cache
 
@@ -104,6 +105,26 @@ def _resolve_video_file_path(raw_path: Optional[str]) -> Optional[Path]:
         return candidate if candidate.is_absolute() else (PROJECT_ROOT / candidate)
 
     local_candidate = PROJECT_ROOT / "videos" / os.path.basename(raw_path)
+    if local_candidate.exists():
+        return local_candidate
+
+    if not candidate.is_absolute():
+        relative_candidate = PROJECT_ROOT / candidate
+        if relative_candidate.exists():
+            return relative_candidate
+
+    return None
+
+
+def _resolve_document_file_path(raw_path: Optional[str]) -> Optional[Path]:
+    if not raw_path:
+        return None
+
+    candidate = Path(raw_path)
+    if candidate.exists():
+        return candidate if candidate.is_absolute() else (PROJECT_ROOT / candidate)
+
+    local_candidate = PROJECT_ROOT / "documents" / os.path.basename(raw_path)
     if local_candidate.exists():
         return local_candidate
 
@@ -272,6 +293,32 @@ def _get_allowed_filenames(user: User, db: Session) -> Optional[set]:
     }
 
 
+def _get_document_acl_category(document_obj: Any) -> str:
+    """Return effective ACL category name for a document."""
+    category_rel = getattr(document_obj, "category_rel", None)
+    if category_rel and getattr(category_rel, "name", None):
+        return category_rel.name
+    return "Other"
+
+
+def _get_allowed_document_ids(user: User, db: Session) -> Optional[set]:
+    """Return document IDs the user may access, or None for admins (=all)."""
+    allowed_cats = get_user_allowed_categories(user)
+    if allowed_cats is None:  # admin
+        return None
+
+    try:
+        from database.document_models import Document as DocumentModel
+    except Exception:
+        return set()
+
+    allowed_ids = set()
+    for doc in db.query(DocumentModel).all():
+        if _get_document_acl_category(doc) in allowed_cats:
+            allowed_ids.add(doc.id)
+    return allowed_ids
+
+
 def _get_accessible_available_videos(
     user: User, db: Session
 ) -> List[tuple[Video, Path]]:
@@ -308,12 +355,43 @@ def _is_result_playable(result) -> bool:
     return _resolve_video_file_path(getattr(result, "video_path", None)) is not None
 
 
-def _filter_results(results, allowed_filenames, limit=None):
+def _extract_document_id_from_result(result: Any) -> Optional[int]:
+    doc_id = getattr(result, "document_id", None)
+    if doc_id is None and getattr(result, "source_type", "video") == "document":
+        doc_id = getattr(result, "video_id", None)
+    try:
+        return int(doc_id) if doc_id is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_document_id_from_result_dict(result: Dict[str, Any]) -> Optional[int]:
+    doc_id = result.get("document_id")
+    if doc_id is None and result.get("source_type") == "document":
+        doc_id = result.get("video_id")
+    try:
+        return int(doc_id) if doc_id is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _filter_results(
+    results,
+    allowed_filenames,
+    limit=None,
+    allowed_document_ids: Optional[set] = None,
+):
     """Filter search results to only include videos the user may access."""
     filtered = []
     for result in results:
-        # Document results are always passed through (no playability check)
+        # Document results are filtered by document ACL.
         if getattr(result, "source_type", "video") == "document":
+            doc_id = _extract_document_id_from_result(result)
+            if (
+                allowed_document_ids is not None
+                and (doc_id is None or doc_id not in allowed_document_ids)
+            ):
+                continue
             filtered.append(result)
             if limit and len(filtered) >= limit:
                 break
@@ -329,15 +407,26 @@ def _filter_results(results, allowed_filenames, limit=None):
         filtered.append(result)
         if limit and len(filtered) >= limit:
             break
-    return filtered
+    return filtered[:limit] if limit else filtered
 
 
-def _filter_result_dicts(result_dicts, allowed_filenames, limit=None):
+def _filter_result_dicts(
+    result_dicts,
+    allowed_filenames,
+    limit=None,
+    allowed_document_ids: Optional[set] = None,
+):
     """Filter dict-form search results to only include videos the user may access."""
     filtered = []
     for result in result_dicts:
-        # Document results are always passed through
+        # Document results are filtered by document ACL.
         if result.get("source_type") == "document":
+            doc_id = _extract_document_id_from_result_dict(result)
+            if (
+                allowed_document_ids is not None
+                and (doc_id is None or doc_id not in allowed_document_ids)
+            ):
+                continue
             filtered.append(result)
             if limit and len(filtered) >= limit:
                 break
@@ -1686,6 +1775,7 @@ async def search(
 
     try:
         allowed_filenames = _get_allowed_filenames(user, db)
+        allowed_document_ids = _get_allowed_document_ids(user, db)
         results = search_engine.search(
             query=request.query,
             top_k=request.top_k * 3 if allowed_filenames is not None else request.top_k,
@@ -1695,7 +1785,12 @@ async def search(
             video_filter=request.video_filter,
             log_query=True,
         )
-        results = _filter_results(results, allowed_filenames, limit=request.top_k)
+        results = _filter_results(
+            results,
+            allowed_filenames,
+            limit=request.top_k,
+            allowed_document_ids=allowed_document_ids,
+        )
 
         search_time = time.time() - start_time
         request_id, result_dicts = _log_search_request_with_impressions(
@@ -1782,6 +1877,7 @@ async def quick_search(
         allowed_filenames = acl_filenames
     else:
         allowed_filenames = extra_filter
+    allowed_document_ids = _get_allowed_document_ids(user, db)
 
     try:
         fallback_data = search_engine.search_with_fallback(
@@ -1792,7 +1888,10 @@ async def quick_search(
         )
 
         results = _filter_results(
-            fallback_data["results"], allowed_filenames, limit=limit
+            fallback_data["results"],
+            allowed_filenames,
+            limit=limit,
+            allowed_document_ids=allowed_document_ids,
         )
         metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
@@ -1982,7 +2081,12 @@ async def exact_search(
     try:
         results = search_engine.search_exact_phrase(phrase=phrase, video_filter=video)
         allowed_filenames = _get_allowed_filenames(user, db)
-        results = _filter_results(results, allowed_filenames)
+        allowed_document_ids = _get_allowed_document_ids(user, db)
+        results = _filter_results(
+            results,
+            allowed_filenames,
+            allowed_document_ids=allowed_document_ids,
+        )
 
         search_time = time.time() - start_time
         request_id, result_dicts = _log_search_request_with_impressions(
@@ -2047,6 +2151,7 @@ async def multimodal_search(
         mm_search = _mm_search_engine
 
         allowed_filenames = _get_allowed_filenames(user, db)
+        allowed_document_ids = _get_allowed_document_ids(user, db)
 
         # Perform search with fallback (includes LLM intent parsing)
         fallback_data = mm_search.search_with_fallback(
@@ -2057,7 +2162,10 @@ async def multimodal_search(
         )
 
         results = _filter_results(
-            fallback_data["results"], allowed_filenames, limit=request.top_k
+            fallback_data["results"],
+            allowed_filenames,
+            limit=request.top_k,
+            allowed_document_ids=allowed_document_ids,
         )
         metadata = fallback_data["search_metadata"]
 
@@ -2101,6 +2209,7 @@ async def multimodal_search(
                 _search_engine = SemanticSearchEngine(db)
             _search_engine.db = db
             allowed_filenames = _get_allowed_filenames(user, db)
+            allowed_document_ids = _get_allowed_document_ids(user, db)
             results = _search_engine.search(
                 query=request.query,
                 top_k=request.top_k * 3
@@ -2108,7 +2217,12 @@ async def multimodal_search(
                 else request.top_k,
                 video_filter=request.video_filter,
             )
-            results = _filter_results(results, allowed_filenames, limit=request.top_k)
+            results = _filter_results(
+                results,
+                allowed_filenames,
+                limit=request.top_k,
+                allowed_document_ids=allowed_document_ids,
+            )
             search_time = time.time() - start_time
             request_id, result_dicts = _log_search_request_with_impressions(
                 db=db,
@@ -2193,6 +2307,7 @@ async def quick_multimodal_search(
         allowed_filenames = acl_filenames
     else:
         allowed_filenames = extra_filter
+    allowed_document_ids = _get_allowed_document_ids(user, db)
 
     try:
         text_weight, vision_weight = 0.5, 0.5
@@ -2221,7 +2336,10 @@ async def quick_multimodal_search(
         )
 
         results = _filter_results(
-            fallback_data["results"], allowed_filenames, limit=limit
+            fallback_data["results"],
+            allowed_filenames,
+            limit=limit,
+            allowed_document_ids=allowed_document_ids,
         )
         metadata = fallback_data["search_metadata"]
         search_time = time.time() - start_time
@@ -2295,7 +2413,10 @@ async def quick_multimodal_search(
                 facet=facet or "auto",
             )
             results = _filter_results(
-                fallback_data["results"], allowed_filenames, limit=limit
+                fallback_data["results"],
+                allowed_filenames,
+                limit=limit,
+                allowed_document_ids=allowed_document_ids,
             )
             metadata = fallback_data["search_metadata"]
             search_time = time.time() - start_time
@@ -2375,7 +2496,12 @@ async def visual_image_search(
             image_input=image_bytes, top_k=limit, video_filter=video
         )
         allowed_filenames = _get_allowed_filenames(user, db)
-        results = _filter_results(results, allowed_filenames)
+        allowed_document_ids = _get_allowed_document_ids(user, db)
+        results = _filter_results(
+            results,
+            allowed_filenames,
+            allowed_document_ids=allowed_document_ids,
+        )
 
         search_time = time.time() - start_time
         request_id, result_dicts = _log_search_request_with_impressions(
@@ -2485,7 +2611,12 @@ async def visual_combined_search(
             )
 
         allowed_filenames = _get_allowed_filenames(user, db)
-        results = _filter_results(results, allowed_filenames)
+        allowed_document_ids = _get_allowed_document_ids(user, db)
+        results = _filter_results(
+            results,
+            allowed_filenames,
+            allowed_document_ids=allowed_document_ids,
+        )
 
         search_time = time.time() - start_time
         request_id, result_dicts = _log_search_request_with_impressions(
@@ -2573,7 +2704,12 @@ async def visual_search(
         visual_engine = VisualSearchEngine(db)
         results = visual_engine.search_visual(query=q, top_k=limit, video_filter=video)
         allowed_filenames = _get_allowed_filenames(user, db)
-        results = _filter_results(results, allowed_filenames)
+        allowed_document_ids = _get_allowed_document_ids(user, db)
+        results = _filter_results(
+            results,
+            allowed_filenames,
+            allowed_document_ids=allowed_document_ids,
+        )
 
         search_time = time.time() - start_time
         request_id, result_dicts = _log_search_request_with_impressions(
@@ -3340,7 +3476,14 @@ async def list_documents(
     try:
         from database.document_models import Document as DocumentModel
 
-        docs = db.query(DocumentModel).order_by(DocumentModel.created_at.desc()).all()
+        allowed_document_ids = _get_allowed_document_ids(user, db)
+        query = db.query(DocumentModel)
+        if allowed_document_ids is not None:
+            if not allowed_document_ids:
+                return []
+            query = query.filter(DocumentModel.id.in_(allowed_document_ids))
+
+        docs = query.order_by(DocumentModel.created_at.desc()).all()
         return [
             DocumentInfo(
                 id=d.id,
@@ -3354,6 +3497,65 @@ async def list_documents(
             )
             for d in docs
         ]
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/stream/{doc_id}")
+async def stream_document(
+    doc_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Serve the original document file for in-browser viewing."""
+    try:
+        from database.document_models import Document as DocumentModel
+
+        doc = db.query(DocumentModel).filter(DocumentModel.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        allowed_document_ids = _get_allowed_document_ids(user, db)
+        if (
+            allowed_document_ids is not None
+            and doc.id not in allowed_document_ids
+        ):
+            raise HTTPException(
+                status_code=403, detail="Access denied to this document"
+            )
+
+        resolved_path = _resolve_document_file_path(doc.file_path)
+        if resolved_path is None:
+            raise HTTPException(
+                status_code=404, detail=f"Document file not found: {doc.file_path}"
+            )
+
+        media_type = mimetypes.guess_type(str(resolved_path))[0]
+        if not media_type:
+            fallback_types = {
+                "pdf": "application/pdf",
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "tiff": "image/tiff",
+                "doc": "application/msword",
+                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "ppt": "application/vnd.ms-powerpoint",
+                "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            }
+            media_type = fallback_types.get(
+                str(getattr(doc, "file_type", "")).lower(),
+                "application/octet-stream",
+            )
+        safe_filename = doc.filename.replace('"', "")
+        return FileResponse(
+            path=str(resolved_path),
+            media_type=media_type,
+            filename=safe_filename,
+            content_disposition_type="inline",
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

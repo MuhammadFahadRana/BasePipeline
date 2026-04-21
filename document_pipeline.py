@@ -11,11 +11,12 @@ Supports single-file and folder-wide processing:
 
 import argparse
 import json
+import re
 import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from document_ingestion.chunker import DocumentChunker
 from document_ingestion.enricher import DocumentEnricher
@@ -67,10 +68,20 @@ class DocumentPipeline:
         force_ocr: bool = False,
         skip_ingest: bool = True,
         save_results: bool = True,
+        enrichment_model: Optional[str] = None,
+        enrichment_load_in_4bit: Optional[bool] = None,
+        enrichment_device: str = "auto",
+        enrichment_dtype: str = "auto",
+        enrichment_trust_remote_code: Optional[bool] = None,
     ):
         self.force_ocr = force_ocr
         self.skip_ingest = skip_ingest
         self.save_results = save_results
+        self.enrichment_model = enrichment_model
+        self.enrichment_load_in_4bit = enrichment_load_in_4bit
+        self.enrichment_device = enrichment_device
+        self.enrichment_dtype = enrichment_dtype
+        self.enrichment_trust_remote_code = enrichment_trust_remote_code
         self.chunker = DocumentChunker(max_tokens=512, overlap=64)
         self.ocr_engine = None
         self.enricher = None
@@ -82,7 +93,13 @@ class DocumentPipeline:
 
     def _ensure_enricher(self):
         if self.enricher is None:
-            self.enricher = DocumentEnricher()
+            self.enricher = DocumentEnricher(
+                model_name=self.enrichment_model,
+                load_in_4bit=self.enrichment_load_in_4bit,
+                device=self.enrichment_device,
+                torch_dtype=self.enrichment_dtype,
+                trust_remote_code=self.enrichment_trust_remote_code,
+            )
         return self.enricher
 
     @staticmethod
@@ -91,10 +108,58 @@ class DocumentPipeline:
 
     @staticmethod
     def _build_output_paths(path: Path, output_base: Path):
-        doc_root = output_base / path.stem
+        # Windows paths cannot end with space/dot; normalize for output folders.
+        safe_stem = path.stem.strip(" .")
+        if not safe_stem:
+            safe_stem = "document"
+        doc_root = output_base / safe_stem
         results_dir = doc_root / "results"
         temp_dir = doc_root / "temp"
         return doc_root, results_dir, temp_dir
+
+    @staticmethod
+    def _normalize_for_dedupe(text: str) -> str:
+        if not text:
+            return ""
+        lowered = text.lower()
+        lowered = re.sub(r"\s+", " ", lowered)
+        # Keep unicode word characters and spaces for robust approximate checks.
+        return re.sub(r"[^\w\s]", "", lowered, flags=re.UNICODE).strip()
+
+    def _merge_page_text_with_ocr(self, extracted_text: str, ocr_text: str) -> str:
+        """Append only OCR lines that are not already present in extracted text."""
+        extracted_text = (extracted_text or "").strip()
+        ocr_text = (ocr_text or "").strip()
+        if not extracted_text:
+            return ocr_text
+        if not ocr_text:
+            return extracted_text
+
+        extracted_norm = self._normalize_for_dedupe(extracted_text)
+        novel_lines: List[str] = []
+        seen_norm = set()
+
+        for raw_line in ocr_text.splitlines():
+            line = raw_line.strip()
+            if len(line) < 3:
+                continue
+            nline = self._normalize_for_dedupe(line)
+            if not nline or nline in seen_norm:
+                continue
+            seen_norm.add(nline)
+            if nline in extracted_norm:
+                continue
+            novel_lines.append(line)
+
+        if not novel_lines:
+            return extracted_text
+
+        merged_ocr = "\n".join(novel_lines)
+        return (
+            f"{extracted_text}\n\n"
+            f"[OCR Image/Text Layer]\n"
+            f"{merged_ocr}"
+        )
 
     def process_file(self, file_path: str, output_base: str = str(DEFAULT_OUTPUT_BASE)):
         path = Path(file_path)
@@ -153,7 +218,13 @@ class DocumentPipeline:
                     text, conf = ocr.extract_from_pdf_page(str(path), i)
 
                     if i < len(pages):
-                        pages[i]["text"] = text
+                        if self.force_ocr:
+                            pages[i]["text"] = text
+                        else:
+                            pages[i]["text"] = self._merge_page_text_with_ocr(
+                                pages[i].get("text", ""),
+                                text,
+                            )
                         pages[i]["ocr_confidence"] = conf
                     else:
                         pages.append(
@@ -212,6 +283,9 @@ class DocumentPipeline:
                 "total_pages": len(pages),
                 "extraction_method": extraction_method,
                 "ocr_model": "surya/easyocr" if (self.force_ocr or needs_ocr) else None,
+                "visual_enrichment_model": (
+                    enricher.model_name if (enricher.enabled and ext == ".pdf") else None
+                ),
                 "language": "en",
             },
             "chunks": chunks,
@@ -337,6 +411,58 @@ if __name__ == "__main__":
         action="store_true",
         help="Recursively process documents in nested folders",
     )
+    parser.add_argument(
+        "--enrichment-model",
+        type=str,
+        default=None,
+        help=(
+            "Vision-language model for page enrichment "
+            "(e.g., Qwen/Qwen2-VL-7B-Instruct, Qwen/Qwen2.5-VL-72B-Instruct, "
+            "or any compatible HF VLM)"
+        ),
+    )
+    parser.add_argument(
+        "--enrichment-device",
+        type=str,
+        default="auto",
+        choices=["auto", "cuda", "cpu"],
+        help="Device for enrichment model",
+    )
+    parser.add_argument(
+        "--enrichment-dtype",
+        type=str,
+        default="auto",
+        choices=["auto", "bf16", "fp16", "fp32", "bfloat16", "float16", "float32"],
+        help="Torch dtype for enrichment model",
+    )
+    parser.add_argument(
+        "--enrichment-load-in-4bit",
+        dest="enrichment_load_in_4bit",
+        action="store_true",
+        help="Enable 4-bit quantization for enrichment model",
+    )
+    parser.add_argument(
+        "--enrichment-no-4bit",
+        dest="enrichment_load_in_4bit",
+        action="store_false",
+        help="Disable 4-bit quantization for enrichment model",
+    )
+    parser.add_argument(
+        "--enrichment-trust-remote-code",
+        dest="enrichment_trust_remote_code",
+        action="store_true",
+        help="Allow trust_remote_code when loading enrichment model",
+    )
+    parser.add_argument(
+        "--enrichment-no-trust-remote-code",
+        dest="enrichment_trust_remote_code",
+        action="store_false",
+        help="Disable trust_remote_code when loading enrichment model",
+    )
+    parser.set_defaults(
+        enrichment_load_in_4bit=None,
+        enrichment_trust_remote_code=None,
+    )
 
     args = parser.parse_args()
 
@@ -352,6 +478,11 @@ if __name__ == "__main__":
         force_ocr=args.force_ocr,
         skip_ingest=skip_ingest,
         save_results=not args.no_save,
+        enrichment_model=args.enrichment_model,
+        enrichment_load_in_4bit=args.enrichment_load_in_4bit,
+        enrichment_device=args.enrichment_device,
+        enrichment_dtype=args.enrichment_dtype,
+        enrichment_trust_remote_code=args.enrichment_trust_remote_code,
     )
 
     if args.file:

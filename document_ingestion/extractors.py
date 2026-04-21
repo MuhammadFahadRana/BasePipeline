@@ -48,16 +48,20 @@ class PDFExtractor:
         for page_num in range(len(doc)):
             page = doc[page_num]
             text = page.get_text("text").strip()
-            
-            # If page is practically empty of text, it might be a scanned image
-            needs_ocr = len(text) < self.min_chars_per_page
+
+            # Run OCR for:
+            # 1) pages with very little extractable text (scanned/rasterized content)
+            # 2) pages containing embedded images (may include diagrams/labels not in PDF text layer)
+            has_images = bool(page.get_images(full=True))
+            needs_ocr = (len(text) < self.min_chars_per_page) or has_images
             if needs_ocr:
                 any_needs_ocr = True
-                
+
             pages.append({
                 "page_num": page_num + 1,
                 "text": text,
-                "needs_ocr": needs_ocr
+                "needs_ocr": needs_ocr,
+                "has_images": has_images,
             })
 
         doc.close()

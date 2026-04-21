@@ -31,8 +31,18 @@ class VisionEmbeddingGenerator:
         device_tag = "[GPU]" if "cuda" in self.device else "[CPU]"
         print(f"{device_tag} Loading SigLIP vision model: {model_name} on {self.device}")
 
-        self.model = AutoModel.from_pretrained(model_name).to(device)
-        self.processor = AutoProcessor.from_pretrained(model_name)
+        try:
+            self.model = AutoModel.from_pretrained(model_name).to(device)
+            self.processor = AutoProcessor.from_pretrained(model_name)
+        except Exception as exc:
+            exc_text = str(exc).lower()
+            if "cuda" in device and ("out of memory" in exc_text or "memoryallocation" in exc_text):
+                print(f"[WARN] CUDA OOM while loading {model_name}; retrying on CPU.")
+                self.device = "cpu"
+                self.model = AutoModel.from_pretrained(model_name).to("cpu")
+                self.processor = AutoProcessor.from_pretrained(model_name)
+            else:
+                raise
 
         # Get embedding dimension
         self.embedding_dim = self.model.config.vision_config.hidden_size
@@ -237,9 +247,10 @@ _vision_generator = None
 
 def get_vision_embedding_generator(
     model_name: str = "google/siglip-base-patch16-224",
+    device: str = "auto",
 ) -> VisionEmbeddingGenerator:
     """Get or create global vision embedding generator instance."""
     global _vision_generator
     if _vision_generator is None:
-        _vision_generator = VisionEmbeddingGenerator(model_name=model_name)
+        _vision_generator = VisionEmbeddingGenerator(model_name=model_name, device=device)
     return _vision_generator

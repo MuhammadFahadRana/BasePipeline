@@ -1781,6 +1781,48 @@ function renderSenseSuggestions(senseSuggestions, didYouMean) {
 // GROUPED RESULTS BY VIDEO
 // ========================================
 
+function isDocumentResult(result) {
+    return String(result?.source_type || '').toLowerCase() === 'document';
+}
+
+function getResultLocationLabel(result) {
+    if (isDocumentResult(result)) {
+        const location = (result?.document_location || '').toString().trim();
+        if (location) return location;
+
+        const page = Number(result?.document_page);
+        if (Number.isFinite(page) && page > 0) {
+            return `Page ${Math.floor(page)}`;
+        }
+
+        const chunkIndex = Number(result?.document_chunk_index);
+        if (Number.isFinite(chunkIndex) && chunkIndex >= 0) {
+            return `Chunk ${Math.floor(chunkIndex) + 1}`;
+        }
+
+        return (result?.timestamp || 'Document').toString();
+    }
+    return (result?.timestamp || '00:00:00').toString();
+}
+
+function getResultIconSvg(result) {
+    if (isDocumentResult(result)) {
+        return `
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 2H7C5.89543 2 5 2.89543 5 4V20C5 21.1046 5.89543 22 7 22H17C18.1046 22 19 21.1046 19 20V7L14 2Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M14 2V7H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9 13H15M9 17H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        `;
+    }
+    return `
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14.7519 11.1679L11.5547 9.03647C10.8901 8.59343 10 9.06982 10 9.86852V14.1315C10 14.9302 10.8901 15.4066 11.5547 14.9635L14.7519 12.8321C15.3457 12.4362 15.3457 11.5638 14.7519 11.1679Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+    `;
+}
+
 /**
  * Render results grouped by video.  Each video is a collapsible card showing
  * the video name + number of occurrences.  Inside, every occurrence is listed
@@ -1841,12 +1883,14 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
         const occurrences = group.occurrences || [];
         const count = occurrences.length;
         const topOcc = occurrences[0] || {};
+        const groupIsDocument = isDocumentResult(topOcc) || String(group.source_type || '').toLowerCase() === 'document';
         const bestScore = topOcc.combined_score || topOcc.score || 0;
+        const itemNoun = groupIsDocument ? 'passage' : (isBrowse ? 'segment' : 'occurrence');
 
         // Build meta line: hide score in browse mode
         const metaText = isBrowse
-            ? `${count} segment${count !== 1 ? 's' : ''}`
-            : `${count} occurrence${count !== 1 ? 's' : ''} &middot; Best score: ${bestScore.toFixed(3)}`;
+            ? `${count} ${itemNoun}${count !== 1 ? 's' : ''}`
+            : `${count} ${itemNoun}${count !== 1 ? 's' : ''} &middot; Best score: ${bestScore.toFixed(3)}`;
 
         // Video group header
         const header = document.createElement('div');
@@ -1854,13 +1898,10 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
         header.innerHTML = `
             <div class="video-group-info">
                 <div class="video-icon">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M14.7519 11.1679L11.5547 9.03647C10.8901 8.59343 10 9.06982 10 9.86852V14.1315C10 14.9302 10.8901 15.4066 11.5547 14.9635L14.7519 12.8321C15.3457 12.4362 15.3457 11.5638 14.7519 11.1679Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="1.5"/>
-                    </svg>
+                    ${getResultIconSvg(topOcc)}
                 </div>
                 <div>
-                    <div class="video-group-name">${escapeHtml(group.video_filename)}</div>
+                    <div class="video-group-name">${escapeHtml(group.display_name || group.video_filename || 'Unknown')}</div>
                     <div class="video-group-meta">${metaText}</div>
                 </div>
             </div>
@@ -1908,7 +1949,7 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
                 ${thumbnailHtml}
                 <div class="occurrence-body">
                     <div class="occurrence-ts-row">
-                        <span class="occurrence-timestamp">${escapeHtml(occ.timestamp || '00:00:00')}</span>
+                        <span class="occurrence-timestamp">${escapeHtml(getResultLocationLabel(occ))}</span>
                         <span class="result-source-group">
                             <span class="result-source source-${sourceMeta.id}">${sourceMeta.label}</span>
                             ${textMeta.hasOcrTag ? '<span class="result-source source-ocr">OCR</span>' : ''}
@@ -1926,7 +1967,7 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
                         source: 'grouped_occurrence',
                     },
                 });
-                openVideoPlayer(occ);
+                openResultTarget(occ);
             });
             occList.appendChild(row);
         });
@@ -1936,7 +1977,7 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
             const moreBtn = document.createElement('button');
             moreBtn.type = 'button';
             moreBtn.className = 'occurrence-show-more';
-            const moreNoun = isBrowse ? 'segment' : 'occurrence';
+            const moreNoun = groupIsDocument ? 'passage' : (isBrowse ? 'segment' : 'occurrence');
             moreBtn.textContent = `Show ${count - 2} more ${moreNoun}${count - 2 !== 1 ? 's' : ''}`;
             let expanded = false;
             moreBtn.addEventListener('click', (e) => {
@@ -1949,7 +1990,7 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
                         else el.classList.add('occurrence-hidden');
                     }
                 });
-                const moreLabel = isBrowse ? 'segment' : 'occurrence';
+                const moreLabel = groupIsDocument ? 'passage' : (isBrowse ? 'segment' : 'occurrence');
                 moreBtn.textContent = expanded
                     ? 'Show less'
                     : `Show ${count - 2} more ${moreLabel}${count - 2 !== 1 ? 's' : ''}`;
@@ -1971,15 +2012,20 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
 function buildGroupedResults(flatResults = []) {
     const groupedMap = {};
     flatResults.forEach(rd => {
-        const vid = rd.video_id;
-        if (!groupedMap[vid]) {
-            groupedMap[vid] = {
-                video_id: vid,
+        const sourceType = String(rd?.source_type || 'video').toLowerCase();
+        const entityId = rd?.video_id ?? rd?.document_id ?? rd?.segment_id ?? rd?.video_filename;
+        const groupKey = `${sourceType}:${String(entityId)}`;
+        if (!groupedMap[groupKey]) {
+            groupedMap[groupKey] = {
+                group_key: groupKey,
+                source_type: sourceType,
+                video_id: rd.video_id,
                 video_filename: rd.video_filename,
+                display_name: rd.video_filename || 'Unknown',
                 occurrences: [],
             };
         }
-        groupedMap[vid].occurrences.push(rd);
+        groupedMap[groupKey].occurrences.push(rd);
     });
     return Object.values(groupedMap);
 }
@@ -2038,8 +2084,8 @@ function createResultCard(result, index) {
     const card = document.createElement('div');
     card.className = 'result-card';
 
-    const videoName = result.video_filename || 'Unknown';
-    const timestamp = result.timestamp || '00:00:00';
+    const itemName = result.video_filename || 'Unknown';
+    const timestamp = getResultLocationLabel(result);
     const rawText = result.text || '';
     const keyframePath = result.keyframe_path || '';
     const textMeta = getResultTextMeta(result);
@@ -2095,13 +2141,10 @@ function createResultCard(result, index) {
             ${thumbnailHtml}
             <div class="result-video">
                 <div class="video-icon">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M14.7519 11.1679L11.5547 9.03647C10.8901 8.59343 10 9.06982 10 9.86852V14.1315C10 14.9302 10.8901 15.4066 11.5547 14.9635L14.7519 12.8321C15.3457 12.4362 15.3457 11.5638 14.7519 11.1679Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="1.5"/>
-                    </svg>
+                    ${getResultIconSvg(result)}
                 </div>
                 <div>
-                    <div class="result-video-name">${escapeHtml(videoName)}</div>
+                    <div class="result-video-name">${escapeHtml(itemName)}</div>
                 </div>
             </div>
             <div class="result-meta">
@@ -2125,13 +2168,17 @@ function createResultCard(result, index) {
                 source: 'flat_card',
             },
         });
-        openVideoPlayer(result);
+        openResultTarget(result);
     });
 
     return card;
 }
 
 function getResultSourceMeta(result) {
+    if (isDocumentResult(result)) {
+        return { id: 'document', label: 'Document' };
+    }
+
     const rid = result?.result_id;
     const txt = (result?.text || '').toLowerCase();
 
@@ -2154,6 +2201,7 @@ function stripResultTextMarkers(text) {
     if (!text) return '';
 
     return text
+        .replace(/\[document:[^\]]*\]\s*/gi, '')
         .replace(/\[visual\]\s*/gi, '')
         .replace(/\[ocr\]\s*/gi, '')
         .replace(/\s{2,}/g, ' ')
@@ -2268,7 +2316,73 @@ function attachModalEventListeners() {
 }
 
 // Open Video Player
+function openResultTarget(result) {
+    if (isDocumentResult(result)) {
+        openDocumentResult(result);
+        return;
+    }
+    openVideoPlayer(result);
+}
+
+function getDocumentPageNumber(result) {
+    const page = Number(result?.document_page);
+    if (Number.isFinite(page) && page > 0) {
+        return Math.floor(page);
+    }
+
+    const location = String(result?.document_location || '');
+    const locationMatch = location.match(/page\s+(\d+)/i);
+    if (locationMatch) {
+        return Number(locationMatch[1]);
+    }
+
+    const text = String(result?.text || '');
+    const textMatch = text.match(/\bp\.\s*(\d+)\b/i);
+    if (textMatch) {
+        return Number(textMatch[1]);
+    }
+
+    return null;
+}
+
+function openDocumentResult(result) {
+    const docId = result?.document_id ?? result?.video_id;
+    if (!docId) {
+        showNotification('Document link is missing for this result.', 'warning');
+        return;
+    }
+    if (!authToken) {
+        showNotification('Session expired. Please log in again.', 'warning');
+        return;
+    }
+
+    const page = getDocumentPageNumber(result);
+    const baseUrl = `${API_BASE_URL}/documents/stream/${encodeURIComponent(docId)}?token=${encodeURIComponent(authToken)}`;
+    const fileType = String(result?.document_file_type || '').toLowerCase();
+    const shouldAnchorPage = fileType === 'pdf' || String(result?.video_filename || '').toLowerCase().endsWith('.pdf');
+    const openUrl = shouldAnchorPage && page ? `${baseUrl}#page=${page}` : baseUrl;
+
+    logFeedbackEvent('document_open', result, {
+        metadata: {
+            view: currentView,
+            document_id: docId,
+            page_number: page,
+            source_type: result?.source_type ?? null,
+        },
+    });
+
+    const opened = window.open(openUrl, '_blank', 'noopener');
+    if (!opened) {
+        showNotification('Popup blocked. Allow popups to open documents.', 'warning');
+    }
+}
+
 function openVideoPlayer(result) {
+    if (isDocumentResult(result)) {
+        openDocumentResult(result);
+        return;
+    }
+
     currentVideoResult = result;
     modalOpenedAtMs = Date.now();
 

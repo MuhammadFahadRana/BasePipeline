@@ -58,7 +58,7 @@ class QueryParser:
         print(f"{device_tag} Loading Query Parser model: {model_name} on {self.device}")
 
         try:
-            self.model, self.tokenizer = get_shared_llm()
+            self.model, self.tokenizer = get_shared_llm(model_name=self.model_name)
             try:
                 self.device = str(next(self.model.parameters()).device)
             except StopIteration:

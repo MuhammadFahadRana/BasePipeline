@@ -1143,6 +1143,11 @@ select {
     background: rgba(37, 99, 235, 0.12);
 }
 
+.source-document {
+    color: #334155;
+    background: rgba(51, 65, 85, 0.12);
+}
+
 .result-video-name {
     font-weight: 600;
     color: var(--text-primary);

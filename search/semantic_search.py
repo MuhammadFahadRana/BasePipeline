@@ -428,16 +428,30 @@ class SearchResult:
     evidence_time: Optional[float] = None  # Best frame/sample timestamp evidence
     evidence_frame_role: Optional[str] = None  # start/mid/end/extra_n
     source_type: str = "video"  # "video" or "document"
+    document_page: Optional[int] = None  # 1-indexed page for document hits
+    document_chunk_index: Optional[int] = None  # 0-indexed chunk order
+    document_section_heading: Optional[str] = None
+    document_file_type: Optional[str] = None
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
+        timestamp = f"{int(self.start_time // 3600):02d}:{int((self.start_time % 3600) // 60):02d}:{int(self.start_time % 60):02d}"
+        document_location = None
+        if self.source_type == "document":
+            if self.document_page:
+                document_location = f"Page {self.document_page}"
+            elif self.document_chunk_index is not None:
+                document_location = f"Chunk {int(self.document_chunk_index) + 1}"
+            if document_location:
+                timestamp = document_location
+
         payload = {
             "source_type": self.source_type,
             "segment_id": self.segment_id,
             "video_id": self.video_id,
             "video_filename": self.video_filename,
             "video_path": self.video_path,
-            "timestamp": f"{int(self.start_time // 3600):02d}:{int((self.start_time % 3600) // 60):02d}:{int(self.start_time % 60):02d}",
+            "timestamp": timestamp,
             "start_time": round(self.start_time, 2),
             "end_time": round(self.end_time, 2),
             "text": self.text,
@@ -450,6 +464,16 @@ class SearchResult:
             if self.evidence_time is not None
             else None,
             "evidence_frame_role": self.evidence_frame_role,
+            "document_id": self.video_id if self.source_type == "document" else None,
+            "document_filename": self.video_filename
+            if self.source_type == "document"
+            else None,
+            "document_path": self.video_path if self.source_type == "document" else None,
+            "document_page": self.document_page,
+            "document_chunk_index": self.document_chunk_index,
+            "document_section_heading": self.document_section_heading,
+            "document_file_type": self.document_file_type,
+            "document_location": document_location,
         }
         for extra_key in ("text_score", "vision_score", "combined_score"):
             val = getattr(self, extra_key, None)
@@ -1220,6 +1244,7 @@ class SemanticSearchEngine:
                     d.id AS document_id,
                     d.filename,
                     d.file_path,
+                    d.file_type,
                     dc.chunk_index,
                     dc.page_number,
                     dc.section_heading,
@@ -1262,6 +1287,10 @@ class SemanticSearchEngine:
                 match_type="semantic",
                 result_id=row.chunk_id,
                 source_type="document",
+                document_page=row.page_number,
+                document_chunk_index=row.chunk_index,
+                document_section_heading=row.section_heading,
+                document_file_type=row.file_type,
             )
             results.append(sr)
 
@@ -1535,8 +1564,15 @@ class SemanticSearchEngine:
 
         deduplicated = []
         for result in results:
+            # Document hits do not carry timeline offsets, so overlap-based
+            # video deduplication is not meaningful for them.
+            if getattr(result, "source_type", "video") == "document":
+                deduplicated.append(result)
+                continue
             is_duplicate = False
             for kept in deduplicated:
+                if getattr(kept, "source_type", "video") == "document":
+                    continue
                 if (
                     result.video_id == kept.video_id
                     and abs(result.start_time - kept.start_time) < overlap_window
