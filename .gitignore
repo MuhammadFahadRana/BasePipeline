@@ -82,3 +82,6 @@ basepipeline.dump
 
 # Archived/non-runtime material kept locally only
 Extras/
+
+# PDF Files
+*.pdf
