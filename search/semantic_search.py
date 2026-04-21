@@ -1768,8 +1768,21 @@ class SemanticSearchEngine:
             self.db.add(query_log)
             self.db.commit()
         except Exception as e:
-            print(f"Warning: Failed to log query: {e}")
             self.db.rollback()
+            # Temporary compatibility path: query analytics should not fail search
+            # when model and table vector dimensions are in migration.
+            try:
+                query_log = SearchQuery(
+                    query_text=query_text,
+                    query_embedding=None,
+                    results_count=results_count,
+                    top_result_id=valid_top_id,
+                )
+                self.db.add(query_log)
+                self.db.commit()
+            except Exception as retry_e:
+                print(f"Warning: Failed to log query: {retry_e}")
+                self.db.rollback()
 
     def search_exact_phrase(
         self, phrase: str, video_filter: Optional[str] = None

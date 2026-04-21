@@ -118,3 +118,26 @@ $env:RERANKER_MODEL = "Qwen/Qwen3-4B-Instruct"
 $env:RERANKER_MODE = "hybrid"
 $env:RERANKER_BLEND = "0.70"
 ```
+
+## Slurm / No-ODBC Setup
+
+On Linux hosts without Microsoft ODBC drivers, the helper now defaults to `pytds`.
+
+Install the pure-Python SQL Server packages:
+
+```bash
+pip install python-tds sqlalchemy-pytds
+```
+
+Run the smoke test or ingest with these env vars set:
+
+```bash
+export MSSQL_CONNECTOR=pytds
+export MSSQL_SERVER="your-sql-host"
+export MSSQL_PORT=1433
+export MSSQL_DATABASE="VideoSemanticDB"
+export MSSQL_USER="your-user"
+export MSSQL_PASSWORD="your-password"
+python database/SQL/test_mssql.py
+python database/SQL/ingest_sqlserver.py
+```

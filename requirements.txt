@@ -18,6 +18,7 @@ pgvector==0.3.6
 pillow>=9.2.0,<12.0
 pymupdf>=1.24.0
 psycopg2-binary==2.9.10
+python-tds
 python-dotenv==1.0.1
 qwen-vl-utils==0.0.14
 safetensors==0.7.0
@@ -26,6 +27,7 @@ sentence-transformers==3.3.1
 sentencepiece==0.2.1
 soundfile==0.13.1
 SQLAlchemy==2.0.46
+sqlalchemy-pytds
 torch==2.6.0+cu124
 torchaudio==2.6.0+cu124
 torchvision==0.21.0+cu124
