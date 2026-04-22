@@ -301,22 +301,55 @@ def _get_document_acl_category(document_obj: Any) -> str:
     return "Other"
 
 
-def _get_allowed_document_ids(user: User, db: Session) -> Optional[set]:
-    """Return document IDs the user may access, or None for admins (=all)."""
+def _document_acl_clause(user: User):
+    """Build a SQL clause for document category ACL (None means no ACL filter)."""
     allowed_cats = get_user_allowed_categories(user)
     if allowed_cats is None:  # admin
         return None
 
+    allowed = {c.strip() for c in allowed_cats if c and c.strip()}
+    if not allowed:
+        from sqlalchemy import false as sa_false
+
+        return sa_false()
+
+    from sqlalchemy import or_ as sa_or
+
+    predicates = []
+    named_categories = sorted(cat for cat in allowed if cat != "Other")
+    if named_categories:
+        predicates.append(VideoCategory.name.in_(named_categories))
+
+    if "Other" in allowed:
+        predicates.append(VideoCategory.name == "Other")
+        predicates.append(VideoCategory.name.is_(None))
+
+    if not predicates:
+        from sqlalchemy import false as sa_false
+
+        return sa_false()
+
+    return sa_or(*predicates)
+
+
+def _get_allowed_document_ids(user: User, db: Session) -> Optional[set]:
+    """Return document IDs the user may access, or None for admins (=all)."""
     try:
         from database.document_models import Document as DocumentModel
     except Exception:
         return set()
 
-    allowed_ids = set()
-    for doc in db.query(DocumentModel).all():
-        if _get_document_acl_category(doc) in allowed_cats:
-            allowed_ids.add(doc.id)
-    return allowed_ids
+    acl_clause = _document_acl_clause(user)
+    if acl_clause is None:  # admin
+        return None
+
+    rows = (
+        db.query(DocumentModel.id)
+        .outerjoin(VideoCategory, DocumentModel.category_id == VideoCategory.id)
+        .filter(acl_clause)
+        .all()
+    )
+    return {row.id for row in rows}
 
 
 def _get_accessible_available_videos(
@@ -1303,6 +1336,51 @@ async def update_video_metadata(
         "label": video.label,
         "category": video.category_rel.name if video.category_rel else None,
         "category_id": video.category_id,
+    }
+
+
+class UpdateDocumentRequest(BaseModel):
+    label: Optional[str] = None
+    category_id: Optional[int] = None
+
+
+@app.put("/documents/{doc_id}")
+async def update_document_metadata(
+    doc_id: int,
+    req: UpdateDocumentRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Set site label and/or category on a document (admin only)."""
+    try:
+        from database.document_models import Document as DocumentModel
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Document models unavailable: {e}")
+
+    doc = db.query(DocumentModel).filter(DocumentModel.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if req.label is not None:
+        doc.label = req.label.strip() or None
+
+    if req.category_id is not None:
+        if req.category_id == 0:
+            doc.category_id = None
+        else:
+            cat = db.query(VideoCategory).filter(VideoCategory.id == req.category_id).first()
+            if not cat:
+                raise HTTPException(status_code=404, detail="Category not found")
+            doc.category_id = cat.id
+
+    db.commit()
+    db.refresh(doc)
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "label": doc.label,
+        "category": doc.category_rel.name if doc.category_rel else None,
+        "category_id": doc.category_id,
     }
 
 
@@ -3418,7 +3496,16 @@ class DocumentInfo(BaseModel):
     total_pages: Optional[int] = None
     extraction_method: Optional[str] = None
     label: Optional[str] = None
+    category_id: Optional[int] = None
+    category: Optional[str] = None
     processed_at: Optional[str] = None
+
+
+class DocumentPageResponse(BaseModel):
+    """Paginated document listing response."""
+    items: List[DocumentInfo]
+    next_cursor: Optional[int] = None
+    total_count: Optional[int] = None
 
 
 @app.post("/documents/upload")
@@ -3476,14 +3563,26 @@ async def list_documents(
     try:
         from database.document_models import Document as DocumentModel
 
-        allowed_document_ids = _get_allowed_document_ids(user, db)
-        query = db.query(DocumentModel)
-        if allowed_document_ids is not None:
-            if not allowed_document_ids:
-                return []
-            query = query.filter(DocumentModel.id.in_(allowed_document_ids))
+        acl_clause = _document_acl_clause(user)
+        query = (
+            db.query(
+                DocumentModel.id,
+                DocumentModel.filename,
+                DocumentModel.file_type,
+                DocumentModel.file_size_mb,
+                DocumentModel.total_pages,
+                DocumentModel.extraction_method,
+                DocumentModel.label,
+                DocumentModel.category_id,
+                DocumentModel.processed_at,
+                VideoCategory.name.label("category_name"),
+            )
+            .outerjoin(VideoCategory, DocumentModel.category_id == VideoCategory.id)
+        )
+        if acl_clause is not None:
+            query = query.filter(acl_clause)
 
-        docs = query.order_by(DocumentModel.created_at.desc()).all()
+        docs = query.order_by(DocumentModel.id.desc()).all()
         return [
             DocumentInfo(
                 id=d.id,
@@ -3493,10 +3592,97 @@ async def list_documents(
                 total_pages=d.total_pages,
                 extraction_method=d.extraction_method,
                 label=d.label,
+                category_id=d.category_id,
+                category=d.category_name,
                 processed_at=d.processed_at.isoformat() if d.processed_at else None,
             )
             for d in docs
         ]
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/page", response_model=DocumentPageResponse)
+async def list_documents_page(
+    limit: int = Query(50, ge=1, le=200, description="Page size"),
+    cursor: Optional[int] = Query(
+        None, ge=1, description="Return rows with id < cursor (descending keyset)"
+    ),
+    include_total: bool = Query(
+        False,
+        description="Compute total accessible document count (set true for first page only)",
+    ),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Efficient paginated document listing (keyset pagination)."""
+    try:
+        from database.document_models import Document as DocumentModel
+
+        acl_clause = _document_acl_clause(user)
+
+        page_query = (
+            db.query(
+                DocumentModel.id,
+                DocumentModel.filename,
+                DocumentModel.file_type,
+                DocumentModel.file_size_mb,
+                DocumentModel.total_pages,
+                DocumentModel.extraction_method,
+                DocumentModel.label,
+                DocumentModel.category_id,
+                DocumentModel.processed_at,
+                VideoCategory.name.label("category_name"),
+            )
+            .outerjoin(VideoCategory, DocumentModel.category_id == VideoCategory.id)
+        )
+        if acl_clause is not None:
+            page_query = page_query.filter(acl_clause)
+        if cursor is not None:
+            page_query = page_query.filter(DocumentModel.id < cursor)
+
+        rows = (
+            page_query.order_by(DocumentModel.id.desc())
+            .limit(limit + 1)
+            .all()
+        )
+
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = rows[-1].id if has_more and rows else None
+
+        total_count = None
+        if include_total:
+            count_query = (
+                db.query(DocumentModel.id)
+                .outerjoin(VideoCategory, DocumentModel.category_id == VideoCategory.id)
+            )
+            if acl_clause is not None:
+                count_query = count_query.filter(acl_clause)
+            total_count = count_query.count()
+
+        return DocumentPageResponse(
+            items=[
+                DocumentInfo(
+                    id=row.id,
+                    filename=row.filename,
+                    file_type=row.file_type,
+                    file_size_mb=row.file_size_mb,
+                    total_pages=row.total_pages,
+                    extraction_method=row.extraction_method,
+                    label=row.label,
+                    category_id=row.category_id,
+                    category=row.category_name,
+                    processed_at=row.processed_at.isoformat()
+                    if row.processed_at
+                    else None,
+                )
+                for row in rows
+            ],
+            next_cursor=next_cursor,
+            total_count=total_count,
+        )
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

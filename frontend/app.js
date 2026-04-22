@@ -31,6 +31,7 @@ function clearAuth() {
     sessionStorage.removeItem('atlas_token');
     sessionStorage.removeItem('atlas_user');
     resetVideoCache({ stopPolling: true });
+    resetDocumentCache();
 }
 
 function showApp() {
@@ -96,6 +97,7 @@ const feedbackIrrelevantBtn = document.getElementById('feedbackIrrelevantBtn');
 // State
 let currentQuery = '';
 let videos = [];
+let documents = [];
 let currentVideoResult = null; // Store current result for copy functionality
 let selectedImageFile = null; // Store selected image for visual search
 let lastResults = []; // Backward compatibility cache of currently rendered results
@@ -336,6 +338,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => loadVideos(true));
     }
+    const refreshDocumentsBtn = document.getElementById('refreshDocumentsBtn');
+    if (refreshDocumentsBtn) {
+        refreshDocumentsBtn.addEventListener('click', () => loadDocuments(true));
+    }
+    const loadMoreDocumentsBtn = document.getElementById('loadMoreDocumentsBtn');
+    if (loadMoreDocumentsBtn) {
+        loadMoreDocumentsBtn.addEventListener('click', () => loadMoreDocuments());
+    }
 
     // If we already have a saved token, render optimistically from session state
     // to avoid login-page flicker, then validate in background.
@@ -412,6 +422,12 @@ function attachLoginListeners() {
 // Cached videos list — avoid redundant fetches
 let _videosLoaded = false;
 let _videosRequest = null;
+const DOCUMENT_PAGE_SIZE = 50;
+let _documentsLoaded = false;
+let _documentsRequest = null;
+let _documentsHasMore = false;
+let _documentsNextCursor = null;
+let _documentsTotalCount = null;
 
 function resetVideoCache({ stopPolling = false } = {}) {
     videos = [];
@@ -421,6 +437,15 @@ function resetVideoCache({ stopPolling = false } = {}) {
         clearInterval(_videoPollTimer);
         _videoPollTimer = null;
     }
+}
+
+function resetDocumentCache() {
+    documents = [];
+    _documentsLoaded = false;
+    _documentsRequest = null;
+    _documentsHasMore = false;
+    _documentsNextCursor = null;
+    _documentsTotalCount = null;
 }
 
 function updateVideoCountDisplay(count) {
@@ -468,6 +493,198 @@ async function getVideos({ force = false } = {}) {
         return await _videosRequest;
     } finally {
         _videosRequest = null;
+    }
+}
+
+function getDocumentDisplayName(doc) {
+    const rawName = (doc?.filename || '').trim();
+    if (!rawName) return 'Untitled document';
+    return rawName.replace(/\.[^/.]+$/, '');
+}
+
+function formatDocumentSize(sizeMb) {
+    const n = Number(sizeMb);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    if (n >= 1024) return `${(n / 1024).toFixed(1)} GB`;
+    if (n >= 10) return `${n.toFixed(0)} MB`;
+    return `${n.toFixed(1)} MB`;
+}
+
+function updateDocumentsFooter() {
+    const footer = document.getElementById('documentsFooter');
+    const btn = document.getElementById('loadMoreDocumentsBtn');
+    if (!footer || !btn) return;
+
+    if (_documentsHasMore) {
+        footer.style.display = 'flex';
+        btn.disabled = Boolean(_documentsRequest);
+        btn.textContent = _documentsRequest ? 'Loading...' : 'Load More';
+    } else {
+        footer.style.display = 'none';
+    }
+}
+
+function buildDocumentCard(doc) {
+    const card = document.createElement('div');
+    card.className = 'video-browser-card document-browser-card';
+
+    const displayName = getDocumentDisplayName(doc);
+    const fileType = (doc?.file_type || 'doc').toString().toUpperCase();
+    const pages = Number(doc?.total_pages);
+    const pageLabel = Number.isFinite(pages) && pages > 0
+        ? `${pages} page${pages === 1 ? '' : 's'}`
+        : null;
+    const sizeLabel = formatDocumentSize(doc?.file_size_mb);
+    const extraction = (doc?.extraction_method || '').toString().trim();
+    const metaParts = [pageLabel, sizeLabel, extraction].filter(Boolean);
+
+    const badges = [];
+    if (doc?.label) {
+        badges.push(`<span class="video-meta-badge video-meta-badge-site" title="Site label: ${escapeHtml(doc.label)}">Site: ${escapeHtml(doc.label)}</span>`);
+    }
+    if (doc?.category) {
+        badges.push(`<span class="video-meta-badge video-meta-badge-category" title="Category: ${escapeHtml(doc.category)}">Category: ${escapeHtml(doc.category)}</span>`);
+    }
+    const badgeRow = badges.length
+        ? `<div class="video-thumb-badges">${badges.join('')}</div>`
+        : '';
+
+    card.innerHTML = `
+        <div class="video-browser-thumb document-browser-thumb">
+            ${badgeRow}
+            <span class="document-type-badge">${escapeHtml(fileType)}</span>
+            <div class="document-thumb-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M14 2H7C5.9 2 5 2.9 5 4V20C5 21.1 5.9 22 7 22H17C18.1 22 19 21.1 19 20V7L14 2Z" stroke="rgba(255,255,255,0.7)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M14 2V7H19" stroke="rgba(255,255,255,0.7)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M9 13H15M9 17H13" stroke="rgba(255,255,255,0.65)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+        <div class="video-browser-info">
+            <p class="video-browser-name" title="${escapeHtml(doc.filename || '')}">${escapeHtml(displayName)}</p>
+            <div class="video-browser-meta">
+                ${metaParts.length ? `<span class="video-duration-badge">${escapeHtml(metaParts.join(' · '))}</span>` : '<span class="video-duration-badge" style="display:none;"></span>'}
+            </div>
+            <p class="video-browser-filehint" title="${escapeHtml(doc.filename || '')}">${escapeHtml(doc.filename || '')}</p>
+        </div>
+    `;
+
+    card.addEventListener('click', () => {
+        openDocumentResult({
+            source_type: 'document',
+            document_id: doc.id,
+            video_id: doc.id,
+            video_filename: doc.filename,
+            document_file_type: doc.file_type,
+            document_page: null,
+            document_location: 'Document',
+            text: '',
+        });
+    });
+
+    return card;
+}
+
+function renderDocumentsGrid(documentList) {
+    const grid = document.getElementById('documentsGrid');
+    const empty = document.getElementById('documentsEmpty');
+    const countEl = document.getElementById('documentTabCount');
+    if (!grid || !empty || !countEl) return;
+
+    grid.innerHTML = '';
+
+    const shownCount = documentList.length;
+    const total = Number.isFinite(_documentsTotalCount) ? _documentsTotalCount : shownCount;
+    if (total > shownCount) {
+        countEl.textContent = `${shownCount} of ${total} documents`;
+    } else {
+        countEl.textContent = `${shownCount} document${shownCount === 1 ? '' : 's'}`;
+    }
+
+    if (!shownCount) {
+        empty.style.display = 'block';
+        updateDocumentsFooter();
+        return;
+    }
+
+    empty.style.display = 'none';
+    documentList.forEach(doc => {
+        grid.appendChild(buildDocumentCard(doc));
+    });
+    updateDocumentsFooter();
+}
+
+async function fetchDocumentsPage({ cursor = null, limit = DOCUMENT_PAGE_SIZE, includeTotal = false } = {}) {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    if (cursor !== null && cursor !== undefined) params.set('cursor', String(cursor));
+    if (includeTotal) params.set('include_total', 'true');
+
+    const response = await authFetch(`${API_BASE_URL}/documents/page?${params.toString()}`);
+    if (response.status === 401) {
+        showLogin();
+        return { items: [], next_cursor: null, total_count: null };
+    }
+    if (!response.ok) {
+        throw new Error(`Failed to load documents: ${response.statusText}`);
+    }
+    return response.json();
+}
+
+async function loadDocuments(force = false) {
+    if (_documentsRequest) return _documentsRequest;
+    if (_documentsLoaded && !force) {
+        renderDocumentsGrid(documents);
+        return documents;
+    }
+
+    if (force) {
+        resetDocumentCache();
+    }
+    updateDocumentsFooter();
+
+    _documentsRequest = (async () => {
+        const data = await fetchDocumentsPage({ includeTotal: true });
+        documents = Array.isArray(data.items) ? data.items : [];
+        _documentsNextCursor = data.next_cursor ?? null;
+        _documentsHasMore = Boolean(_documentsNextCursor);
+        _documentsTotalCount = Number.isFinite(data.total_count) ? data.total_count : documents.length;
+        _documentsLoaded = true;
+        renderDocumentsGrid(documents);
+        return documents;
+    })();
+
+    try {
+        return await _documentsRequest;
+    } finally {
+        _documentsRequest = null;
+        updateDocumentsFooter();
+    }
+}
+
+async function loadMoreDocuments() {
+    if (_documentsRequest || !_documentsHasMore || !_documentsNextCursor) return;
+    updateDocumentsFooter();
+
+    _documentsRequest = (async () => {
+        const data = await fetchDocumentsPage({
+            cursor: _documentsNextCursor,
+            includeTotal: false,
+        });
+        const pageItems = Array.isArray(data.items) ? data.items : [];
+        documents = documents.concat(pageItems);
+        _documentsNextCursor = data.next_cursor ?? null;
+        _documentsHasMore = Boolean(_documentsNextCursor);
+        renderDocumentsGrid(documents);
+        return documents;
+    })();
+
+    try {
+        return await _documentsRequest;
+    } finally {
+        _documentsRequest = null;
+        updateDocumentsFooter();
     }
 }
 
@@ -600,6 +817,7 @@ async function loadVideos(force = false) {
 function attachMainNavListeners() {
     const mainContent = document.querySelector('.main-content');
     const videosTab = document.getElementById('videosTab');
+    const documentsTab = document.getElementById('documentsTab');
     const adminTab = document.getElementById('adminTab');
     const tabs = document.querySelectorAll('.main-nav-tab');
 
@@ -613,6 +831,7 @@ function attachMainNavListeners() {
 
         mainContent.style.display = 'none';
         videosTab.style.display = 'none';
+        documentsTab.style.display = 'none';
         adminTab.style.display = 'none';
 
         if (targetTab.dataset.tab === 'videos') {
@@ -622,6 +841,13 @@ function attachMainNavListeners() {
                 loadVideos();
             } else {
                 renderVideosGrid(videos);
+            }
+        } else if (targetTab.dataset.tab === 'documents') {
+            documentsTab.style.display = 'block';
+            if (!_documentsLoaded) {
+                loadDocuments();
+            } else {
+                renderDocumentsGrid(documents);
             }
         } else if (targetTab.dataset.tab === 'admin') {
             adminTab.style.display = 'block';
@@ -2599,6 +2825,7 @@ function updateAdminSubTabCount(target, count) {
     const countEls = {
         users: document.getElementById('adminUsersTabCount'),
         'video-labels': document.getElementById('adminVideoLabelsTabCount'),
+        'document-labels': document.getElementById('adminDocumentLabelsTabCount'),
         'ground-truth': document.getElementById('adminGroundTruthTabCount'),
     };
 
@@ -2609,10 +2836,11 @@ function updateAdminSubTabCount(target, count) {
 async function loadAdminPanel() {
     // Keep controls tab usable even if one endpoint fails.
     try {
-        const [catRes, usersRes, videosRes, gtRes] = await Promise.allSettled([
+        const [catRes, usersRes, videosRes, docsCountRes, gtRes] = await Promise.allSettled([
             authFetch(`${API_BASE_URL}/auth/categories`),
             authFetch(`${API_BASE_URL}/admin/users`),
             getVideos(),
+            authFetch(`${API_BASE_URL}/documents/page?limit=1&include_total=true`),
             authFetch(`${API_BASE_URL}/admin/ground-truths`),
         ]);
 
@@ -2645,6 +2873,15 @@ async function loadAdminPanel() {
         if (videosRes.status === 'fulfilled') {
             const adminVideos = videosRes.value;
             updateAdminSubTabCount('video-labels', adminVideos.length);
+        }
+
+        // Document count for Document Labels tab
+        if (docsCountRes.status === 'fulfilled' && docsCountRes.value.ok) {
+            const docsPage = await docsCountRes.value.json();
+            const totalDocs = Number.isFinite(docsPage?.total_count)
+                ? docsPage.total_count
+                : (Array.isArray(docsPage?.items) ? docsPage.items.length : 0);
+            updateAdminSubTabCount('document-labels', totalDocs);
         }
 
         // Ground truth count tab
@@ -2838,6 +3075,9 @@ function attachAdminSubNavListeners() {
             } else if (target === 'video-labels') {
                 document.getElementById('adminSectionVideoLabels').style.display = '';
                 loadVideoLabelsSection();
+            } else if (target === 'document-labels') {
+                document.getElementById('adminSectionDocumentLabels').style.display = '';
+                loadDocumentLabelsSection(true);
             } else if (target === 'upload') {
                 document.getElementById('adminSectionUpload').style.display = '';
                 loadUploadSection();
@@ -2857,6 +3097,11 @@ function attachAdminSubNavListeners() {
 // ============================================
 
 let videoCategories = []; // [{id, name}]
+const ADMIN_DOC_LABELS_PAGE_SIZE = 100;
+let adminDocumentRows = [];
+let adminDocNextCursor = null;
+let adminDocHasMore = false;
+let adminDocLoading = false;
 
 async function loadVideoLabelsSection() {
     try {
@@ -2964,6 +3209,175 @@ function attachVideoLabelListeners() {
             }
         });
     }
+}
+
+// ============================================
+// DOCUMENT LABELS & CATEGORIES ADMIN
+// ============================================
+
+function resetDocumentLabelsState() {
+    adminDocumentRows = [];
+    adminDocNextCursor = null;
+    adminDocHasMore = false;
+}
+
+function updateDocumentLabelsFooter() {
+    const footer = document.getElementById('docLabelsFooter');
+    const btn = document.getElementById('docLabelsLoadMoreBtn');
+    if (!footer || !btn) return;
+
+    if (adminDocHasMore) {
+        footer.style.display = 'flex';
+        btn.disabled = adminDocLoading;
+        btn.textContent = adminDocLoading ? 'Loading...' : 'Load More';
+    } else {
+        footer.style.display = 'none';
+    }
+}
+
+async function fetchDocumentLabelPage({ cursor = null, includeTotal = false } = {}) {
+    const params = new URLSearchParams();
+    params.set('limit', String(ADMIN_DOC_LABELS_PAGE_SIZE));
+    if (cursor !== null && cursor !== undefined) params.set('cursor', String(cursor));
+    if (includeTotal) params.set('include_total', 'true');
+
+    const resp = await authFetch(`${API_BASE_URL}/documents/page?${params.toString()}`);
+    if (resp.status === 401) {
+        showLogin();
+        return { items: [], next_cursor: null, total_count: 0 };
+    }
+    if (!resp.ok) {
+        throw new Error(`Failed to load documents: ${resp.statusText}`);
+    }
+    return resp.json();
+}
+
+function renderDocumentLabelsTable(rows, { append = false } = {}) {
+    const tbody = document.getElementById('documentLabelsTableBody');
+    if (!tbody) return;
+
+    if (!append) tbody.innerHTML = '';
+
+    if (!rows.length && !append) {
+        tbody.innerHTML = '<tr><td colspan="4"><em>No documents found.</em></td></tr>';
+        updateAdminSubTabCount('document-labels', 0);
+        updateDocumentLabelsFooter();
+        return;
+    }
+
+    rows.forEach(d => {
+        const tr = document.createElement('tr');
+        tr.dataset.docId = d.id;
+
+        let catOptions = '<option value="0">— None —</option>';
+        videoCategories.forEach(c => {
+            const sel = (Number(d.category_id) === Number(c.id)) ? 'selected' : '';
+            catOptions += `<option value="${c.id}" ${sel}>${escapeHtml(c.name)}</option>`;
+        });
+
+        tr.innerHTML = `
+            <td class="vl-filename" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</td>
+            <td><input type="text" class="vl-label-input doc-label-input" value="${escapeHtml(d.label || '')}" placeholder="Site Name e.g. Yggdrasil"></td>
+            <td><select class="vl-category-select doc-category-select">${catOptions}</select></td>
+            <td><button class="admin-save-btn small doc-save-btn">Save</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (append) {
+        updateAdminSubTabCount('document-labels', adminDocumentRows.length);
+    } else {
+        updateAdminSubTabCount('document-labels', rows.length);
+    }
+
+    attachDocumentLabelRowListeners();
+    updateDocumentLabelsFooter();
+}
+
+function attachDocumentLabelRowListeners() {
+    document.querySelectorAll('.doc-save-btn').forEach(btn => {
+        btn.replaceWith(btn.cloneNode(true));
+    });
+
+    document.querySelectorAll('.doc-save-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const tr = btn.closest('tr');
+            const docId = tr?.dataset?.docId;
+            if (!docId) return;
+
+            const label = tr.querySelector('.doc-label-input').value.trim();
+            const categoryId = parseInt(tr.querySelector('.doc-category-select').value, 10);
+
+            const resp = await authFetch(`${API_BASE_URL}/documents/${docId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ label: label || null, category_id: categoryId }),
+            });
+            if (resp.ok) {
+                resetDocumentCache();
+                showNotification('Document updated', 'info');
+                btn.textContent = 'Saved!';
+                setTimeout(() => { btn.textContent = 'Save'; }, 1500);
+            } else {
+                let err = { detail: 'Save failed' };
+                try { err = await resp.json(); } catch (_) { /* no-op */ }
+                showNotification(err.detail || 'Save failed', 'error');
+            }
+        });
+    });
+}
+
+async function loadDocumentLabelsSection(reset = true) {
+    if (adminDocLoading) return;
+    adminDocLoading = true;
+    updateDocumentLabelsFooter();
+
+    try {
+        const catResp = await authFetch(`${API_BASE_URL}/admin/video-categories`);
+        if (catResp.ok) {
+            videoCategories = await catResp.json();
+        }
+
+        if (reset) resetDocumentLabelsState();
+
+        const page = await fetchDocumentLabelPage({
+            cursor: reset ? null : adminDocNextCursor,
+            includeTotal: reset,
+        });
+
+        const items = Array.isArray(page.items) ? page.items : [];
+        adminDocNextCursor = page.next_cursor ?? null;
+        adminDocHasMore = Boolean(adminDocNextCursor);
+
+        if (reset) {
+            adminDocumentRows = items;
+            renderDocumentLabelsTable(adminDocumentRows, { append: false });
+            if (Number.isFinite(page.total_count)) {
+                updateAdminSubTabCount('document-labels', page.total_count);
+            }
+        } else {
+            adminDocumentRows = adminDocumentRows.concat(items);
+            renderDocumentLabelsTable(items, { append: true });
+        }
+    } catch (error) {
+        console.error('Failed to load document labels section:', error);
+        const tbody = document.getElementById('documentLabelsTableBody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="4"><em>Failed to load documents.</em></td></tr>';
+        }
+    } finally {
+        adminDocLoading = false;
+        updateDocumentLabelsFooter();
+    }
+}
+
+function attachDocumentLabelsListeners() {
+    const loadMoreBtn = document.getElementById('docLabelsLoadMoreBtn');
+    if (!loadMoreBtn) return;
+
+    const nextBtn = loadMoreBtn.cloneNode(true);
+    loadMoreBtn.replaceWith(nextBtn);
+    nextBtn.addEventListener('click', () => loadDocumentLabelsSection(false));
 }
 
 // ============================================
@@ -3305,6 +3719,7 @@ function initAdminExtensions() {
     if (_adminExtensionsAttached) return;
     _adminExtensionsAttached = true;
     attachAdminSubNavListeners();
+    attachDocumentLabelsListeners();
     attachUploadListeners();
     attachGroundTruthListeners();
     attachPipelineListeners();

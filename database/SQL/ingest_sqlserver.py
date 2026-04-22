@@ -15,7 +15,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -31,7 +33,7 @@ from embeddings.vision_embeddings import get_vision_embedding_generator
 
 DEFAULT_TEXT_MODEL = os.getenv(
     "TEXT_EMBEDDING_MODEL",
-    os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
+    os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B"),
 )
 DEFAULT_VISION_MODEL = os.getenv(
     "VISION_EMBEDDING_MODEL", "google/siglip-base-patch16-224"
@@ -54,6 +56,7 @@ class SqlServerIngester:
         visual_batch_size: int = 16,
         enable_text_embeddings: bool = True,
         enable_visual_embeddings: bool = True,
+        filter_corrupted_transcripts: bool = True,
         text_model_name: str = DEFAULT_TEXT_MODEL,
         vision_model_name: str = DEFAULT_VISION_MODEL,
         text_device: str = DEFAULT_TEXT_DEVICE,
@@ -63,6 +66,7 @@ class SqlServerIngester:
         self.visual_batch_size = visual_batch_size
         self.enable_text_embeddings = enable_text_embeddings
         self.enable_visual_embeddings = enable_visual_embeddings
+        self.filter_corrupted_transcripts = filter_corrupted_transcripts
         self.text_model_name = text_model_name
         self.vision_model_name = vision_model_name
         self.text_device = text_device
@@ -139,6 +143,39 @@ class SqlServerIngester:
         if lowered in {"none", "null", "n/a", "na", "no text", "no visible text"}:
             return None
         return txt
+
+    @staticmethod
+    def _detect_corrupted_text(text: str) -> tuple[bool, str | None]:
+        """
+        Conservative corruption detector focused on clear mojibake/garbling.
+        Returns (is_corrupted, reason).
+        """
+        t = (text or "").strip()
+        if not t:
+            return False, None
+
+        if "\ufffd" in t:
+            return True, "replacement_character"
+
+        mojibake_markers = "Ãâàð"
+        marker_hits = sum(t.count(ch) for ch in mojibake_markers)
+        if len(t) >= 24 and marker_hits >= 4 and (marker_hits / len(t)) >= 0.08:
+            return True, "mojibake_marker_density"
+
+        repeated_mojibake = re.search(r"(?:Ã.|â.|à.){4,}", t)
+        if repeated_mojibake:
+            return True, "repeated_mojibake_pattern"
+
+        # Ignore whitespace for control-character ratio.
+        non_ws = [ch for ch in t if not ch.isspace()]
+        if non_ws:
+            control_count = sum(
+                1 for ch in non_ws if unicodedata.category(ch).startswith("C")
+            )
+            if (control_count / len(non_ws)) > 0.05:
+                return True, "control_char_density"
+
+        return False, None
 
     @staticmethod
     def _normalize_object_labels(value: Any) -> list[str]:
@@ -469,6 +506,8 @@ class SqlServerIngester:
                 )
 
             segment_rows: list[tuple[int, str]] = []
+            dropped_corrupted_segments = 0
+            corrupted_samples: list[tuple[int, str, str]] = []
             for idx, seg in enumerate(segments_raw):
                 seg_start = float(seg.get("start", 0.0))
                 seg_end = float(seg.get("end", seg_start))
@@ -495,7 +534,14 @@ class SqlServerIngester:
                         "language": language,
                     },
                 ).scalar_one()
-                segment_rows.append((int(segment_id), seg_text))
+                is_corrupted, reason = self._detect_corrupted_text(seg_text)
+                if self.filter_corrupted_transcripts and is_corrupted:
+                    dropped_corrupted_segments += 1
+                    if len(corrupted_samples) < 5:
+                        preview = seg_text[:120].replace("\n", " ")
+                        corrupted_samples.append((idx, reason or "unknown", preview))
+                else:
+                    segment_rows.append((int(segment_id), seg_text))
 
             text_embedding_count = 0
             if self.enable_text_embeddings and segment_rows:
@@ -537,6 +583,17 @@ class SqlServerIngester:
                         )
                         text_embedding_count += 1
 
+            if dropped_corrupted_segments:
+                print(
+                    "[WARN] Skipped embedding generation for "
+                    f"{dropped_corrupted_segments} corrupted transcript segment(s)."
+                )
+                for seg_idx, reason, preview in corrupted_samples:
+                    print(
+                        f"  [WARN] segment_index={seg_idx}, reason={reason}, "
+                        f"preview={preview!r}"
+                    )
+
             visual_embedding_count = 0
             if self.enable_visual_embeddings and scenes_inserted:
                 scene_with_frame: list[tuple[int, str, float | None]] = []
@@ -570,6 +627,7 @@ class SqlServerIngester:
             "video_id": int(video_id),
             "scenes": len(scenes_raw),
             "segments": len(segment_rows),
+            "dropped_corrupted_segments": dropped_corrupted_segments,
             "text_embeddings": text_embedding_count,
             "visual_embeddings": visual_embedding_count,
         }
@@ -749,6 +807,11 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     p.add_argument("--limit-documents", type=int, default=None)
     p.add_argument("--no-text-embeddings", action="store_true")
     p.add_argument("--no-visual-embeddings", action="store_true")
+    p.add_argument(
+        "--allow-corrupted-transcripts",
+        action="store_true",
+        help="Disable corruption filtering and embed all transcript segments.",
+    )
     p.add_argument("--text-batch-size", type=int, default=32)
     p.add_argument("--visual-batch-size", type=int, default=16)
     p.add_argument("--text-model", type=str, default=DEFAULT_TEXT_MODEL)
@@ -767,6 +830,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         visual_batch_size=args.visual_batch_size,
         enable_text_embeddings=not args.no_text_embeddings,
         enable_visual_embeddings=not args.no_visual_embeddings,
+        filter_corrupted_transcripts=not args.allow_corrupted_transcripts,
         text_model_name=args.text_model,
         vision_model_name=args.vision_model,
     )

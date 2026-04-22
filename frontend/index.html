@@ -77,6 +77,14 @@
                 </svg>
                 Videos
             </button>
+            <button class="main-nav-tab" data-tab="documents">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M14 2H7C5.9 2 5 2.9 5 4V20C5 21.1 5.9 22 7 22H17C18.1 22 19 21.1 19 20V7L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M14 2V7H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M9 13H15M9 17H13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Documents
+            </button>
             <button class="main-nav-tab" data-tab="admin" id="adminNavTab" style="display:none;">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -227,6 +235,34 @@
             </div>
         </section>
 
+        <!-- Documents Tab Content -->
+        <section id="documentsTab" class="videos-tab documents-tab" style="display:none;">
+            <div class="videos-tab-header">
+                <h2>All Documents</h2>
+                <span class="videos-tab-count" id="documentTabCount">0 documents</span>
+                <button class="refresh-videos-btn" id="refreshDocumentsBtn" title="Refresh documents">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+            <div id="documentsGrid" class="documents-grid"></div>
+            <div class="documents-tab-footer" id="documentsFooter" style="display:none;">
+                <button class="load-more-docs-btn" id="loadMoreDocumentsBtn">Load More</button>
+            </div>
+            <div class="videos-empty" id="documentsEmpty" style="display:none;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M14 2H7C5.9 2 5 2.9 5 4V20C5 21.1 5.9 22 7 22H17C18.1 22 19 21.1 19 20V7L14 2Z" stroke="currentColor" stroke-width="2"/>
+                    <path d="M14 2V7H19" stroke="currentColor" stroke-width="2"/>
+                    <path d="M9 13H15M9 17H13" stroke="currentColor" stroke-width="2"/>
+                </svg>
+                <p>No documents found.</p>
+            </div>
+        </section>
+
         <!-- Admin Panel (visible to admins only) -->
         <section id="adminTab" class="admin-tab" style="display:none;">
 
@@ -234,6 +270,7 @@
             <div class="admin-sub-nav">
                 <button class="admin-sub-tab active" data-admin-tab="users">Users <span class="admin-sub-tab-count" id="adminUsersTabCount">(0)</span></button>
                 <button class="admin-sub-tab" data-admin-tab="video-labels">Video Labels <span class="admin-sub-tab-count" id="adminVideoLabelsTabCount">(0)</span></button>
+                <button class="admin-sub-tab" data-admin-tab="document-labels">Document Labels <span class="admin-sub-tab-count" id="adminDocumentLabelsTabCount">(0)</span></button>
                 <button class="admin-sub-tab" data-admin-tab="upload">Upload Video</button>
                 <button class="admin-sub-tab" data-admin-tab="ground-truth">Ground Truth <span class="admin-sub-tab-count" id="adminGroundTruthTabCount">(0)</span></button>
                 <button class="admin-sub-tab" data-admin-tab="pipeline">Pipeline Config</button>
@@ -307,6 +344,33 @@
                             <tr><td colspan="4"><em>Loading...</em></td></tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- ── Document Labels & Categories Section ──────────── -->
+            <div id="adminSectionDocumentLabels" class="admin-section" style="display:none;">
+                <div class="admin-tab-header">
+                    <h2>Document Labels &amp; Categories</h2>
+                </div>
+                <p class="admin-hint">Assign a site label and category to each document. This controls organization and access the same way as videos.</p>
+
+                <div class="video-labels-table-wrap" style="margin-top:1.2rem;">
+                    <table class="video-labels-table">
+                        <thead>
+                            <tr>
+                                <th>Document Filename</th>
+                                <th>Site Label</th>
+                                <th>Category</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="documentLabelsTableBody">
+                            <tr><td colspan="4"><em>Loading...</em></td></tr>
+                        </tbody>
+                    </table>
+                    <div class="documents-tab-footer" id="docLabelsFooter" style="display:none; margin-top:0.9rem;">
+                        <button class="load-more-docs-btn" id="docLabelsLoadMoreBtn">Load More</button>
+                    </div>
                 </div>
             </div>
 

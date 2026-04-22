@@ -1844,6 +1844,70 @@ select {
     font-size: 0.9rem;
 }
 
+.documents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1.25rem;
+}
+
+.documents-tab-footer {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.25rem;
+}
+
+.load-more-docs-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 140px;
+    padding: 0.55rem 1rem;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-light);
+    background: #f8fafc;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.load-more-docs-btn:hover {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
+}
+
+.load-more-docs-btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.document-browser-thumb {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%);
+}
+
+.document-thumb-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.document-type-badge {
+    position: absolute;
+    bottom: 0.6rem;
+    right: 0.6rem;
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #0f172a;
+    background: rgba(226, 232, 240, 0.95);
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    box-shadow: 0 2px 6px rgba(2, 6, 23, 0.2);
+}
+
 /* ========================================
    LOGIN OVERLAY
    ======================================== */
