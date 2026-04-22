@@ -119,6 +119,15 @@ $env:RERANKER_MODE = "hybrid"
 $env:RERANKER_BLEND = "0.70"
 ```
 
+`mssql_connection.py` now reads `MSSQL_*` settings only by default, so PostgreSQL
+`DB_*` values in `.env` will not override SQL Server settings.
+
+If you intentionally want MSSQL scripts to reuse `DB_*` vars, opt in:
+
+```powershell
+$env:MSSQL_ALLOW_DB_ENV_FALLBACK = "yes"
+```
+
 ## Slurm / No-ODBC Setup
 
 On Linux hosts without Microsoft ODBC drivers, the helper now defaults to `pytds`.
@@ -133,11 +142,16 @@ Run the smoke test or ingest with these env vars set:
 
 ```bash
 export MSSQL_CONNECTOR=pytds
-export MSSQL_SERVER="your-sql-host"
 export MSSQL_PORT=1433
 export MSSQL_DATABASE="VideoSemanticDB"
-export MSSQL_USER="your-user"
-export MSSQL_PASSWORD="your-password"
+export MSSQL_SERVER="<reachable-sql-host-or-ip>"
+export MSSQL_USER="<sql-login-username>"
+export MSSQL_PASSWORD="<sql-login-password>"
 python database/SQL/test_mssql.py
 python database/SQL/ingest_sqlserver.py
 ```
+
+`MSSQL_SERVER` must be a reachable hostname/IP (or `host\\instance`), not a SQL
+Server version value such as `17.0.1000`.
+
+If you must use a named instance, set `MSSQL_SERVER="host\\instance"` and leave `MSSQL_PORT` unset.

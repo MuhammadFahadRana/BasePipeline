@@ -3,7 +3,10 @@
 import re
 import hashlib
 import json
+import os
 import time
+import urllib.parse
+import urllib.request
 from typing import List, Dict, Optional, Tuple, Set
 from dataclasses import dataclass
 from difflib import SequenceMatcher, get_close_matches
@@ -432,6 +435,7 @@ class SearchResult:
     document_chunk_index: Optional[int] = None  # 0-indexed chunk order
     document_section_heading: Optional[str] = None
     document_file_type: Optional[str] = None
+    result_language: Optional[str] = None  # ISO-ish language code when known
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
@@ -474,6 +478,7 @@ class SearchResult:
             "document_section_heading": self.document_section_heading,
             "document_file_type": self.document_file_type,
             "document_location": document_location,
+            "language": self.result_language,
         }
         for extra_key in ("text_score", "vision_score", "combined_score"):
             val = getattr(self, extra_key, None)
@@ -537,6 +542,116 @@ class SemanticSearchEngine:
             "db_hits": 0,
             "avg_latency_ms": 0.0,
         }
+        self.query_translation_enabled = os.getenv(
+            "SEARCH_QUERY_TRANSLATION_ENABLED", "1"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self.query_translation_timeout = float(
+            os.getenv("SEARCH_QUERY_TRANSLATION_TIMEOUT", "1.5")
+        )
+        self.query_translation_targets = tuple(
+            code.strip().lower()
+            for code in os.getenv("SEARCH_QUERY_TRANSLATION_TARGETS", "en,no").split(",")
+            if code.strip()
+        )
+        self._query_translation_cache: Dict[Tuple[str, str, str], Optional[str]] = {}
+
+    @staticmethod
+    def _normalize_lang_code(lang: Optional[str]) -> Optional[str]:
+        if not lang:
+            return None
+        code = str(lang).strip().lower()
+        if not code:
+            return None
+        if code.startswith("no") or code in {"nb", "nn", "nor"}:
+            return "no"
+        if code.startswith("en"):
+            return "en"
+        return code
+
+    def _detect_query_language(self, query: str) -> str:
+        return "no" if self._is_norwegian_query(query) else "en"
+
+    def _translate_query(
+        self, query: str, source_lang: str, target_lang: str
+    ) -> Optional[str]:
+        source = self._normalize_lang_code(source_lang)
+        target = self._normalize_lang_code(target_lang)
+        if not query or not source or not target or source == target:
+            return None
+
+        cache_key = (query.strip().lower(), source, target)
+        if cache_key in self._query_translation_cache:
+            return self._query_translation_cache[cache_key]
+
+        translated: Optional[str] = None
+        try:
+            lang_pair = f"{source}|{target}"
+            url = (
+                "https://api.mymemory.translated.net/get?"
+                f"q={urllib.parse.quote(query[:500])}&langpair={lang_pair}"
+            )
+            with urllib.request.urlopen(url, timeout=self.query_translation_timeout) as resp:
+                payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            candidate = (
+                payload.get("responseData", {}).get("translatedText", "").strip()
+            )
+            if candidate and candidate.lower() != query.strip().lower():
+                translated = candidate
+        except Exception:
+            translated = None
+
+        self._query_translation_cache[cache_key] = translated
+        return translated
+
+    def _build_multilingual_query_variants(self, query: str) -> List[str]:
+        base = (query or "").strip()
+        if not base:
+            return []
+
+        variants: List[str] = [base]
+        seen = {base.lower()}
+        source_lang = self._detect_query_language(base)
+
+        if self.query_translation_enabled:
+            for target in self.query_translation_targets:
+                target = self._normalize_lang_code(target)
+                if not target or target == source_lang:
+                    continue
+                translated = self._translate_query(base, source_lang, target)
+                if not translated:
+                    continue
+                key = translated.lower()
+                if key not in seen:
+                    variants.append(translated)
+                    seen.add(key)
+
+        return variants
+
+    @staticmethod
+    def _collect_anchor_keywords(queries: List[str]) -> List[str]:
+        ordered: List[str] = []
+        seen = set()
+        for q in queries:
+            for kw in extract_keywords(q):
+                if kw not in seen:
+                    seen.add(kw)
+                    ordered.append(kw)
+        return ordered
+
+    def _fuzzy_text_search_multi(
+        self,
+        queries: List[str],
+        top_k: int = 20,
+        video_filter: Optional[str] = None,
+    ) -> Dict:
+        merged: Dict = {}
+        for q in queries:
+            partial = self._fuzzy_text_search(q, top_k=top_k, video_filter=video_filter)
+            for key, entry in partial.items():
+                existing = merged.get(key)
+                if existing is None or entry[0] > existing[0]:
+                    merged[key] = entry
+        return merged
 
     def _apply_reranking(
         self,
@@ -730,9 +845,19 @@ class SemanticSearchEngine:
             query, instruction=query_instruction
         )
 
-        # Extract keywords for fuzzy search (strip stop words)
-        keywords = extract_keywords(query)
-        fuzzy_query = " ".join(keywords) if keywords else query
+        query_variants = self._build_multilingual_query_variants(query)
+        fuzzy_queries: List[str] = []
+        for variant in query_variants:
+            variant_keywords = extract_keywords(variant)
+            if not variant_keywords:
+                continue
+            fuzzy_q = " ".join(variant_keywords)
+            if fuzzy_q not in fuzzy_queries:
+                fuzzy_queries.append(fuzzy_q)
+        if not fuzzy_queries:
+            fallback_keywords = extract_keywords(query)
+            fallback_query = " ".join(fallback_keywords) if fallback_keywords else query
+            fuzzy_queries = [fallback_query]
 
         # OPTIMIZATION #4: Parallel execution if enabled
         if self.parallel_enabled and self._executor:
@@ -743,8 +868,8 @@ class SemanticSearchEngine:
                 video_filter=video_filter,
             )
             fuzzy_future = self._executor.submit(
-                self._fuzzy_text_search,
-                fuzzy_query,
+                self._fuzzy_text_search_multi,
+                fuzzy_queries,
                 top_k=top_k * 3,
                 video_filter=video_filter,
             )
@@ -760,8 +885,8 @@ class SemanticSearchEngine:
             semantic_results = self._semantic_search(
                 query_embedding, top_k=top_k * 3, video_filter=video_filter
             )
-            fuzzy_results = self._fuzzy_text_search(
-                fuzzy_query, top_k=top_k * 3, video_filter=video_filter
+            fuzzy_results = self._fuzzy_text_search_multi(
+                fuzzy_queries, top_k=top_k * 3, video_filter=video_filter
             )
             doc_results = self._document_semantic_search(
                 query_embedding, top_k=top_k
@@ -774,6 +899,7 @@ class SemanticSearchEngine:
             fuzzy_results,
             semantic_weight=semantic_weight,
             text_weight=text_weight,
+            anchor_queries=query_variants,
         )
 
         # Merge document results into combined results
@@ -797,16 +923,26 @@ class SemanticSearchEngine:
         # ── Keyword anchoring guardrail (prevents semantic overreach) ──
         # Apply AFTER reranking so the reranker cannot re-introduce unanchored hits.
         # Uses Norwegian stem matching so "brønnstrømmer" anchors on "brønnstrømmen".
-        keywords = extract_keywords(query)
+        keywords = self._collect_anchor_keywords(query_variants)
         if keywords and not _is_analytics_intent(query):
             short_query = (len(keywords) <= 2) or (len(query.strip()) <= 14)
+            query_lang = self._detect_query_language(query)
             anchored = []
             unanchored = []
             for r in combined_results:
-                has_anchor = any(
-                    _whole_word_in_text(k, r.text) or stem_matches_in_text(k, r.text)
-                    for k in keywords
+                result_lang = self._normalize_lang_code(
+                    getattr(r, "result_language", None)
                 )
+                is_cross_language = bool(
+                    result_lang and query_lang and result_lang != query_lang
+                )
+                if is_cross_language:
+                    has_anchor = True
+                else:
+                    has_anchor = any(
+                        _whole_word_in_text(k, r.text) or stem_matches_in_text(k, r.text)
+                        for k in keywords
+                    )
                 if has_anchor:
                     anchored.append(r)
                 else:
@@ -1123,6 +1259,7 @@ class SemanticSearchEngine:
                 COALESCE(ts.start_time, s.start_time) as start_time,
                 COALESCE(ts.end_time, s.end_time) as end_time,
                 ts.text as transcript_text,
+                ts.language as transcript_language,
                 s.caption as scene_caption,
                 s.object_labels as scene_object_labels,
                 s.ocr_text as scene_ocr_text,
@@ -1223,6 +1360,9 @@ class SemanticSearchEngine:
             # Store video filename and path in custom attributes
             segment.video_filename = filename
             segment.video_path = file_path
+            segment.language = self._normalize_lang_code(
+                getattr(row, "transcript_language", None)
+            )
 
             # Use segment_id if available, otherwise a unique key based on scene
             key = segment_id if segment_id else f"scene_{scene_val}_{video_id}"
@@ -1245,6 +1385,7 @@ class SemanticSearchEngine:
                     d.filename,
                     d.file_path,
                     d.file_type,
+                    d.language,
                     dc.chunk_index,
                     dc.page_number,
                     dc.section_heading,
@@ -1291,6 +1432,7 @@ class SemanticSearchEngine:
                 document_chunk_index=row.chunk_index,
                 document_section_heading=row.section_heading,
                 document_file_type=row.file_type,
+                result_language=self._normalize_lang_code(row.language),
             )
             results.append(sr)
 
@@ -1360,6 +1502,7 @@ class SemanticSearchEngine:
                     ts_rank(to_tsvector({ts_cfg}, ts.text), websearch_to_tsquery({ts_cfg}, :query)) AS rank,
                     NULL AS ocr_text,
                     ve.keyframe_path,
+                    ts.language AS result_language,
                     'transcript' AS match_source
                 FROM transcript_segments ts
                 JOIN videos v ON ts.video_id = v.id
@@ -1397,6 +1540,7 @@ class SemanticSearchEngine:
                                         ) * (0.8 + 0.2 * COALESCE(s.ocr_confidence, 0.6)) AS rank,
                     s.ocr_text,
                     COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
+                    NULL::text AS result_language,
                     'ocr' AS match_source
                 FROM scenes s
                 JOIN videos v ON s.video_id = v.id
@@ -1462,6 +1606,7 @@ class SemanticSearchEngine:
                     ) * 6.0 AS rank,
                     NULL AS ocr_text,
                     COALESCE(ve.keyframe_path, s.keyframe_path) AS keyframe_path,
+                    NULL::text AS result_language,
                     'visual' AS match_source
                 FROM scenes s
                 JOIN videos v ON s.video_id = v.id
@@ -1530,6 +1675,7 @@ class SemanticSearchEngine:
             result_text = row.result_text
             rank = row.rank
             keyframe_path = row.keyframe_path
+            result_language = row.result_language
             match_source = row.match_source
 
             segment = TranscriptSegment(
@@ -1541,6 +1687,7 @@ class SemanticSearchEngine:
             )
             segment.video_filename = filename
             segment.video_path = file_path
+            segment.language = self._normalize_lang_code(result_language)
 
             # Use a unique key to avoid collisions between transcript, OCR, and visual results
             if match_source == "ocr":
@@ -1616,6 +1763,7 @@ class SemanticSearchEngine:
         fuzzy_results: Dict,
         semantic_weight: float = 0.7,
         text_weight: float = 0.3,
+        anchor_queries: Optional[List[str]] = None,
     ) -> List[SearchResult]:
         """Combine semantic and fuzzy search results with weighted scoring."""
         # Get all unique segment IDs
@@ -1627,9 +1775,12 @@ class SemanticSearchEngine:
             fuzzy_entry = fuzzy_results.get(key, (0, None, None))
             max_fuzzy = max(max_fuzzy, fuzzy_entry[0])
 
-        # Pre-compute query keywords and regex patterns for exact boosting (O(1) outside the loop)
-        clean_query = " ".join(extract_keywords(query)) if extract_keywords(query) else query
-        query_keywords = extract_keywords(clean_query)
+        # Pre-compute query keywords and regex patterns for exact boosting.
+        # Include translated variants so lexical boosts work cross-language too.
+        anchor_inputs = list(anchor_queries or [])
+        if query not in anchor_inputs:
+            anchor_inputs.append(query)
+        query_keywords = self._collect_anchor_keywords(anchor_inputs)
         
         precompiled_regexes = {}
         for kw in query_keywords:
@@ -1727,6 +1878,9 @@ class SemanticSearchEngine:
                 match_type=match_type,
                 keyframe_path=keyframe_path or "",
                 result_id=key,  # Pass the unique key as result_id
+                result_language=self._normalize_lang_code(
+                    getattr(segment, "language", None)
+                ),
             )
             result.text_score = text_component
             result.vision_score = visual_component
