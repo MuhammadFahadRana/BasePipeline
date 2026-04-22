@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Import exported embeddings JSONL into local SQL Server staging table.
+Import embeddings JSONL into local SQL Server.
 
 Default target:
-- SQL Server on 127.0.0.1,14333
-- Database: VideoSemanticDB
-- Login: slurm_ingest
-- Table: dbo.stg_embeddings_import
+- 127.0.0.1,14333
+- VideoSemanticDB
+- dbo.stg_embeddings_import
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterator, Dict, Any, List, Tuple
 
 import pyodbc
 
@@ -25,60 +24,60 @@ BEGIN
     CREATE TABLE dbo.stg_embeddings_import
     (
         import_id BIGINT IDENTITY(1,1) PRIMARY KEY,
-        source_hash CHAR(40) NOT NULL,
+        content_hash CHAR(40) NOT NULL,
         source_type NVARCHAR(32) NOT NULL,
         source_name NVARCHAR(512) NULL,
+        source_filename NVARCHAR(512) NULL,
         source_file NVARCHAR(1024) NOT NULL,
-        item_kind NVARCHAR(64) NULL,
-        item_path NVARCHAR(512) NULL,
-        item_index INT NULL,
-        logical_id NVARCHAR(256) NULL,
-        scene_id NVARCHAR(128) NULL,
-        segment_id NVARCHAR(128) NULL,
+        record_type NVARCHAR(64) NOT NULL,
+        segment_id INT NULL,
+        scene_id INT NULL,
+        page_number INT NULL,
+        chunk_index INT NULL,
         start_time FLOAT NULL,
         end_time FLOAT NULL,
+        keyframe_path NVARCHAR(1024) NULL,
+        caption NVARCHAR(MAX) NULL,
+        ocr_text NVARCHAR(MAX) NULL,
         text_for_embedding NVARCHAR(MAX) NOT NULL,
-        model_name NVARCHAR(200) NOT NULL,
+        embedding_model NVARCHAR(200) NOT NULL,
         embedding_dim INT NOT NULL,
         embedding_json NVARCHAR(MAX) NOT NULL,
         created_at DATETIME2(7) NOT NULL,
         imported_at DATETIME2(7) NOT NULL CONSTRAINT DF_stg_embeddings_import_imported_at DEFAULT SYSUTCDATETIME()
     );
 
-    CREATE UNIQUE INDEX UX_stg_embeddings_import_source_hash
-        ON dbo.stg_embeddings_import(source_hash);
+    CREATE UNIQUE INDEX UX_stg_embeddings_import_content_hash
+    ON dbo.stg_embeddings_import(content_hash)
+    WITH (IGNORE_DUP_KEY = ON);
 END
 """
 
 INSERT_SQL = """
-IF NOT EXISTS (
-    SELECT 1
-    FROM dbo.stg_embeddings_import
-    WHERE source_hash = ?
+INSERT INTO dbo.stg_embeddings_import
+(
+    content_hash,
+    source_type,
+    source_name,
+    source_filename,
+    source_file,
+    record_type,
+    segment_id,
+    scene_id,
+    page_number,
+    chunk_index,
+    start_time,
+    end_time,
+    keyframe_path,
+    caption,
+    ocr_text,
+    text_for_embedding,
+    embedding_model,
+    embedding_dim,
+    embedding_json,
+    created_at
 )
-BEGIN
-    INSERT INTO dbo.stg_embeddings_import
-    (
-        source_hash,
-        source_type,
-        source_name,
-        source_file,
-        item_kind,
-        item_path,
-        item_index,
-        logical_id,
-        scene_id,
-        segment_id,
-        start_time,
-        end_time,
-        text_for_embedding,
-        model_name,
-        embedding_dim,
-        embedding_json,
-        created_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-END
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -91,16 +90,21 @@ def get_connection(server: str, database: str, username: str, password: str) -> 
         f"PWD={password};"
         "TrustServerCertificate=yes;"
     )
-    return pyodbc.connect(conn_str)
+    conn = pyodbc.connect(conn_str)
+    return conn
 
 
-def load_jsonl(path: Path):
+def read_jsonl(path: Path) -> Iterator[Dict[str, Any]]:
     with path.open("r", encoding="utf-8") as f:
-        for line_no, line in enumerate(f, start=1):
+        for line in f:
             line = line.strip()
-            if not line:
-                continue
-            yield line_no, json.loads(line)
+            if line:
+                yield json.loads(line)
+
+
+def chunked(items: List[Tuple], size: int) -> Iterator[List[Tuple]]:
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
 
 
 def main() -> None:
@@ -110,6 +114,7 @@ def main() -> None:
     parser.add_argument("--database", default="VideoSemanticDB")
     parser.add_argument("--username", default="slurm_ingest")
     parser.add_argument("--password", required=True)
+    parser.add_argument("--batch-size", type=int, default=200)
     args = parser.parse_args()
 
     jsonl_path = Path(args.jsonl).resolve()
@@ -119,55 +124,45 @@ def main() -> None:
     cur.execute(CREATE_TABLE_SQL)
     conn.commit()
 
-    inserted = 0
-    skipped = 0
+    rows: List[Tuple] = []
+    total = 0
 
-    for line_no, row in load_jsonl(jsonl_path):
-        try:
-            embedding_json = json.dumps(row["embedding"], ensure_ascii=False)
-
-            params = (
-                row["source_hash"],             # IF NOT EXISTS check
-                row["source_hash"],
+    for row in read_jsonl(jsonl_path):
+        rows.append(
+            (
+                row.get("content_hash"),
                 row.get("source_type"),
                 row.get("source_name"),
+                row.get("source_filename"),
                 row.get("source_file"),
-                row.get("item_kind"),
-                row.get("item_path"),
-                row.get("item_index"),
-                row.get("logical_id"),
-                row.get("scene_id"),
+                row.get("record_type"),
                 row.get("segment_id"),
+                row.get("scene_id"),
+                row.get("page_number"),
+                row.get("chunk_index"),
                 row.get("start_time"),
                 row.get("end_time"),
+                row.get("keyframe_path"),
+                row.get("caption"),
+                row.get("ocr_text"),
                 row.get("text_for_embedding"),
-                row.get("model_name"),
+                row.get("embedding_model"),
                 row.get("embedding_dim"),
-                embedding_json,
+                json.dumps(row.get("embedding", []), ensure_ascii=False),
                 row.get("created_at"),
             )
+        )
 
-            before = conn.total_changes if hasattr(conn, "total_changes") else None
-            cur.execute(INSERT_SQL, params)
-            conn.commit()
-
-            # pyodbc does not expose inserted/skipped cleanly here, so count optimistically
-            inserted += 1
-
-        except pyodbc.IntegrityError:
-            skipped += 1
-            conn.rollback()
-        except Exception as e:
-            conn.rollback()
-            print(f"[ERROR] line {line_no}: {e}")
+    cur.fast_executemany = True
+    for batch in chunked(rows, args.batch_size):
+        cur.executemany(INSERT_SQL, batch)
+        conn.commit()
+        total += len(batch)
 
     cur.close()
     conn.close()
 
-    print(f"[OK] import finished")
-    print(f"    file     : {jsonl_path}")
-    print(f"    inserted : ~{inserted}")
-    print(f"    skipped  : ~{skipped}")
+    print(f"[OK] Imported approximately {total} rows from {jsonl_path}")
 
 
 if __name__ == "__main__":

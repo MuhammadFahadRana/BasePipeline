@@ -18,6 +18,7 @@ The schema is idempotent (`IF NOT EXISTS` patterns), so it can be re-run safely.
 - `03_schema_training_sqlserver.sql`: `relevance_judgments` and `model_runs`.
 - `04_apply_optimizations_sqlserver.sql`: Composite indexes + stats refresh.
 - `05_run_all.sql`: SQLCMD include script to run all setup files in order.
+- `06_add_projection_tables_sqlserver.sql`: Dual-storage projection tables for low-dim vector search.
 - `mssql_connection.py`: SQLAlchemy connection helper.
 - `test_mssql.py`: Quick connectivity + table listing check.
 - `ingest_sqlserver.py`: Ingest `processed/` results into SQL Server tables.
@@ -25,6 +26,7 @@ The schema is idempotent (`IF NOT EXISTS` patterns), so it can be re-run safely.
 ## Important Notes on Embeddings
 
 - SQL Server `VECTOR` has a 1998-dimension cap. With the current 4096-dim Qwen text model, text/document/query embeddings fall back to `NVARCHAR(MAX)` JSON storage, while visual/image columns still use `VECTOR(768)`.
+- Dual storage is supported: canonical full embeddings remain in `dbo.embeddings` / `dbo.document_embeddings`, and optional low-dim projected vectors are stored in `dbo.embedding_projections` / `dbo.document_embedding_projections`.
 - If `VECTOR` is not available (common on many Express installs), embedding columns automatically fall back to `NVARCHAR(MAX)` JSON with `ISJSON` validation.
 - This keeps embedding dimensions from blocking database creation.
 - `ingest_sqlserver.py` now defaults to `TEXT_EMBEDDING_MODEL` / `EMBEDDING_MODEL` env vars, so model switching is centralized.
@@ -117,6 +119,8 @@ $env:TEXT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-8B"
 $env:RERANKER_MODEL = "Qwen/Qwen3-4B-Instruct"
 $env:RERANKER_MODE = "hybrid"
 $env:RERANKER_BLEND = "0.70"
+$env:MSSQL_TEXT_PROJECTION_DIM = "1024"
+$env:MSSQL_ENABLE_TEXT_PROJECTION = "yes"
 ```
 
 `mssql_connection.py` now reads `MSSQL_*` settings only by default, so PostgreSQL
@@ -126,6 +130,12 @@ If you intentionally want MSSQL scripts to reuse `DB_*` vars, opt in:
 
 ```powershell
 $env:MSSQL_ALLOW_DB_ENV_FALLBACK = "yes"
+```
+
+For existing databases, apply projection tables without rebuilding:
+
+```powershell
+sqlcmd -S "LAPTOP-GMO7MPTH\SQLEXPRESS" -E -N o -i "database\SQL\06_add_projection_tables_sqlserver.sql" -b
 ```
 
 ## Slurm / No-ODBC Setup

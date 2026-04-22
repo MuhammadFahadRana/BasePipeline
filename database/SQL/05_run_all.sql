@@ -3,3 +3,4 @@
 :r .\database\SQL\02_document_schema_sqlserver.sql
 :r .\database\SQL\03_schema_training_sqlserver.sql
 :r .\database\SQL\04_apply_optimizations_sqlserver.sql
+:r .\database\SQL\06_add_projection_tables_sqlserver.sql

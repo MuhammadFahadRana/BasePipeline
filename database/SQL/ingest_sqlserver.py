@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -40,6 +41,11 @@ DEFAULT_VISION_MODEL = os.getenv(
 )
 DEFAULT_TEXT_DEVICE = os.getenv("TEXT_EMBEDDING_DEVICE", "auto")
 DEFAULT_VISION_DEVICE = os.getenv("VISION_EMBEDDING_DEVICE", "auto")
+DEFAULT_TEXT_PROJECTION_DIM = int(os.getenv("MSSQL_TEXT_PROJECTION_DIM", "1024"))
+DEFAULT_ENABLE_TEXT_PROJECTION = (
+    os.getenv("MSSQL_ENABLE_TEXT_PROJECTION", "yes").strip().lower()
+    in {"1", "true", "yes", "on", "y"}
+)
 
 
 @dataclass
@@ -56,6 +62,8 @@ class SqlServerIngester:
         visual_batch_size: int = 16,
         enable_text_embeddings: bool = True,
         enable_visual_embeddings: bool = True,
+        enable_text_projection: bool = DEFAULT_ENABLE_TEXT_PROJECTION,
+        text_projection_dim: int = DEFAULT_TEXT_PROJECTION_DIM,
         filter_corrupted_transcripts: bool = True,
         text_model_name: str = DEFAULT_TEXT_MODEL,
         vision_model_name: str = DEFAULT_VISION_MODEL,
@@ -66,6 +74,8 @@ class SqlServerIngester:
         self.visual_batch_size = visual_batch_size
         self.enable_text_embeddings = enable_text_embeddings
         self.enable_visual_embeddings = enable_visual_embeddings
+        self.enable_text_projection = enable_text_projection
+        self.text_projection_dim = text_projection_dim
         self.filter_corrupted_transcripts = filter_corrupted_transcripts
         self.text_model_name = text_model_name
         self.vision_model_name = vision_model_name
@@ -79,9 +89,38 @@ class SqlServerIngester:
         self.doc_embedding_col_info = self._get_vector_column_info(
             "document_embeddings", "embedding"
         )
+        self.text_projection_col_info = self._get_vector_column_info_optional(
+            "embedding_projections", "projection"
+        )
+        self.doc_text_projection_col_info = self._get_vector_column_info_optional(
+            "document_embedding_projections", "projection"
+        )
         self.visual_embedding_col_info = self._get_vector_column_info(
             "visual_embeddings", "embedding"
         )
+
+        if self.enable_text_projection and not (1 <= self.text_projection_dim <= 1998):
+            raise ValueError(
+                "text_projection_dim must be between 1 and 1998 for SQL Server VECTOR support."
+            )
+
+        self._video_projection_enabled = (
+            self.enable_text_projection and self.text_projection_col_info is not None
+        )
+        self._document_projection_enabled = (
+            self.enable_text_projection and self.doc_text_projection_col_info is not None
+        )
+
+        if self.enable_text_projection and not self._video_projection_enabled:
+            print(
+                "[WARN] dbo.embedding_projections.projection is missing; "
+                "video projection storage disabled (full embeddings still stored)."
+            )
+        if self.enable_text_projection and not self._document_projection_enabled:
+            print(
+                "[WARN] dbo.document_embedding_projections.projection is missing; "
+                "document projection storage disabled (full embeddings still stored)."
+            )
 
         if self.enable_text_embeddings:
             text_gen = self.text_gen
@@ -95,6 +134,16 @@ class SqlServerIngester:
                 col_info=self.doc_embedding_col_info,
                 label="dbo.document_embeddings.embedding",
             )
+            if self._video_projection_enabled:
+                self._assert_projection_dimension_compat(
+                    col_info=self.text_projection_col_info,
+                    label="dbo.embedding_projections.projection",
+                )
+            if self._document_projection_enabled:
+                self._assert_projection_dimension_compat(
+                    col_info=self.doc_text_projection_col_info,
+                    label="dbo.document_embedding_projections.projection",
+                )
 
         if self.enable_visual_embeddings:
             vision_gen = self.vision_gen
@@ -130,6 +179,18 @@ class SqlServerIngester:
             raise ValueError(
                 f"Dimension mismatch for {label}: model={model_dim}, column={col_info.dimensions}. "
                 "Update SQL schema VECTOR dimensions (or choose matching model) and recreate DB."
+            )
+
+    def _assert_projection_dimension_compat(
+        self, col_info: VectorColumnInfo | None, label: str
+    ) -> None:
+        if col_info is None or not col_info.is_vector:
+            return
+        if col_info.dimensions is not None and col_info.dimensions != self.text_projection_dim:
+            raise ValueError(
+                f"Projection dimension mismatch for {label}: "
+                f"configured={self.text_projection_dim}, column={col_info.dimensions}. "
+                "Set MSSQL_TEXT_PROJECTION_DIM to match schema or recreate projection tables."
             )
 
     @staticmethod
@@ -239,6 +300,46 @@ class SqlServerIngester:
             type_name=type_name,
         )
 
+    def _get_vector_column_info_optional(
+        self, table_name: str, column_name: str
+    ) -> VectorColumnInfo | None:
+        sql = text(
+            """
+            SELECT TOP (1)
+                type_name = t.name,
+                vector_dimensions = c.vector_dimensions
+            FROM sys.columns c
+            JOIN sys.types t ON c.user_type_id = t.user_type_id
+            WHERE c.object_id = OBJECT_ID(:object_name)
+              AND c.name = :column_name
+            """
+        )
+        with engine.connect() as conn:
+            row = conn.execute(
+                sql,
+                {"object_name": f"dbo.{table_name}", "column_name": column_name},
+            ).mappings().first()
+        if not row:
+            return None
+        type_name = str(row["type_name"]).lower()
+        dimensions = row.get("vector_dimensions")
+        return VectorColumnInfo(
+            is_vector=(type_name == "vector"),
+            dimensions=int(dimensions) if dimensions is not None else None,
+            type_name=type_name,
+        )
+
+    def _project_embedding(self, embedding: list[float]) -> list[float]:
+        dim = self.text_projection_dim
+        vector = list(embedding[:dim])
+        if len(vector) < dim:
+            vector.extend([0.0] * (dim - len(vector)))
+
+        norm = math.sqrt(sum(v * v for v in vector))
+        if norm > 0.0:
+            vector = [v / norm for v in vector]
+        return vector
+
     @staticmethod
     def _resolve_path(path_value: str | None) -> Path | None:
         if not path_value:
@@ -295,16 +396,17 @@ class SqlServerIngester:
         scene_id: int | None,
         embedding: list[float],
         model_name: str,
-    ) -> None:
+    ) -> int:
         emb_json = self._to_json_string(embedding)
         emb_expr = self._insert_embedding_value_sql(self.embedding_col_info, "embedding_json")
         sql = text(
             f"""
             INSERT INTO dbo.embeddings (segment_id, scene_id, embedding, embedding_model)
+            OUTPUT INSERTED.id
             VALUES (:segment_id, :scene_id, {emb_expr}, :embedding_model)
             """
         )
-        conn.execute(
+        return int(conn.execute(
             sql,
             {
                 "segment_id": segment_id,
@@ -312,25 +414,96 @@ class SqlServerIngester:
                 "embedding_json": emb_json,
                 "embedding_model": model_name,
             },
-        )
+        ).scalar_one())
 
     def _insert_document_embedding(
         self, conn, chunk_id: int, embedding: list[float], model_name: str
-    ) -> None:
+    ) -> int:
         emb_json = self._to_json_string(embedding)
         emb_expr = self._insert_embedding_value_sql(self.doc_embedding_col_info, "embedding_json")
         sql = text(
             f"""
             INSERT INTO dbo.document_embeddings (chunk_id, embedding, embedding_model)
+            OUTPUT INSERTED.id
             VALUES (:chunk_id, {emb_expr}, :embedding_model)
             """
         )
-        conn.execute(
+        return int(conn.execute(
             sql,
             {
                 "chunk_id": chunk_id,
                 "embedding_json": emb_json,
                 "embedding_model": model_name,
+            },
+        ).scalar_one())
+
+    def _insert_text_projection(
+        self,
+        conn,
+        embedding_id: int,
+        segment_id: int | None,
+        scene_id: int | None,
+        projected_embedding: list[float],
+        model_name: str,
+    ) -> None:
+        if not self._video_projection_enabled:
+            return
+        proj_json = self._to_json_string(projected_embedding)
+        proj_expr = self._insert_embedding_value_sql(
+            self.text_projection_col_info, "projection_json"
+        )
+        sql = text(
+            f"""
+            INSERT INTO dbo.embedding_projections
+                (embedding_id, segment_id, scene_id, projection, projection_dim, embedding_model, projection_method)
+            VALUES
+                (:embedding_id, :segment_id, :scene_id, {proj_expr}, :projection_dim, :embedding_model, :projection_method)
+            """
+        )
+        conn.execute(
+            sql,
+            {
+                "embedding_id": embedding_id,
+                "segment_id": segment_id,
+                "scene_id": scene_id,
+                "projection_json": proj_json,
+                "projection_dim": self.text_projection_dim,
+                "embedding_model": model_name,
+                "projection_method": "head_l2_norm",
+            },
+        )
+
+    def _insert_document_projection(
+        self,
+        conn,
+        document_embedding_id: int,
+        chunk_id: int,
+        projected_embedding: list[float],
+        model_name: str,
+    ) -> None:
+        if not self._document_projection_enabled:
+            return
+        proj_json = self._to_json_string(projected_embedding)
+        proj_expr = self._insert_embedding_value_sql(
+            self.doc_text_projection_col_info, "projection_json"
+        )
+        sql = text(
+            f"""
+            INSERT INTO dbo.document_embedding_projections
+                (document_embedding_id, chunk_id, projection, projection_dim, embedding_model, projection_method)
+            VALUES
+                (:document_embedding_id, :chunk_id, {proj_expr}, :projection_dim, :embedding_model, :projection_method)
+            """
+        )
+        conn.execute(
+            sql,
+            {
+                "document_embedding_id": document_embedding_id,
+                "chunk_id": chunk_id,
+                "projection_json": proj_json,
+                "projection_dim": self.text_projection_dim,
+                "embedding_model": model_name,
+                "projection_method": "head_l2_norm",
             },
         )
 
@@ -544,20 +717,32 @@ class SqlServerIngester:
                     segment_rows.append((int(segment_id), seg_text))
 
             text_embedding_count = 0
+            text_projection_count = 0
             if self.enable_text_embeddings and segment_rows:
                 texts = [row[1] for row in segment_rows]
                 vectors = self.text_gen.encode(
                     texts, batch_size=self.text_batch_size, show_progress=True
                 )
                 for (segment_id, _txt), vec in zip(segment_rows, vectors):
-                    self._insert_text_embedding(
+                    emb_list = vec.tolist()
+                    embedding_id = self._insert_text_embedding(
                         conn=conn,
                         segment_id=segment_id,
                         scene_id=None,
-                        embedding=vec.tolist(),
+                        embedding=emb_list,
                         model_name=self.text_gen.model_name,
                     )
                     text_embedding_count += 1
+                    if self._video_projection_enabled:
+                        self._insert_text_projection(
+                            conn=conn,
+                            embedding_id=embedding_id,
+                            segment_id=segment_id,
+                            scene_id=None,
+                            projected_embedding=self._project_embedding(emb_list),
+                            model_name=self.text_gen.model_name,
+                        )
+                        text_projection_count += 1
 
                 scene_texts: list[tuple[int, str]] = []
                 for s in scenes_inserted:
@@ -574,14 +759,25 @@ class SqlServerIngester:
                         show_progress=False,
                     )
                     for (db_scene_id, _txt), vec in zip(scene_texts, scene_vectors):
-                        self._insert_text_embedding(
+                        emb_list = vec.tolist()
+                        embedding_id = self._insert_text_embedding(
                             conn=conn,
                             segment_id=None,
                             scene_id=db_scene_id,
-                            embedding=vec.tolist(),
+                            embedding=emb_list,
                             model_name=self.text_gen.model_name,
                         )
                         text_embedding_count += 1
+                        if self._video_projection_enabled:
+                            self._insert_text_projection(
+                                conn=conn,
+                                embedding_id=embedding_id,
+                                segment_id=None,
+                                scene_id=db_scene_id,
+                                projected_embedding=self._project_embedding(emb_list),
+                                model_name=self.text_gen.model_name,
+                            )
+                            text_projection_count += 1
 
             if dropped_corrupted_segments:
                 print(
@@ -629,6 +825,7 @@ class SqlServerIngester:
             "segments": len(segment_rows),
             "dropped_corrupted_segments": dropped_corrupted_segments,
             "text_embeddings": text_embedding_count,
+            "text_projections": text_projection_count,
             "visual_embeddings": visual_embedding_count,
         }
 
@@ -721,6 +918,7 @@ class SqlServerIngester:
                 chunk_rows.append((int(chunk_id), embed_text))
 
             doc_embedding_count = 0
+            doc_projection_count = 0
             if self.enable_text_embeddings and chunk_rows:
                 vectors = self.text_gen.encode(
                     [x[1] for x in chunk_rows],
@@ -728,19 +926,30 @@ class SqlServerIngester:
                     show_progress=True,
                 )
                 for (chunk_id, _txt), vec in zip(chunk_rows, vectors):
-                    self._insert_document_embedding(
+                    emb_list = vec.tolist()
+                    document_embedding_id = self._insert_document_embedding(
                         conn=conn,
                         chunk_id=chunk_id,
-                        embedding=vec.tolist(),
+                        embedding=emb_list,
                         model_name=self.text_gen.model_name,
                     )
                     doc_embedding_count += 1
+                    if self._document_projection_enabled:
+                        self._insert_document_projection(
+                            conn=conn,
+                            document_embedding_id=document_embedding_id,
+                            chunk_id=chunk_id,
+                            projected_embedding=self._project_embedding(emb_list),
+                            model_name=self.text_gen.model_name,
+                        )
+                        doc_projection_count += 1
 
         return {
             "document": filename,
             "document_id": int(document_id),
             "chunks": len(chunk_rows),
             "document_embeddings": doc_embedding_count,
+            "document_projections": doc_projection_count,
         }
 
     def ingest_videos(self, base_dir: Path, limit: int | None = None) -> dict[str, Any]:
@@ -762,6 +971,7 @@ class SqlServerIngester:
                 print(
                     f"  [OK] video_id={out['video_id']}, scenes={out['scenes']}, "
                     f"segments={out['segments']}, text_emb={out['text_embeddings']}, "
+                    f"text_proj={out['text_projections']}, "
                     f"visual_emb={out['visual_embeddings']}"
                 )
             except Exception as exc:
@@ -788,7 +998,7 @@ class SqlServerIngester:
                 stats["ok"] += 1
                 print(
                     f"  [OK] document_id={out['document_id']}, chunks={out['chunks']}, "
-                    f"doc_emb={out['document_embeddings']}"
+                    f"doc_emb={out['document_embeddings']}, doc_proj={out['document_projections']}"
                 )
             except Exception as exc:
                 stats["failed"] += 1
@@ -807,6 +1017,17 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     p.add_argument("--limit-documents", type=int, default=None)
     p.add_argument("--no-text-embeddings", action="store_true")
     p.add_argument("--no-visual-embeddings", action="store_true")
+    p.add_argument(
+        "--no-text-projection",
+        action="store_true",
+        help="Disable low-dim projection storage for text/document embeddings.",
+    )
+    p.add_argument(
+        "--text-projection-dim",
+        type=int,
+        default=DEFAULT_TEXT_PROJECTION_DIM,
+        help="Projection dimension to store in projection tables (must match schema).",
+    )
     p.add_argument(
         "--allow-corrupted-transcripts",
         action="store_true",
@@ -830,6 +1051,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         visual_batch_size=args.visual_batch_size,
         enable_text_embeddings=not args.no_text_embeddings,
         enable_visual_embeddings=not args.no_visual_embeddings,
+        enable_text_projection=not args.no_text_projection,
+        text_projection_dim=args.text_projection_dim,
         filter_corrupted_transcripts=not args.allow_corrupted_transcripts,
         text_model_name=args.text_model,
         vision_model_name=args.vision_model,
