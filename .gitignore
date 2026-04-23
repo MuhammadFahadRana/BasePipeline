@@ -85,3 +85,5 @@ Extras/
 
 # PDF Files
 *.pdf
+# Large local import artifacts
+SQLImports/embeddings.jsonl
