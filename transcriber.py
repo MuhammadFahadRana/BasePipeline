@@ -54,7 +54,19 @@ class SimpleTranscriber:
         language: str | None = None,
         task: str = "transcribe",
     ):
-        if device == "auto":
+        requested_device = (device or "auto").lower()
+        if requested_device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif requested_device == "cuda" and not torch.cuda.is_available():
+            print(
+                "Warning: CUDA was requested but this PyTorch build has no CUDA support. "
+                "Falling back to CPU."
+            )
+            device = "cpu"
+        elif requested_device in {"cpu", "cuda"}:
+            device = requested_device
+        else:
+            print(f"Warning: Unknown device '{device}', falling back to auto.")
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
         print(f"Using device: {device}")
@@ -76,24 +88,37 @@ class SimpleTranscriber:
 
             # local LoRA adapter path
             lora_path = self._resolve_lora_path(os.getenv("ASR_LORA_PATH"))
+            base_model_id = f"openai/whisper-{self.model_size}"
+
+            if lora_path and os.path.exists(lora_path):
+                from peft import PeftConfig, PeftModel
+
+                peft_config = PeftConfig.from_pretrained(lora_path)
+                base_model_id = (
+                    peft_config.base_model_name_or_path or base_model_id
+                )
+
+                print(f"Base model from adapter config: {base_model_id}")
+                requested_variant = str(self.model_size).lower()
+                mismatch = bool(
+                    requested_variant and requested_variant not in base_model_id.lower()
+                )
+                allow_mismatch = (
+                    os.getenv("ASR_ALLOW_MISMATCH_LORA", "0").strip().lower()
+                    in {"1", "true", "yes"}
+                )
+                if mismatch and not allow_mismatch:
+                    print(
+                        "Warning: Adapter base model does not match requested variant "
+                        f"('{self.model_size}' vs '{base_model_id}'). "
+                        "Ignoring LoRA adapter and using base Whisper model."
+                    )
+                    lora_path = None
 
             if lora_path and os.path.exists(lora_path):
                 print(f"Loading Hugging Face Whisper + LoRA from: {lora_path}")
 
-                from peft import PeftConfig, PeftModel
-
-                peft_config = PeftConfig.from_pretrained(lora_path)
-                base_model_id = peft_config.base_model_name_or_path or f"openai/whisper-{self.model_size}"
-
-                print(f"Base model from adapter config: {base_model_id}")
-                requested_variant = str(self.model_size).lower()
-                if requested_variant and requested_variant not in base_model_id.lower():
-                    print(
-                        "Warning: Adapter base model does not match requested variant "
-                        f"('{self.model_size}' vs '{base_model_id}'). "
-                        "This can reduce quality."
-                    )
-
+                from peft import PeftModel
                 self.processor = AutoProcessor.from_pretrained(base_model_id)
 
                 base_model = AutoModelForSpeechSeq2Seq.from_pretrained(

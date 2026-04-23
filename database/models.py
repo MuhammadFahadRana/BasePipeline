@@ -145,8 +145,8 @@ class Embedding(Base):
     scene_id = Column(
         Integer, ForeignKey("scenes.id", ondelete="CASCADE"), nullable=True
     )
-    embedding = Column(Vector(4096))
-    embedding_model = Column(String(100), default="BAAI/bge-m3")
+    embedding = Column(Vector(1024))
+    embedding_model = Column(String(100), default="Qwen/Qwen3-Embedding-0.6B")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -222,7 +222,7 @@ class SearchQuery(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     query_text = Column(Text, nullable=False)
-    query_embedding = Column(Vector(4096))
+    query_embedding = Column(Vector(1024))
     search_type = Column(String(20), default="text")  # text, visual, image, hybrid
     results_count = Column(Integer)
     top_result_id = Column(

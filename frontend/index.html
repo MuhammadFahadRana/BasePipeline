@@ -8,10 +8,9 @@
     <meta name="description" content="Search Videos">
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="chat_styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 
 <body>
@@ -216,13 +215,8 @@
             <div class="videos-tab-header">
                 <h2>All Videos</h2>
                 <span class="videos-tab-count" id="videoTabCount">0 videos</span>
-                <button class="refresh-videos-btn" id="refreshVideosBtn" title="Refresh videos">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="23 4 23 10 17 10"/>
-                        <polyline points="1 20 1 14 7 14"/>
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                    </svg>
-                    Refresh
+                <button class="refresh-videos-btn" id="syncVideosBtn" title="Sync videos from disk to database">
+                    Sync Videos
                 </button>
             </div>
             <div id="videosGrid"></div>
@@ -240,16 +234,11 @@
             <div class="videos-tab-header">
                 <h2>All Documents</h2>
                 <span class="videos-tab-count" id="documentTabCount">0 documents</span>
-                <button class="refresh-videos-btn" id="refreshDocumentsBtn" title="Refresh documents">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="23 4 23 10 17 10"/>
-                        <polyline points="1 20 1 14 7 14"/>
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                    </svg>
-                    Refresh
+                <button class="refresh-videos-btn" id="syncDocumentsBtn" title="Sync documents from disk to database">
+                    Sync Documents
                 </button>
             </div>
-            <div id="documentsGrid" class="documents-grid"></div>
+            <div id="documentsGrid"></div>
             <div class="documents-tab-footer" id="documentsFooter" style="display:none;">
                 <button class="load-more-docs-btn" id="loadMoreDocumentsBtn">Load More</button>
             </div>
@@ -447,9 +436,7 @@
                     </label>
                     <label>Device
                         <select id="pipelineDevice">
-                            <option value="auto">Auto</option>
-                            <option value="cuda">CUDA (GPU)</option>
-                            <option value="cpu">CPU</option>
+                            <option value="auto">Auto (GPU if available, else CPU)</option>
                         </select>
                     </label>
                     <button class="admin-save-btn" id="runPipelineBtn">Run Pipeline</button>

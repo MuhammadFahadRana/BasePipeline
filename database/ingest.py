@@ -835,8 +835,10 @@ class DataIngester:
                     missing_enrichment_count = self._count_scenes_missing_enrichment(
                         existing_video.id
                     )
-                    missing_scene_emb_count = self._count_scenes_missing_text_embeddings(
-                        existing_video.id
+                    missing_scene_emb_count = (
+                        self._count_scenes_missing_text_embeddings(existing_video.id)
+                        if generate_embeddings
+                        else 0
                     )
 
                     need_text = missing_text_emb_count > 0
@@ -1018,9 +1020,11 @@ class DataIngester:
             visual_count = self.ingest_visual_embeddings(scene_db_objects)
 
         # Scene text embeddings (caption + object labels + OCR).
-        scene_text_embs_added = self._ensure_scene_text_embeddings(video.id)
-        if scene_text_embs_added:
-            print(f"[OK] {scene_text_embs_added} scene text embeddings generated")
+        scene_text_embs_added = 0
+        if generate_embeddings:
+            scene_text_embs_added = self._ensure_scene_text_embeddings(video.id)
+            if scene_text_embs_added:
+                print(f"[OK] {scene_text_embs_added} scene text embeddings generated")
 
         # Commit all changes
         self.db.commit()
@@ -1107,7 +1111,7 @@ class DataIngester:
                 result["text_embeddings_added"] = len(segments_without_emb)
                 print(f"  [OK] {len(segments_without_emb)} text embeddings generated")
 
-        if need_scene_text_embeddings or result["scenes_enriched"] > 0:
+        if need_scene_text_embeddings:
             scene_text_added = self._ensure_scene_text_embeddings(video.id)
             if scene_text_added:
                 result["scene_text_embeddings_added"] = scene_text_added

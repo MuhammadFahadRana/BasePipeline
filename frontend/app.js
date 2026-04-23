@@ -333,14 +333,51 @@ document.addEventListener('DOMContentLoaded', () => {
     attachTabListeners();
     attachMainNavListeners();
 
-    // Refresh button in the Videos tab
-    const refreshBtn = document.getElementById('refreshVideosBtn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => loadVideos(true));
+    const syncVideosBtn = document.getElementById('syncVideosBtn');
+    if (syncVideosBtn) {
+        syncVideosBtn.addEventListener('click', async () => {
+            try {
+                syncVideosBtn.disabled = true;
+                const resp = await authFetch(`${API_BASE_URL}/admin/sync-videos`, {
+                    method: 'POST',
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ detail: 'Sync failed' }));
+                    throw new Error(err.detail || 'Sync failed');
+                }
+                const data = await resp.json();
+                await loadVideos(true);
+                await refreshVideoCount();
+                await refreshPipelineVideoOptions({ force: true });
+                showNotification(`Video sync complete (${data.synced_new_rows} new).`, 'info');
+            } catch (e) {
+                showNotification(e.message || 'Video sync failed', 'error');
+            } finally {
+                syncVideosBtn.disabled = false;
+            }
+        });
     }
-    const refreshDocumentsBtn = document.getElementById('refreshDocumentsBtn');
-    if (refreshDocumentsBtn) {
-        refreshDocumentsBtn.addEventListener('click', () => loadDocuments(true));
+    const syncDocumentsBtn = document.getElementById('syncDocumentsBtn');
+    if (syncDocumentsBtn) {
+        syncDocumentsBtn.addEventListener('click', async () => {
+            try {
+                syncDocumentsBtn.disabled = true;
+                const resp = await authFetch(`${API_BASE_URL}/admin/sync-documents`, {
+                    method: 'POST',
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ detail: 'Sync failed' }));
+                    throw new Error(err.detail || 'Sync failed');
+                }
+                const data = await resp.json();
+                await loadDocuments(true);
+                showNotification(`Document sync complete (${data.synced_new_rows} new).`, 'info');
+            } catch (e) {
+                showNotification(e.message || 'Document sync failed', 'error');
+            } finally {
+                syncDocumentsBtn.disabled = false;
+            }
+        });
     }
     const loadMoreDocumentsBtn = document.getElementById('loadMoreDocumentsBtn');
     if (loadMoreDocumentsBtn) {
@@ -502,6 +539,11 @@ function getDocumentDisplayName(doc) {
     return rawName.replace(/\.[^/.]+$/, '');
 }
 
+function getDocumentCategory(doc) {
+    const categoryName = (doc?.category || '').trim();
+    return categoryName || 'Other';
+}
+
 function formatDocumentSize(sizeMb) {
     const n = Number(sizeMb);
     if (!Number.isFinite(n) || n <= 0) return null;
@@ -609,8 +651,53 @@ function renderDocumentsGrid(documentList) {
     }
 
     empty.style.display = 'none';
+
+    const groups = {};
     documentList.forEach(doc => {
-        grid.appendChild(buildDocumentCard(doc));
+        const category = getDocumentCategory(doc);
+        if (!groups[category]) groups[category] = [];
+        groups[category].push(doc);
+    });
+
+    const categoryOrder = Object.keys(groups).sort((a, b) => {
+        if (a === 'Other') return 1;
+        if (b === 'Other') return -1;
+        return a.localeCompare(b);
+    });
+
+    categoryOrder.forEach(category => {
+        const section = document.createElement('div');
+        section.className = 'video-category';
+
+        const header = document.createElement('button');
+        header.className = 'video-category-header';
+        header.innerHTML = `
+            <span class="video-category-title">${escapeHtml(category)}</span>
+            <span class="video-category-count">${groups[category].length}</span>
+            <svg class="video-category-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"/>
+            </svg>
+        `;
+
+        const body = document.createElement('div');
+        body.className = 'video-category-body';
+
+        const innerGrid = document.createElement('div');
+        innerGrid.className = 'videos-grid';
+
+        groups[category].forEach(doc => {
+            innerGrid.appendChild(buildDocumentCard(doc));
+        });
+
+        body.appendChild(innerGrid);
+        section.appendChild(header);
+        section.appendChild(body);
+
+        header.addEventListener('click', () => {
+            section.classList.toggle('collapsed');
+        });
+
+        grid.appendChild(section);
     });
     updateDocumentsFooter();
 }
@@ -704,6 +791,12 @@ async function initializeApp() {
     // The full grid is loaded lazily when the user clicks the Videos tab.
     await populateSearchCategoryFilter();
     await populateSearchSiteFilter();
+    const syncVideosBtn = document.getElementById('syncVideosBtn');
+    const syncDocumentsBtn = document.getElementById('syncDocumentsBtn');
+    if (currentUser?.role !== 'admin') {
+        if (syncVideosBtn) syncVideosBtn.style.display = 'none';
+        if (syncDocumentsBtn) syncDocumentsBtn.style.display = 'none';
+    }
     // Poll for new videos every 30 seconds to keep the count fresh
     if (_videoPollTimer) clearInterval(_videoPollTimer);
     _videoPollTimer = setInterval(pollVideoCount, 30000);
@@ -3511,7 +3604,9 @@ async function doVideoUpload() {
         successEl.style.display = '';
         uploadFile = null;
         resetVideoCache();
+        await loadVideos(true);
         await refreshVideoCount();
+        await refreshPipelineVideoOptions({ force: true, selectedFilename: result.filename });
         showNotification('Video uploaded successfully', 'info');
     } catch (err) {
         progressEl.style.display = 'none';
@@ -3606,6 +3701,110 @@ async function loadGroundTruths() {
 // ============================================
 
 let pipelineModels = null;
+let _pipelinePollTimer = null;
+let _pipelineCurrentJobId = null;
+let _pipelinePollInFlight = false;
+const PIPELINE_POLL_INTERVAL_MS = 3000;
+
+function stopPipelinePolling() {
+    if (_pipelinePollTimer) {
+        clearTimeout(_pipelinePollTimer);
+        _pipelinePollTimer = null;
+    }
+    _pipelinePollInFlight = false;
+}
+
+function setPipelineStatus(statusEl, state, text) {
+    statusEl.textContent = text;
+    statusEl.className = `pipeline-status ${state}`;
+    statusEl.style.display = '';
+}
+
+async function pollPipelineJob(jobId, statusEl, btn) {
+    if (_pipelinePollInFlight) return;
+    _pipelinePollInFlight = true;
+    try {
+        const resp = await authFetch(`${API_BASE_URL}/admin/run-pipeline/${encodeURIComponent(jobId)}`);
+        if (!resp.ok) {
+            throw new Error(`Status check failed (${resp.status})`);
+        }
+        const job = await resp.json();
+        const pct = Number.isFinite(job.progress) ? job.progress : 0;
+        const msg = job.message || 'Running pipeline';
+        setPipelineStatus(statusEl, 'running', `${pct}% - ${msg}`);
+
+        if (job.status === 'completed') {
+            stopPipelinePolling();
+            _pipelineCurrentJobId = null;
+            btn.disabled = false;
+            const summary = job.result_summary || {};
+            setPipelineStatus(
+                statusEl,
+                'success',
+                `100% - Pipeline completed: ${summary.segments || 0} segments, ${summary.scenes || 0} scenes`
+            );
+            showNotification('Pipeline completed successfully', 'info');
+            await loadVideos(true);
+            await refreshVideoCount();
+            return;
+        }
+        if (job.status === 'failed') {
+            stopPipelinePolling();
+            _pipelineCurrentJobId = null;
+            btn.disabled = false;
+            setPipelineStatus(statusEl, 'error', `Pipeline failed: ${job.error || job.message || 'Unknown error'}`);
+            return;
+        }
+        // Keep polling while queued/running.
+        _pipelinePollTimer = setTimeout(() => {
+            if (_pipelineCurrentJobId) {
+                pollPipelineJob(_pipelineCurrentJobId, statusEl, btn);
+            }
+        }, PIPELINE_POLL_INTERVAL_MS);
+    } catch (e) {
+        stopPipelinePolling();
+        _pipelineCurrentJobId = null;
+        btn.disabled = false;
+        setPipelineStatus(statusEl, 'error', e.message || 'Failed to poll pipeline status');
+    } finally {
+        _pipelinePollInFlight = false;
+    }
+}
+
+async function refreshPipelineVideoOptions({ force = false, selectedFilename = null } = {}) {
+    const videoSel = document.getElementById('pipelineVideo');
+    if (!videoSel) return;
+
+    const currentSelection = selectedFilename || videoSel.value;
+    try {
+        const videoList = await getVideos({ force });
+        videoSel.innerHTML = '';
+
+        if (!videoList.length) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'No videos available';
+            videoSel.appendChild(opt);
+            return;
+        }
+
+        videoList.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v.filename;
+            opt.textContent = v.filename;
+            videoSel.appendChild(opt);
+        });
+
+        const hasPrevious = videoList.some(v => v.filename === currentSelection);
+        videoSel.value = hasPrevious ? currentSelection : videoList[0].filename;
+    } catch (e) {
+        videoSel.innerHTML = '';
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Failed to load videos';
+        videoSel.appendChild(opt);
+    }
+}
 
 async function loadPipelineConfig() {
     // Fetch models if not cached
@@ -3627,6 +3826,7 @@ async function loadPipelineConfig() {
             transSel.appendChild(opt);
         });
     }
+    transSel.disabled = pipelineModels.transcription.length <= 1;
 
     // Populate scene detection dropdown
     const sceneSel = document.getElementById('pipelineSceneDetection');
@@ -3639,18 +3839,14 @@ async function loadPipelineConfig() {
         });
     }
 
-    // Populate video dropdown (from /videos endpoint)
-    const videoSel = document.getElementById('pipelineVideo');
-    try {
-        const videoList = await getVideos();
-        videoSel.innerHTML = '';
-        videoList.forEach(v => {
-            const opt = document.createElement('option');
-            opt.value = v.filename;
-            opt.textContent = v.filename;
-            videoSel.appendChild(opt);
-        });
-    } catch (e) { /* ignore */ }
+    // Always refresh video dropdown so uploads appear immediately.
+    await refreshPipelineVideoOptions({ force: true });
+
+    const deviceSel = document.getElementById('pipelineDevice');
+    if (deviceSel) {
+        deviceSel.value = 'auto';
+        deviceSel.disabled = true;
+    }
 }
 
 function attachPipelineListeners() {
@@ -3663,7 +3859,7 @@ function attachPipelineListeners() {
         const transModel = document.getElementById('pipelineTranscription').value;
         const sceneDetection = document.getElementById('pipelineSceneDetection').value;
         const sceneThreshold = parseFloat(document.getElementById('pipelineSceneThreshold').value) || 30;
-        const device = document.getElementById('pipelineDevice').value;
+        const device = 'auto';
 
         if (!filename) {
             statusEl.textContent = 'Please select a video';
@@ -3672,10 +3868,10 @@ function attachPipelineListeners() {
             return;
         }
 
-        statusEl.textContent = 'Running pipeline... This may take several minutes.';
-        statusEl.className = 'pipeline-status running';
-        statusEl.style.display = '';
+        setPipelineStatus(statusEl, 'running', '0% - Queued');
         btn.disabled = true;
+        stopPipelinePolling();
+        _pipelineCurrentJobId = null;
 
         try {
             const resp = await authFetch(`${API_BASE_URL}/admin/run-pipeline`, {
@@ -3692,18 +3888,21 @@ function attachPipelineListeners() {
 
             if (!resp.ok) {
                 const err = await resp.json();
-                statusEl.textContent = err.detail || 'Pipeline failed';
-                statusEl.className = 'pipeline-status error';
+                setPipelineStatus(statusEl, 'error', err.detail || 'Pipeline failed');
+                btn.disabled = false;
             } else {
                 const result = await resp.json();
-                statusEl.textContent = `Pipeline completed: ${result.model} — ${result.result_summary.segments} segments, ${result.result_summary.scenes} scenes`;
-                statusEl.className = 'pipeline-status success';
-                showNotification('Pipeline completed successfully', 'info');
+                if (result.status !== 'started' || !result.job_id) {
+                    throw new Error('Pipeline job did not start');
+                }
+                _pipelineCurrentJobId = result.job_id;
+                setPipelineStatus(statusEl, 'running', '1% - Starting pipeline');
+                await pollPipelineJob(_pipelineCurrentJobId, statusEl, btn);
             }
         } catch (e) {
-            statusEl.textContent = 'Network error';
-            statusEl.className = 'pipeline-status error';
-        } finally {
+            stopPipelinePolling();
+            _pipelineCurrentJobId = null;
+            setPipelineStatus(statusEl, 'error', e.message || 'Network error');
             btn.disabled = false;
         }
     });

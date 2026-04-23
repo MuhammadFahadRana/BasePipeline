@@ -3,9 +3,10 @@
 
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Callable, Dict, Optional, List
 from datetime import timedelta, datetime
 import time
 
@@ -31,10 +32,10 @@ class BasicVideoPipeline:
     5. Ingests into database (new!)
     """
 
+    TRANSCRIPTION_MODEL_NAME = "whisper-large-v3"
+
     def __init__(
         self,
-        backend: str = "whisper",
-        model_variant: dict = None,
         scene_threshold: float = 30.0,
         device: str = "auto",
         skip_ingest: bool = False,
@@ -43,31 +44,32 @@ class BasicVideoPipeline:
         Initialize pipeline with selected ASR backend and scene detector.
 
         Args:
-            backend: ASR backend (whisper/whisperx/distil-whisper)
-            model_variant: Model variant dict (e.g., {'name': 'base'})
             scene_threshold: Scene detection threshold
-            device: Device for models ("auto", "cpu", "cuda")
+            device: Preferred device ("auto" recommended).
             skip_ingest: Skip database ingestion if True
         """
-        # Default to Whisper base if no variant specified
-        if model_variant is None:
-            model_variant = {
-                "name": "base",
-                "description": "Fast, good for simple audio",
-            }
-
         self.transcriber = SimpleTranscriber(
-            backend=backend, model_variant=model_variant, device=device
+            backend="whisper",
+            model_variant={"name": "large-v3"},
+            device=device,
+        )
+        scene_device = (
+            "cuda" if getattr(self.transcriber, "device", "cpu") == "cuda" else "cpu"
         )
         scene_cfg = SceneConfig(
             threshold=scene_threshold,
             clip_sim_merge_threshold=0.90,
-            device="cuda" if device in ("auto", "cuda") else "cpu",
+            device=scene_device,
         )
         self.scene_detector = SceneDetector(config=scene_cfg)
-        self.backend = backend
-        self.model_variant = model_variant
+        self.backend = "whisper"
+        self.model_variant = {"name": "large-v3"}
         self.skip_ingest = skip_ingest
+        self.ingest_target = (
+            os.getenv("PIPELINE_INGEST_TARGET", "postgres").strip().lower()
+        )
+        if self.ingest_target not in {"postgres", "sqlserver", "both", "none"}:
+            self.ingest_target = "postgres"
 
         # Formats that should be auto-converted to .mp4 before processing
         self.CONVERT_EXTENSIONS = {
@@ -82,6 +84,31 @@ class BasicVideoPipeline:
             ".flv",
             ".wmv",
         }
+
+    @staticmethod
+    def _report_progress(
+        progress_callback: Callable[[int, str, str], None] | None,
+        percent: int,
+        stage: str,
+        message: str,
+    ) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(percent, stage, message)
+        except Exception:
+            # Progress reporting must never fail the pipeline.
+            return
+
+    @staticmethod
+    def _load_sqlserver_ingester():
+        """Lazy-load SQL Server ingester to keep PostgreSQL-only mode isolated."""
+        try:
+            from database.SQL.ingest_sqlserver import SqlServerIngester
+
+            return SqlServerIngester
+        except Exception:
+            return None
 
     # ---------------------------
     # Format conversion
@@ -210,8 +237,19 @@ class BasicVideoPipeline:
 
     def _configs_match(self, saved_cfg: Dict, current_cfg: Dict) -> bool:
         """Compare only the core processing fields that would require reprocessing."""
-        core_keys = ("whisper_model", "scene_threshold")
+        core_keys = ("transcription_model", "scene_threshold")
         return all(saved_cfg.get(k) == current_cfg.get(k) for k in core_keys)
+
+    def _manifest_ingested_for_target(self, manifest: Dict) -> bool:
+        if not manifest.get("ingested", False):
+            return False
+        saved_target = str(manifest.get("ingest_target", "postgres")).lower()
+        target = self.ingest_target
+        if target == "both":
+            return saved_target == "both"
+        if saved_target == "both":
+            return target in {"postgres", "sqlserver"}
+        return saved_target == target
 
     # ---------------------------
     # Core pipeline
@@ -225,7 +263,9 @@ class BasicVideoPipeline:
         generate_embeddings: bool = True,
         generate_visual_embeddings: bool = True,
         _ingester=None,
+        progress_callback: Callable[[int, str, str], None] | None = None,
     ):
+        self._report_progress(progress_callback, 1, "init", "Preparing pipeline run")
         video_path = Path(video_path)
         if not video_path.exists():
             raise FileNotFoundError(f"Video not found: {video_path}")
@@ -248,13 +288,9 @@ class BasicVideoPipeline:
         current_fp = self._video_fingerprint(video_path, use_hash=use_hash)
 
         current_cfg = {
-            "whisper_model": getattr(self.transcriber, "model_name", "unknown"),
+            "transcription_model": self.TRANSCRIPTION_MODEL_NAME,
             "scene_threshold": self.scene_detector.config.threshold,
-            "semantic_refine": False,
-            "vision_model": "google/siglip-base-patch16-224",
-            "text_embedding_model": "Qwen/Qwen3-Embedding-0.6B",
             "clip_sim_merge_threshold": 0.90,
-            "visual_enrichment_model": "Qwen/Qwen2-VL-7B-Instruct",
         }
         manifest = self._load_manifest(manifest_path)
 
@@ -267,8 +303,11 @@ class BasicVideoPipeline:
         )
 
         if cache_hit:
+            self._report_progress(
+                progress_callback, 100, "done", "Using cached results"
+            )
             results_file = results_dir / "results.json"
-            already_ingested = manifest.get("ingested", False)
+            already_ingested = self._manifest_ingested_for_target(manifest)
 
             if already_ingested:
                 print(f"\n[cached] Skipping (cached + ingested): {video_name}")
@@ -280,15 +319,17 @@ class BasicVideoPipeline:
                     results = json.load(f)
 
                 # Only ingest if not already done
-                if not already_ingested and HAS_DB and not self.skip_ingest:
-                    self._ingest_results(
+                if not already_ingested and not self.skip_ingest and self.ingest_target != "none":
+                    ingest_report = self._ingest_results(
                         results_file,
                         generate_embeddings=generate_embeddings,
                         generate_visual_embeddings=generate_visual_embeddings,
                         ingester=_ingester,
                     )
                     # Mark ingestion complete in manifest
-                    manifest["ingested"] = True
+                    manifest["ingested"] = bool(ingest_report.get("ok"))
+                    manifest["ingest_target"] = self.ingest_target
+                    manifest["ingest_report"] = ingest_report
                     self._save_manifest(manifest_path, manifest)
 
                 return results
@@ -307,6 +348,9 @@ class BasicVideoPipeline:
 
         start_time = time.time()
 
+        self._report_progress(
+            progress_callback, 10, "transcription", "Starting transcription"
+        )
         print("\n1. Transcribing audio...")
         try:
             transcript = self.transcriber.transcribe_video(
@@ -316,6 +360,9 @@ class BasicVideoPipeline:
             print(f"  ! Transcription failed: {e}")
             print("    Continuing with empty transcript.")
             transcript = {"text": "", "segments": [], "language": "unknown"}
+        self._report_progress(
+            progress_callback, 40, "transcription", "Transcription completed"
+        )
 
         # Check if audio-only
         is_audio = (
@@ -323,6 +370,9 @@ class BasicVideoPipeline:
         )
 
         if is_audio:
+            self._report_progress(
+                progress_callback, 55, "scenes", "Audio detected, skipping scene detection"
+            )
             print("\n2. Audio file detected - Skipping scene detection & refinement.")
             # Create synthetic scene for the whole file
             last_end = 0.0
@@ -340,18 +390,21 @@ class BasicVideoPipeline:
                 }
             ]
         else:
+            self._report_progress(
+                progress_callback, 50, "scenes", "Detecting scenes"
+            )
             print("\n2. Detecting & refining scenes...")
             scenes = self.scene_detector.detect_scenes(
                 video_path, base_output_dir=str(output_base / "scenes")
             )
 
-            print("\n2b. Refining scenes (CLIP)...")
+            print("\n2b. Refining scenes...")
             try:
                 scenes = self.scene_detector.refine_scenes(scenes)
             except Exception as e:
                 print(f"Scene refinement failed: {e}")
 
-            print("\n2c. Enriching scenes with Qwen2-VL (captions, labels, OCR)...")
+            print("\n2c. Enriching scenes (captions, labels, OCR)...")
             try:
                 scenes = self.scene_detector.enrich_with_visual_features(scenes)
                 # Re-save scenes cache with enrichment data included
@@ -361,13 +414,18 @@ class BasicVideoPipeline:
                         json.dump(scenes, f, indent=2, ensure_ascii=False)
             except Exception as e:
                 print(f"Visual enrichment failed: {e}")
+            self._report_progress(
+                progress_callback, 70, "scenes", "Scene analysis completed"
+            )
 
+        self._report_progress(progress_callback, 75, "alignment", "Aligning transcript")
         print("\n3. Aligning transcripts with scenes...")
         aligned_data = self.align_transcript_with_scenes(transcript, scenes)
 
         end_time = time.time()
         processing_duration = end_time - start_time
 
+        self._report_progress(progress_callback, 82, "saving", "Saving output files")
         print("\n4. Saving results...")
         results = self.save_results(
             video_path,
@@ -384,14 +442,18 @@ class BasicVideoPipeline:
 
         # 5. Database Ingestion
         ingested = False
-        if HAS_DB and not self.skip_ingest:
-            self._ingest_results(
+        ingest_report = {"ok": False, "target": self.ingest_target}
+        if not self.skip_ingest and self.ingest_target != "none":
+            self._report_progress(
+                progress_callback, 90, "ingestion", "Ingesting into database"
+            )
+            ingest_report = self._ingest_results(
                 results_file,
                 generate_embeddings=generate_embeddings,
                 generate_visual_embeddings=generate_visual_embeddings,
                 ingester=_ingester,
             )
-            ingested = True
+            ingested = bool(ingest_report.get("ok"))
 
         # Save manifest for caching
         new_manifest = {
@@ -400,11 +462,14 @@ class BasicVideoPipeline:
             "video_fingerprint": current_fp,
             "pipeline_config": current_cfg,
             "ingested": ingested,
+            "ingest_target": self.ingest_target,
+            "ingest_report": ingest_report,
             "saved_at_iso": datetime.now().isoformat(),
             "use_hash": use_hash,
         }
         self._save_manifest(manifest_path, new_manifest)
         print(f"[ok] Manifest saved to: {manifest_path}")
+        self._report_progress(progress_callback, 100, "done", "Pipeline completed")
 
         return results
 
@@ -414,26 +479,69 @@ class BasicVideoPipeline:
         generate_embeddings: bool = True,
         generate_visual_embeddings: bool = True,
         ingester: "DataIngester | None" = None,
-    ):
-        print("\n5. Ingesting into database...")
-        try:
-            if ingester is not None:
-                ingester.ingest_video(
-                    results_file,
-                    generate_embeddings=generate_embeddings,
-                    generate_visual_embeddings=generate_visual_embeddings,
-                    update_existing=True,
-                )
+    ) -> Dict[str, object]:
+        print(f"\n5. Ingesting into database (target={self.ingest_target})...")
+        report: Dict[str, object] = {
+            "ok": False,
+            "target": self.ingest_target,
+            "postgres_ok": False,
+            "sqlserver_ok": False,
+            "errors": [],
+        }
+
+        def _append_error(msg: str) -> None:
+            print(f"  ! Ingestion failed: {msg}")
+            report["errors"].append(msg)
+
+        if self.ingest_target in {"postgres", "both"}:
+            if not HAS_DB:
+                _append_error("PostgreSQL ingester unavailable (database.ingest import failed)")
             else:
-                with DataIngester() as ing:
-                    ing.ingest_video(
-                        results_file,
-                        generate_embeddings=generate_embeddings,
-                        generate_visual_embeddings=generate_visual_embeddings,
-                        update_existing=True,
+                try:
+                    if ingester is not None:
+                        ingester.ingest_video(
+                            results_file,
+                            generate_embeddings=generate_embeddings,
+                            generate_visual_embeddings=generate_visual_embeddings,
+                            update_existing=True,
+                        )
+                    else:
+                        with DataIngester() as ing:
+                            ing.ingest_video(
+                                results_file,
+                                generate_embeddings=generate_embeddings,
+                                generate_visual_embeddings=generate_visual_embeddings,
+                                update_existing=True,
+                            )
+                    report["postgres_ok"] = True
+                except Exception as e:
+                    _append_error(f"postgres: {e}")
+
+        if self.ingest_target in {"sqlserver", "both"}:
+            sql_ingester_cls = self._load_sqlserver_ingester()
+            if sql_ingester_cls is None:
+                _append_error("SQL Server ingester unavailable (database.SQL.ingest_sqlserver import failed)")
+            else:
+                try:
+                    sql_ing = sql_ingester_cls(
+                        enable_text_embeddings=generate_embeddings,
+                        enable_visual_embeddings=generate_visual_embeddings,
                     )
-        except Exception as e:
-            print(f"  ! Ingestion failed: {e}")
+                    sql_ing.ingest_video_result_file(Path(results_file))
+                    report["sqlserver_ok"] = True
+                except Exception as e:
+                    _append_error(f"sqlserver: {e}")
+
+        if self.ingest_target == "postgres":
+            report["ok"] = bool(report["postgres_ok"])
+        elif self.ingest_target == "sqlserver":
+            report["ok"] = bool(report["sqlserver_ok"])
+        elif self.ingest_target == "both":
+            report["ok"] = bool(report["postgres_ok"] and report["sqlserver_ok"])
+        else:
+            report["ok"] = True
+
+        return report
 
     def align_transcript_with_scenes(
         self, transcript: Dict, scenes: List[Dict]
@@ -510,7 +618,7 @@ class BasicVideoPipeline:
                 "aligned_scenes": aligned_data,
             },
             "processing_info": {
-                "whisper_model": getattr(self.transcriber, "model_name", "unknown"),
+                "whisper_model": self.TRANSCRIPTION_MODEL_NAME,
                 "scene_threshold": self.scene_detector.config.threshold,
                 "processing_duration": round(processing_duration, 2),
             },
@@ -831,7 +939,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Basic Video Pipeline with SOTA Embeddings"
+        description="Basic Video Pipeline (Whisper Large v3)"
     )
     parser.add_argument("--video", type=str, help="Path to a single video file")
     parser.add_argument(
@@ -857,10 +965,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Only perform database ingestion (results must exist)",
     )
-    parser.add_argument("--backend", type=str, default="whisper", help="ASR backend")
-    parser.add_argument(
-        "--model", type=str, default="large-v3", help="Whisper model variant"
-    )
     parser.add_argument(
         "--threshold", type=float, default=20.0, help="Scene detection threshold"
     )
@@ -868,8 +972,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     pipeline = BasicVideoPipeline(
-        backend=args.backend,
-        model_variant={"name": args.model},
         scene_threshold=args.threshold,
         skip_ingest=args.skip_db,
     )

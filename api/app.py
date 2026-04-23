@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 import os
 import uuid
+import threading
 
 from database.config import get_db, test_connection
 from database.models import (
@@ -66,7 +67,10 @@ _mm_search_engine = None
 PROJECT_ROOT = Path(__file__).parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 INDEX_HTML_PATH = FRONTEND_DIR / "index.html"
-FRONTEND_ASSETS = ("styles.css", "chat_styles.css", "app.js", "chat.js")
+FRONTEND_ASSETS = ("styles.css", "app.js", "chat.js")
+_PIPELINE_JOB_LOCK = threading.Lock()
+_PIPELINE_JOBS: Dict[str, Dict[str, Any]] = {}
+_PIPELINE_MAX_JOBS = 200
 
 
 def _server_capabilities() -> dict:
@@ -94,6 +98,39 @@ def _render_frontend_index() -> str:
         versioned_name = f'{asset_name}?v={_frontend_asset_version(asset_name)}'
         html = html.replace(f'"{asset_name}"', f'"{versioned_name}"')
     return html
+
+
+def _set_pipeline_job(job_id: str, **fields) -> None:
+    with _PIPELINE_JOB_LOCK:
+        job = _PIPELINE_JOBS.get(job_id)
+        if not job:
+            return
+        if "progress" in fields:
+            fields["progress"] = max(0, min(100, int(fields["progress"])))
+        job.update(fields)
+        job["updated_at"] = datetime.utcnow().isoformat()
+
+
+def _get_pipeline_job(job_id: str) -> Optional[Dict[str, Any]]:
+    with _PIPELINE_JOB_LOCK:
+        job = _PIPELINE_JOBS.get(job_id)
+        return dict(job) if job else None
+
+
+def _prune_pipeline_jobs() -> None:
+    with _PIPELINE_JOB_LOCK:
+        if len(_PIPELINE_JOBS) <= _PIPELINE_MAX_JOBS:
+            return
+        done_statuses = {"completed", "failed"}
+        done_jobs = [
+            (jid, data.get("updated_at", ""))
+            for jid, data in _PIPELINE_JOBS.items()
+            if data.get("status") in done_statuses
+        ]
+        done_jobs.sort(key=lambda x: x[1])
+        to_remove = len(_PIPELINE_JOBS) - _PIPELINE_MAX_JOBS
+        for jid, _ in done_jobs[:to_remove]:
+            _PIPELINE_JOBS.pop(jid, None)
 
 
 def _resolve_video_file_path(raw_path: Optional[str]) -> Optional[Path]:
@@ -369,6 +406,108 @@ def _get_accessible_available_videos(
         visible_videos.append((video, resolved_path))
 
     return visible_videos
+
+
+def _upsert_video_row_from_file(
+    db: Session, file_path: Path, category_name: Optional[str] = None
+) -> Video:
+    """Ensure a video file on disk has a corresponding videos-table row."""
+    filename = file_path.name
+    stat = file_path.stat()
+
+    video = db.query(Video).filter(Video.filename == filename).first()
+    if not video:
+        video = Video(filename=filename, file_path=str(file_path))
+        db.add(video)
+
+    video.file_path = str(file_path)
+    video.file_size_mb = round(stat.st_size / (1024 * 1024), 2)
+
+    if category_name:
+        category_name = category_name.strip() or "Other"
+        category_obj = (
+            db.query(VideoCategory).filter(VideoCategory.name == category_name).first()
+        )
+        if not category_obj:
+            category_obj = VideoCategory(name=category_name)
+            db.add(category_obj)
+            db.flush()
+        video.category_id = category_obj.id
+
+    return video
+
+
+def _sync_videos_table_with_disk(db: Session) -> int:
+    """
+    Auto-register files in PROJECT_ROOT/videos that are missing from DB.
+    Returns number of new rows added.
+    """
+    videos_dir = PROJECT_ROOT / "videos"
+    if not videos_dir.exists():
+        return 0
+
+    created = 0
+    for f in videos_dir.iterdir():
+        if not f.is_file():
+            continue
+        if f.suffix.lower() not in _ALLOWED_VIDEO_EXT:
+            continue
+        existing = db.query(Video.id).filter(Video.filename == f.name).first()
+        if existing:
+            continue
+        _upsert_video_row_from_file(db, f)
+        created += 1
+
+    if created:
+        db.commit()
+    return created
+
+
+def _sync_documents_table_with_disk(db: Session) -> int:
+    """
+    Auto-register files in PROJECT_ROOT/documents that are missing from DB.
+    Returns number of new rows added.
+    """
+    documents_dir = PROJECT_ROOT / "documents"
+    if not documents_dir.exists():
+        return 0
+
+    try:
+        from database.document_models import Document as DocumentModel
+    except Exception:
+        return 0
+
+    created = 0
+    for f in documents_dir.iterdir():
+        if not f.is_file():
+            continue
+        if f.suffix.lower() not in _ALLOWED_DOCUMENT_EXT:
+            continue
+
+        normalized_path = str(f.resolve())
+        existing = (
+            db.query(DocumentModel.id)
+            .filter(DocumentModel.file_path == normalized_path)
+            .first()
+        )
+        if existing:
+            continue
+
+        file_size_mb = round(f.stat().st_size / (1024 * 1024), 2)
+        db.add(
+            DocumentModel(
+                filename=f.name,
+                file_path=normalized_path,
+                file_type=f.suffix.lower().lstrip("."),
+                file_size_mb=file_size_mb,
+                extraction_method="synced",
+            )
+        )
+        created += 1
+
+    if created:
+        db.commit()
+    return created
 
 
 def _serialize_video_info(video: Video) -> "VideoInfo":
@@ -1116,117 +1255,27 @@ _ALLOWED_VIDEO_EXT = {
     ".m2ts",
 }
 
+# Allowed document extensions for sync/upload
+_ALLOWED_DOCUMENT_EXT = {
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".pptx",
+    ".ppt",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tiff",
+}
+
 # Available pipeline models (used for frontend dropdowns)
 TRANSCRIPTION_MODELS = [
     {
-        "id": "whisper-tiny",
-        "label": "Whisper Tiny",
+        "id": "whisper-large-v3",
+        "label": "Whisper Large v3",
         "backend": "whisper",
-        "variant": {"name": "tiny"},
-    },
-    {
-        "id": "whisper-base",
-        "label": "Whisper Base",
-        "backend": "whisper",
-        "variant": {"name": "base"},
-    },
-    {
-        "id": "whisper-small",
-        "label": "Whisper Small",
-        "backend": "whisper",
-        "variant": {"name": "small"},
-    },
-    {
-        "id": "whisper-medium",
-        "label": "Whisper Medium",
-        "backend": "whisper",
-        "variant": {"name": "medium"},
-    },
-    {
-        "id": "whisper-large",
-        "label": "Whisper Large",
-        "backend": "whisper",
-        "variant": {"name": "large"},
-    },
-    {
-        "id": "whisperx-base",
-        "label": "WhisperX Base",
-        "backend": "whisperx",
-        "variant": {"name": "base"},
-    },
-    {
-        "id": "whisperx-large",
-        "label": "WhisperX Large",
-        "backend": "whisperx",
-        "variant": {"name": "large"},
-    },
-    {
-        "id": "distil-whisper",
-        "label": "Distil-Whisper Large v3",
-        "backend": "distil-whisper",
-        "variant": {},
-    },
-    {"id": "vosk-en", "label": "Vosk English", "backend": "vosk", "variant": {}},
-    {
-        "id": "canary-1b",
-        "label": "NVIDIA Canary 1B",
-        "backend": "canary",
-        "variant": {},
-    },
-    {
-        "id": "parakeet-ctc-1.1b",
-        "label": "NVIDIA Parakeet CTC 1.1B",
-        "backend": "parakeet",
-        "variant": {"name": "parakeet-ctc-1.1b"},
-    },
-    {
-        "id": "parakeet-ctc-0.6b",
-        "label": "NVIDIA Parakeet CTC 0.6B",
-        "backend": "parakeet",
-        "variant": {"name": "parakeet-ctc-0.6b"},
-    },
-    {
-        "id": "google-medasr",
-        "label": "Google MedASR",
-        "backend": "medasr",
-        "variant": {},
-    },
-    {
-        "id": "speecht5-asr",
-        "label": "Microsoft SpeechT5 ASR",
-        "backend": "speecht5",
-        "variant": {},
-    },
-    {
-        "id": "wav2vec2",
-        "label": "Facebook Wav2Vec2",
-        "backend": "wav2vec",
-        "variant": {},
-    },
-    {
-        "id": "qwen3-asr-1.7b",
-        "label": "Qwen3 ASR 1.7B",
-        "backend": "qwen",
-        "variant": {"name": "qwen3-asr-1.7b"},
-    },
-    {
-        "id": "qwen3-asr-0.6b",
-        "label": "Qwen3 ASR 0.6B",
-        "backend": "qwen",
-        "variant": {"name": "qwen3-asr-0.6b"},
-    },
-    {
-        "id": "vibevoice",
-        "label": "Microsoft VibeVoice ASR",
-        "backend": "vibevoice",
-        "variant": {},
-    },
-    {
-        "id": "voxtral-mini",
-        "label": "Mistral Voxtral Mini 4B",
-        "backend": "voxtral",
-        "variant": {},
-    },
+        "variant": {"name": "large-v3"},
+    }
 ]
 
 SCENE_DETECTION_MODELS = [
@@ -1389,6 +1438,7 @@ async def upload_video(
     file: UploadFile = File(...),
     category: str = Query("Other", description="Category for the video"),
     admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
 ):
     """Upload a video file to the videos/ directory."""
     if not file.filename:
@@ -1413,10 +1463,22 @@ async def upload_video(
         safe_name = f"upload_{int(time.time())}{ext}"
 
     dest = videos_dir / safe_name
+
+    category_name = (category or "Other").strip() or "Other"
     if dest.exists():
-        raise HTTPException(
-            status_code=409, detail=f"File '{safe_name}' already exists"
-        )
+        # If file already exists on disk, treat as an idempotent register operation.
+        video_row = _upsert_video_row_from_file(db, dest, category_name=category_name)
+        db.commit()
+        db.refresh(video_row)
+        return {
+            "filename": safe_name,
+            "size_mb": video_row.file_size_mb,
+            "category": category_name,
+            "path": str(dest),
+            "video_id": video_row.id,
+            "already_existed": True,
+            "detail": f"File '{safe_name}' already existed and is now registered.",
+        }
 
     # Stream file to disk (avoid loading entire file into memory)
     total = 0
@@ -1425,11 +1487,52 @@ async def upload_video(
             f.write(chunk)
             total += len(chunk)
 
+    video_row = _upsert_video_row_from_file(db, dest, category_name=category_name)
+    db.commit()
+    db.refresh(video_row)
+
     return {
         "filename": safe_name,
-        "size_mb": round(total / (1024 * 1024), 2),
+        "size_mb": video_row.file_size_mb,
         "category": category,
         "path": str(dest),
+        "video_id": video_row.id,
+        "already_existed": False,
+    }
+
+
+@app.post("/admin/sync-videos")
+async def sync_videos(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Force-sync files in videos/ into the videos table."""
+    created = _sync_videos_table_with_disk(db)
+    total = db.query(Video).count()
+    return {
+        "status": "ok",
+        "synced_new_rows": created,
+        "total_rows": total,
+    }
+
+
+@app.post("/admin/sync-documents")
+async def sync_documents(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Force-sync files in documents/ into the documents table."""
+    created = _sync_documents_table_with_disk(db)
+    try:
+        from database.document_models import Document as DocumentModel
+
+        total = db.query(DocumentModel).count()
+    except Exception:
+        total = 0
+    return {
+        "status": "ok",
+        "synced_new_rows": created,
+        "total_rows": total,
     }
 
 
@@ -1492,12 +1595,12 @@ async def run_pipeline(
     Trigger the pipeline for a specific video with selected models.
     Body: {
         "filename": "video.mp4",
-        "transcription_model": "whisper-base",
+        "transcription_model": "whisper-large-v3",
         "scene_detection": "pyscenedetect",
         "scene_threshold": 30.0,
-        "device": "auto"
+        "device": "auto"   # ignored; runtime always resolves automatically
     }
-    Returns immediately with status; pipeline runs synchronously on the server.
+    Returns immediately with a job id; poll /admin/run-pipeline/{job_id}.
     """
     filename = (req.get("filename") or "").strip()
     if not filename:
@@ -1509,7 +1612,7 @@ async def run_pipeline(
         raise HTTPException(status_code=404, detail=f"Video file not found: {filename}")
 
     # Resolve transcription model
-    model_id = req.get("transcription_model", "whisper-base")
+    model_id = req.get("transcription_model", "whisper-large-v3")
     model_entry = next((m for m in TRANSCRIPTION_MODELS if m["id"] == model_id), None)
     if not model_entry:
         raise HTTPException(
@@ -1517,37 +1620,104 @@ async def run_pipeline(
         )
 
     scene_threshold = float(req.get("scene_threshold", 30.0))
-    device = req.get("device", "auto")
+    job_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+    with _PIPELINE_JOB_LOCK:
+        _PIPELINE_JOBS[job_id] = {
+            "job_id": job_id,
+            "status": "queued",
+            "progress": 0,
+            "stage": "queued",
+            "message": "Queued",
+            "filename": filename,
+            "model": model_entry["label"],
+            "device": "auto",
+            "scene_threshold": scene_threshold,
+            "result_summary": None,
+            "error": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+    _prune_pipeline_jobs()
 
-    # Run pipeline in a background thread to avoid blocking the event loop
-    import concurrent.futures
+    async def _runner() -> None:
+        def _on_progress(percent: int, stage: str, message: str) -> None:
+            _set_pipeline_job(
+                job_id,
+                status="running",
+                progress=percent,
+                stage=stage,
+                message=message,
+            )
 
-    def _run():
-        from basic_pipeline import BasicVideoPipeline
+        def _run_sync():
+            from basic_pipeline import BasicVideoPipeline
 
-        pipe = BasicVideoPipeline(
-            backend=model_entry["backend"],
-            model_variant=model_entry["variant"] or None,
-            scene_threshold=scene_threshold,
-            device=device,
+            pipe = BasicVideoPipeline(
+                scene_threshold=scene_threshold,
+                device="auto",
+            )
+            return pipe.process_video(str(video_path), progress_callback=_on_progress)
+
+        _set_pipeline_job(
+            job_id,
+            status="running",
+            progress=1,
+            stage="init",
+            message="Starting pipeline",
         )
-        return pipe.process_video(str(video_path))
+        try:
+            result = await asyncio.to_thread(_run_sync)
+            _set_pipeline_job(
+                job_id,
+                status="completed",
+                progress=100,
+                stage="done",
+                message="Pipeline completed",
+                result_summary={
+                    "segments": (
+                        (result.get("transcription") or {}).get("num_segments", 0)
+                        if isinstance(result, dict)
+                        else 0
+                    ),
+                    "scenes": (
+                        (result.get("scene_analysis") or {}).get("num_scenes", 0)
+                        if isinstance(result, dict)
+                        else 0
+                    ),
+                },
+            )
+        except Exception as e:
+            _set_pipeline_job(
+                job_id,
+                status="failed",
+                progress=100,
+                stage="error",
+                message=f"Pipeline failed: {e}",
+                error=str(e),
+            )
 
-    loop = asyncio.get_event_loop()
-    with concurrent.futures.ThreadPoolExecutor() as pool:
-        result = await loop.run_in_executor(pool, _run)
+    asyncio.create_task(_runner())
 
     return {
-        "status": "completed",
+        "status": "started",
+        "job_id": job_id,
         "filename": filename,
         "model": model_entry["label"],
-        "result_summary": {
-            "segments": result.get("num_segments", 0)
-            if isinstance(result, dict)
-            else 0,
-            "scenes": result.get("num_scenes", 0) if isinstance(result, dict) else 0,
-        },
+        "device": "auto",
     }
+
+
+@app.get("/admin/run-pipeline/{job_id}")
+async def get_pipeline_job_status(
+    job_id: str,
+    admin: User = Depends(require_admin),
+):
+    """Return progress/status for a pipeline job started via /admin/run-pipeline."""
+    job = _get_pipeline_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Pipeline job not found")
+    return job
 
 
 @app.get("/video/stream/{video_id}")
@@ -1788,6 +1958,7 @@ async def list_videos(
     List videos the current user is allowed to see.
     Admins see all; viewers see only their assigned categories.
     """
+    _sync_videos_table_with_disk(db)
     return [
         _serialize_video_info(video)
         for video, _ in _get_accessible_available_videos(user, db)
@@ -1799,6 +1970,7 @@ async def count_videos(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
     """Return the accessible count of currently available videos."""
+    _sync_videos_table_with_disk(db)
     return {"count": len(_get_accessible_available_videos(user, db))}
 
 
@@ -3518,12 +3690,11 @@ async def upload_document(
     Upload and process a document (PDF, DOCX, PPTX, image).
     Extracts text, generates embeddings, and stores in DB.
     """
-    allowed_ext = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".png", ".jpg", ".jpeg", ".tiff"}
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in allowed_ext:
+    if suffix not in _ALLOWED_DOCUMENT_EXT:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type: {suffix}. Allowed: {', '.join(sorted(allowed_ext))}",
+            detail=f"Unsupported file type: {suffix}. Allowed: {', '.join(sorted(_ALLOWED_DOCUMENT_EXT))}",
         )
 
     # Save to documents folder

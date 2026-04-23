@@ -1,0 +1,15 @@
+{
+  "created_at": "2026-04-22T09:29:52.090991+00:00",
+  "processed_root": "/mnt/beegfs/home/mfrana44/projects/thesis/BasePipeline/processed",
+  "output_dir": "/mnt/beegfs/home/mfrana44/projects/thesis/BasePipeline/exports/run_431439",
+  "model_name": "Qwen/Qwen3-Embedding-8B",
+  "device": "cuda",
+  "batch_size": 4,
+  "max_seq_length": 8192,
+  "max_text_chars": 12000,
+  "output_dim": 1024,
+  "result_files_found": 70,
+  "candidate_items_found": 24155,
+  "embedding_records_written": 24155,
+  "errors_written": 0
+}

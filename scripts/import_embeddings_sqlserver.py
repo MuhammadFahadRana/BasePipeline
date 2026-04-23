@@ -14,6 +14,7 @@ import argparse
 import json
 from pathlib import Path
 from typing import Iterator, Dict, Any, List, Tuple
+from datetime import datetime, timezone
 
 import pyodbc
 
@@ -107,6 +108,67 @@ def chunked(items: List[Tuple], size: int) -> Iterator[List[Tuple]]:
         yield items[i:i + size]
 
 
+def _parse_created_at(value: Any) -> datetime:
+    """Parse ISO timestamp to timezone-naive UTC datetime for DATETIME2."""
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        raw = str(value or "").strip()
+        if not raw:
+            return datetime.utcnow()
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.utcnow()
+
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _to_row(payload: Dict[str, Any]) -> Tuple:
+    """Map exporter JSONL payload to staging table row."""
+    source_file = payload.get("source_file")
+    source_file_str = str(source_file or "")
+    source_filename = Path(source_file_str).name if source_file_str else None
+
+    return (
+        payload.get("content_hash") or payload.get("source_hash"),
+        payload.get("source_type"),
+        payload.get("source_name"),
+        payload.get("source_filename") or source_filename,
+        source_file_str,
+        payload.get("record_type") or payload.get("item_kind"),
+        payload.get("segment_id"),
+        payload.get("scene_id"),
+        payload.get("page_number"),
+        payload.get("chunk_index"),
+        payload.get("start_time"),
+        payload.get("end_time"),
+        payload.get("keyframe_path"),
+        payload.get("caption"),
+        payload.get("ocr_text"),
+        payload.get("text_for_embedding"),
+        payload.get("embedding_model") or payload.get("model_name"),
+        payload.get("embedding_dim"),
+        json.dumps(payload.get("embedding", []), ensure_ascii=False),
+        _parse_created_at(payload.get("created_at")),
+    )
+
+
+def _validate_row(row: Tuple) -> bool:
+    # Required columns by table schema:
+    # content_hash, source_type, source_file, record_type, text_for_embedding, embedding_model, embedding_dim
+    required_indexes = [0, 1, 4, 5, 15, 16, 17]
+    for idx in required_indexes:
+        value = row[idx]
+        if value is None:
+            return False
+        if isinstance(value, str) and not value.strip():
+            return False
+    return True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--jsonl", required=True, help="Path to embeddings.jsonl")
@@ -125,44 +187,38 @@ def main() -> None:
     conn.commit()
 
     rows: List[Tuple] = []
-    total = 0
-
-    for row in read_jsonl(jsonl_path):
-        rows.append(
-            (
-                row.get("content_hash"),
-                row.get("source_type"),
-                row.get("source_name"),
-                row.get("source_filename"),
-                row.get("source_file"),
-                row.get("record_type"),
-                row.get("segment_id"),
-                row.get("scene_id"),
-                row.get("page_number"),
-                row.get("chunk_index"),
-                row.get("start_time"),
-                row.get("end_time"),
-                row.get("keyframe_path"),
-                row.get("caption"),
-                row.get("ocr_text"),
-                row.get("text_for_embedding"),
-                row.get("embedding_model"),
-                row.get("embedding_dim"),
-                json.dumps(row.get("embedding", []), ensure_ascii=False),
-                row.get("created_at"),
-            )
-        )
+    attempted = 0
+    valid = 0
+    skipped_invalid = 0
 
     cur.fast_executemany = True
-    for batch in chunked(rows, args.batch_size):
-        cur.executemany(INSERT_SQL, batch)
+    for row in read_jsonl(jsonl_path):
+        attempted += 1
+        mapped = _to_row(row)
+        if not _validate_row(mapped):
+            skipped_invalid += 1
+            continue
+
+        rows.append(mapped)
+        valid += 1
+
+        if len(rows) >= args.batch_size:
+            cur.executemany(INSERT_SQL, rows)
+            conn.commit()
+            rows.clear()
+
+    if rows:
+        cur.executemany(INSERT_SQL, rows)
         conn.commit()
-        total += len(batch)
+        rows.clear()
 
     cur.close()
     conn.close()
 
-    print(f"[OK] Imported approximately {total} rows from {jsonl_path}")
+    print(
+        f"[OK] Import finished from {jsonl_path} | "
+        f"attempted={attempted} valid={valid} skipped_invalid={skipped_invalid}"
+    )
 
 
 if __name__ == "__main__":

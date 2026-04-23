@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 CREATE TABLE IF NOT EXISTS document_embeddings (
     id SERIAL PRIMARY KEY,
     chunk_id INTEGER NOT NULL REFERENCES document_chunks(id) ON DELETE CASCADE,
-    embedding vector(4096),                        -- Qwen3-Embedding-8B
+    embedding vector(1024),                        -- Qwen3-Embedding-0.6B
     embedding_model VARCHAR(100) DEFAULT 'Qwen/Qwen3-Embedding-0.6B',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_doc_chunk_embedding UNIQUE(chunk_id, embedding_model)
