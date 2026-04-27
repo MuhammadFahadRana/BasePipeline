@@ -423,6 +423,7 @@ class SearchResult:
     text: str
     score: float
     match_type: str  # "exact", "fuzzy", "semantic"
+    db_source: str = "postgres"  # "postgres" | "sqlserver"
     result_id: Optional[int] = (
         None  # Optional ID from DB (transcript ID or negative scene ID)
     )
@@ -450,6 +451,7 @@ class SearchResult:
                 timestamp = document_location
 
         payload = {
+            "db_source": self.db_source,
             "source_type": self.source_type,
             "segment_id": self.segment_id,
             "video_id": self.video_id,

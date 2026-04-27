@@ -10,7 +10,7 @@ IF OBJECT_ID(N'dbo.video_categories', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.video_categories (
         id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_video_categories PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
+        name NVARCHAR(100) NOT NULL,
         created_at DATETIME2(3) NOT NULL CONSTRAINT DF_video_categories_created_at DEFAULT SYSUTCDATETIME(),
         CONSTRAINT UQ_video_categories_name UNIQUE (name)
     );
@@ -21,7 +21,7 @@ IF OBJECT_ID(N'dbo.users', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.users (
         id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_users PRIMARY KEY,
-        username VARCHAR(100) NOT NULL,
+        username NVARCHAR(100) NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         role VARCHAR(20) NOT NULL CONSTRAINT DF_users_role DEFAULT 'viewer',
         created_at DATETIME2(3) NOT NULL CONSTRAINT DF_users_created_at DEFAULT SYSUTCDATETIME(),
@@ -35,7 +35,7 @@ BEGIN
     CREATE TABLE dbo.user_category_access (
         id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_user_category_access PRIMARY KEY,
         user_id INT NOT NULL,
-        category VARCHAR(100) NOT NULL,
+        category NVARCHAR(100) NOT NULL,
         CONSTRAINT FK_user_category_access_user
             FOREIGN KEY (user_id) REFERENCES dbo.users(id) ON DELETE CASCADE,
         CONSTRAINT UQ_user_category UNIQUE (user_id, category)
@@ -47,7 +47,7 @@ IF OBJECT_ID(N'dbo.videos', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.videos (
         id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_videos PRIMARY KEY,
-        filename VARCHAR(255) NOT NULL,
+        filename NVARCHAR(255) NOT NULL,
         file_path NVARCHAR(MAX) NOT NULL,
         file_size_mb FLOAT NULL,
         duration_seconds FLOAT NULL,
@@ -55,7 +55,7 @@ BEGIN
         scene_threshold FLOAT NULL,
         processed_at DATETIME2(3) NOT NULL CONSTRAINT DF_videos_processed_at DEFAULT SYSUTCDATETIME(),
         video_fingerprint NVARCHAR(MAX) NULL,
-        label VARCHAR(255) NULL,
+        label NVARCHAR(255) NULL,
         category_id INT NULL,
         created_at DATETIME2(3) NOT NULL CONSTRAINT DF_videos_created_at DEFAULT SYSUTCDATETIME(),
         updated_at DATETIME2(3) NOT NULL CONSTRAINT DF_videos_updated_at DEFAULT SYSUTCDATETIME(),

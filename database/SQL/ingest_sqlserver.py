@@ -592,12 +592,28 @@ class SqlServerIngester:
         scenes_raw = scene_analysis.get("scenes", []) or []
         segments_raw = transcription.get("segments", []) or []
         language = transcription.get("language", "en")
+        file_path = str(video_info.get("path", "") or "").strip()
 
         with engine.begin() as conn:
-            existing_video_id = conn.execute(
-                text("SELECT id FROM dbo.videos WHERE filename = :filename"),
-                {"filename": filename},
-            ).scalar()
+            # Prefer matching by file_path when available so re-ingest can clean up
+            # previously-corrupted VARCHAR filenames (e.g., non-ASCII titles).
+            if file_path:
+                existing_video_id = conn.execute(
+                    text(
+                        """
+                        SELECT TOP (1) id
+                        FROM dbo.videos
+                        WHERE filename = :filename
+                           OR file_path = :file_path
+                        """
+                    ),
+                    {"filename": filename, "file_path": file_path},
+                ).scalar()
+            else:
+                existing_video_id = conn.execute(
+                    text("SELECT TOP (1) id FROM dbo.videos WHERE filename = :filename"),
+                    {"filename": filename},
+                ).scalar()
             if existing_video_id:
                 self._delete_existing_video(conn, int(existing_video_id))
 
@@ -613,7 +629,7 @@ class SqlServerIngester:
                 ),
                 {
                     "filename": filename,
-                    "file_path": video_info.get("path", ""),
+                    "file_path": file_path,
                     "file_size_mb": video_info.get("size_mb"),
                     "duration_seconds": scene_analysis.get("total_duration"),
                     "whisper_model": payload.get("processing_info", {}).get("transcription_backend"),

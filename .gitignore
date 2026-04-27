@@ -87,3 +87,8 @@ Extras/
 *.pdf
 # Large local import artifacts
 SQLImports/embeddings.jsonl
+SQLImports/manifest.json
+
+
+#Scripts Folder
+scripts/

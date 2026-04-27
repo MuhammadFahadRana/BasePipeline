@@ -83,6 +83,31 @@ DB_PORT=5432
 DB_NAME=video_semantic_search
 DB_USER=postgres
 DB_PASSWORD=postgres
+
+# Search runtime mode: postgres | sqlserver | both
+DB_QUERY_MODE=postgres
+
+# SQL Server connection (used when DB_QUERY_MODE=sqlserver/both)
+MSSQL_CONNECTOR=pyodbc
+MSSQL_SERVER=localhost\SQLEXPRESS
+MSSQL_DATABASE=VideoSemanticDB
+
+# Optional (for SQL auth / pytds connector)
+# MSSQL_USER=sa
+# MSSQL_PASSWORD=your_password
+```
+
+At query time, text-search endpoints can also override the backend without changing `.env`:
+
+```text
+POST /search
+{
+  "query": "omega alpha well",
+  "db_source": "sqlserver"
+}
+
+GET /search/quick?q=omega+alpha+well&db_source=both
+GET /search/exact?phrase=omega%20alpha&db_source=postgres
 ```
 
 ### 4. Install Python Dependencies

@@ -2,6 +2,7 @@
 const API_BASE_URL = 'http://localhost:8000';
 const ENABLE_INLINE_SEARCH_ANSWER = false;
 const MAIN_TAB_STORAGE_KEY = 'atlas_active_main_tab';
+const DB_SOURCE_STORAGE_KEY = 'atlas_search_db_source';
 
 // ============================================
 // AUTH STATE
@@ -61,6 +62,7 @@ function handleAtlasHomeClick(event) {
 const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
 const clearBtn = document.getElementById('clearBtn');
+const dbSourceSelect = document.getElementById('dbSourceSelect');
 const limitSelect = document.getElementById('limitSelect');
 const askAiBtn = document.getElementById('askAiBtn');
 const resultsSection = document.getElementById('resultsSection');
@@ -79,7 +81,6 @@ const videoCount = document.getElementById('videoCount');
 const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
 const atlasHomeLink = document.getElementById('atlasHomeLink');
-const quickSearchBtns = document.querySelectorAll('.quick-search-btn');
 
 // Video Modal Elements
 const videoModal = document.getElementById('videoModal');
@@ -114,6 +115,52 @@ let isAnswerCollapsed = false;
 let _setMainTabView = null;
 let activeSearchRequestId = null; // Backend telemetry request_id for current result set
 let modalOpenedAtMs = null; // Track dwell on open video modal
+
+const SEARCH_ASSIST_PROMPTS = [
+    'drilling techniques',
+    'Omega Alpha well',
+    'risk management',
+    'compressor maintenance',
+];
+
+function formatDbSourceLabel(mode) {
+    const normalized = String(mode || '').trim().toLowerCase();
+    if (normalized === 'postgres') return 'PostgreSQL';
+    if (normalized === 'sqlserver') return 'SQL Server';
+    if (normalized === 'both') return 'Both';
+    return 'Default';
+}
+
+function getSelectedDbSource() {
+    return String(dbSourceSelect?.value || '').trim().toLowerCase();
+}
+
+function appendDbSourceParam(params) {
+    const dbSource = getSelectedDbSource();
+    if (dbSource) {
+        params.append('db_source', dbSource);
+    }
+    return dbSource;
+}
+
+function getResultDbSourceMeta(result) {
+    const normalized = String(result?.db_source || '').trim().toLowerCase();
+    if (normalized === 'postgres') {
+        return { id: 'postgres', label: 'PostgreSQL' };
+    }
+    if (normalized === 'sqlserver') {
+        return { id: 'sqlserver', label: 'SQL Server' };
+    }
+    return null;
+}
+
+function initializeDbSourceControl() {
+    if (!dbSourceSelect) return;
+    const saved = sessionStorage.getItem(DB_SOURCE_STORAGE_KEY);
+    if (saved !== null) {
+        dbSourceSelect.value = saved;
+    }
+}
 
 function getSearchButtonMarkup(isStop = false) {
     if (isStop) {
@@ -168,6 +215,10 @@ function setSearchButtonState(isRunning) {
     if (loadingMessage) {
         loadingMessage.textContent = isRunning ? 'Searching your library...' : 'Searching...';
     }
+
+    if (dbSourceSelect) {
+        dbSourceSelect.disabled = isRunning;
+    }
 }
 
 function setAskAiButtonState(isRunning) {
@@ -221,6 +272,324 @@ function hideAnswerPanel({ clearContent = false } = {}) {
     setAnswerCollapsed(false);
     if (clearContent && answerBody) {
         answerBody.innerHTML = '';
+    }
+}
+
+function setSearchInputValue(value, { focus = false, select = false } = {}) {
+    if (!searchInput) return;
+
+    searchInput.value = value;
+    if (clearBtn) {
+        clearBtn.style.display = value ? 'flex' : 'none';
+    }
+
+    if (focus) {
+        searchInput.focus();
+        if (select) {
+            searchInput.select();
+        }
+    }
+}
+
+function getActiveSearchFilterMeta() {
+    const categoryLabels = Array.from(
+        document.querySelectorAll('#searchCategoryFilter .category-chip.active')
+    )
+        .map(chip => chip.dataset.category || chip.textContent.trim())
+        .filter(Boolean);
+
+    const siteLabels = Array.from(
+        document.querySelectorAll('#searchSiteFilter .site-chip.active')
+    )
+        .map(chip => chip.dataset.site || chip.textContent.trim())
+        .filter(Boolean);
+
+    return {
+        categoryLabels,
+        siteLabels,
+        hasFilters: categoryLabels.length > 0 || siteLabels.length > 0,
+    };
+}
+
+function clearActiveSearchFilters() {
+    document
+        .querySelectorAll('#searchCategoryFilter .category-chip.active, #searchSiteFilter .site-chip.active')
+        .forEach(chip => chip.classList.remove('active'));
+}
+
+function animateSearchBarFocus({ select = true } = {}) {
+    const searchContainer = document.querySelector('.search-container');
+    if (searchContainer) {
+        searchContainer.classList.remove('search-focus-pop');
+        void searchContainer.offsetWidth;
+        searchContainer.classList.add('search-focus-pop');
+        setTimeout(() => searchContainer.classList.remove('search-focus-pop'), 900);
+    }
+
+    setSearchInputValue(searchInput.value, { focus: true, select });
+}
+
+function spotlightFilterRow(kind = 'category') {
+    const targetId = kind === 'site' ? 'searchSiteFilter' : 'searchCategoryFilter';
+    const chipsContainer = document.getElementById(targetId);
+    if (!chipsContainer) return false;
+
+    const row = chipsContainer.closest('.category-filter-row');
+    if (row) {
+        row.classList.remove('filter-spotlight');
+        void row.offsetWidth;
+        row.classList.add('filter-spotlight');
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => row.classList.remove('filter-spotlight'), 1200);
+    }
+
+    const firstChip = chipsContainer.querySelector('.category-chip, .site-chip');
+    if (firstChip && typeof firstChip.focus === 'function') {
+        firstChip.focus();
+    }
+
+    return Boolean(chipsContainer.children.length);
+}
+
+function buildSearchPromptButtonsMarkup() {
+    return SEARCH_ASSIST_PROMPTS.map(prompt => `
+        <button type="button" class="empty-state-prompt" data-search-query="${escapeHtml(prompt)}">
+            ${escapeHtml(prompt)}
+        </button>
+    `).join('');
+}
+
+function renderSearchLandingState() {
+    if (!emptyState) return;
+
+    emptyState.innerHTML = `
+        <div class="empty-state-panel">
+            <div class="empty-state-main">
+                <div class="empty-state-visual" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div class="empty-state-copy">
+                    <span class="empty-state-kicker">Search workspace</span>
+                    <h3>Find videos and documents without the clutter</h3>
+                    <p>Start with a topic, system name, site, or category. You can also browse with the chips above when you want to narrow the library before searching.</p>
+                    <div class="empty-state-actions">
+                        <button type="button" class="empty-state-btn empty-state-btn-primary" data-search-assist-action="focus-search">Start typing</button>
+                        <button type="button" class="empty-state-btn empty-state-btn-secondary" data-search-assist-action="browse-filters">Browse selected filters</button>
+                        <button type="button" class="empty-state-btn empty-state-btn-secondary" data-search-assist-action="browse-sites">Browse by site</button>
+                    </div>
+                    <div class="empty-state-prompt-group">
+                        <span class="empty-state-prompt-label">Try a search</span>
+                        <div class="empty-state-prompts">
+                            ${buildSearchPromptButtonsMarkup()}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="empty-state-side">
+                <div class="empty-state-note">
+                    <strong>Search smarter</strong>
+                    <span>Use equipment names, well names, report terms, or process keywords for stronger matches.</span>
+                </div>
+                <div class="empty-state-note">
+                    <strong>Mix filters and text</strong>
+                    <span>Combine site and category chips with a short query to cut through noisy results faster.</span>
+                </div>
+                <div class="empty-state-note">
+                    <strong>Browse when unsure</strong>
+                    <span>Select chips only and run a browse search if you want to explore the library first.</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function buildNoResultsStateMarkup(query = '') {
+    const { categoryLabels, siteLabels, hasFilters } = getActiveSearchFilterMeta();
+    const activeDbSource = getSelectedDbSource();
+    const hasDbOverride = Boolean(activeDbSource);
+
+    const contextPills = [];
+    if (categoryLabels.length) {
+        contextPills.push(`<span class="empty-state-pill">Category: ${escapeHtml(categoryLabels.join(', '))}</span>`);
+    }
+    if (siteLabels.length) {
+        contextPills.push(`<span class="empty-state-pill">Site: ${escapeHtml(siteLabels.join(', '))}</span>`);
+    }
+    if (hasDbOverride) {
+        contextPills.push(`<span class="empty-state-pill">DB: ${escapeHtml(formatDbSourceLabel(activeDbSource))}</span>`);
+    }
+
+    const actions = [
+        `<button type="button" class="empty-state-btn empty-state-btn-primary" data-search-assist-action="focus-search">${query ? 'Edit search' : 'Add search terms'}</button>`,
+    ];
+
+    if (hasFilters) {
+        actions.push('<button type="button" class="empty-state-btn empty-state-btn-secondary" data-search-assist-action="clear-filters">Clear filters</button>');
+    }
+    if (hasDbOverride) {
+        actions.push('<button type="button" class="empty-state-btn empty-state-btn-secondary" data-search-assist-action="reset-db">Use default DB</button>');
+    }
+    if (query) {
+        actions.push('<button type="button" class="empty-state-btn empty-state-btn-secondary" data-search-assist-action="clear-search">Start over</button>');
+    }
+
+    const title = query
+        ? `No matches for "${escapeHtml(query)}"`
+        : 'No matches in the current scope';
+    const description = query
+        ? 'Nothing matched this search in the current scope. Widen the keywords, remove a filter, or reset the database mode.'
+        : 'Nothing matched this filter combination. Clear a filter or add a broader search term to widen the scope.';
+    const dbHint = hasDbOverride
+        ? `You are currently searching ${formatDbSourceLabel(activeDbSource)} only. Switching back to Default widens the source selection again.`
+        : 'If you expect the content in another source, try switching between Default, PostgreSQL, and SQL Server.';
+
+    return `
+        <div class="empty-state empty-state-no-results">
+            <div class="empty-state-panel">
+                <div class="empty-state-main">
+                    <div class="empty-state-visual" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M15 9L9 15M9 9L15 15" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+                            <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/>
+                        </svg>
+                    </div>
+                    <div class="empty-state-copy">
+                        <span class="empty-state-kicker">No direct matches</span>
+                        <h3>${title}</h3>
+                        <p>${description}</p>
+                        ${contextPills.length ? `<div class="empty-state-context">${contextPills.join('')}</div>` : ''}
+                        <div class="empty-state-actions">
+                            ${actions.join('')}
+                        </div>
+                        <div class="empty-state-prompt-group">
+                            <span class="empty-state-prompt-label">Try a broader search</span>
+                            <div class="empty-state-prompts">
+                                ${buildSearchPromptButtonsMarkup()}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="empty-state-side">
+                    <div class="empty-state-note">
+                        <strong>Broaden the wording</strong>
+                        <span>Replace long phrases with shorter keywords, system names, or simpler terms.</span>
+                    </div>
+                    <div class="empty-state-note">
+                        <strong>Reduce the filters</strong>
+                        <span>One category or site chip can be enough to narrow the results before adding more detail.</span>
+                    </div>
+                    <div class="empty-state-note">
+                        <strong>Check search scope</strong>
+                        <span>${escapeHtml(dbHint)}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function resetSearchResultsView() {
+    currentQuery = '';
+    activeSearchRequestId = null;
+    lastResults = [];
+    lastSearchData = null;
+    lastSearchSets = { text: null, multimodal: null };
+    currentView = 'text';
+    currentFacet = 'auto';
+
+    if (resultsTitle) resultsTitle.textContent = 'Search Results';
+    if (resultsCount) resultsCount.textContent = '0 results';
+    if (resultsContainer) resultsContainer.innerHTML = '';
+    if (resultsSection) resultsSection.style.display = 'none';
+
+    const tabsEl = document.getElementById('resultTabs');
+    if (tabsEl) {
+        tabsEl.style.display = 'none';
+    }
+
+    renderFacetChips([], currentFacet);
+    renderSenseSuggestions([], null);
+}
+
+function handleSearchAssistActionClick(event) {
+    const queryButton = event.target.closest('[data-search-query]');
+    if (queryButton) {
+        const suggestedQuery = (queryButton.dataset.searchQuery || '').trim();
+        if (!suggestedQuery) return;
+
+        event.preventDefault();
+        setSearchInputValue(suggestedQuery, { focus: true });
+        performSearch();
+        return;
+    }
+
+    const actionButton = event.target.closest('[data-search-assist-action]');
+    if (!actionButton) return;
+
+    event.preventDefault();
+    const action = actionButton.dataset.searchAssistAction;
+    const filterMeta = getActiveSearchFilterMeta();
+
+    if (action === 'focus-search') {
+        animateSearchBarFocus({ select: true });
+        return;
+    }
+
+    if (action === 'browse-filters') {
+        const hasCategoryChips = spotlightFilterRow('category');
+        if (!hasCategoryChips) {
+            showNotification('No categories are available yet.', 'info');
+            animateSearchBarFocus({ select: true });
+            return;
+        }
+        showNotification('Categories are ready. Pick one or more chips to browse.', 'info');
+        return;
+    }
+
+    if (action === 'browse-sites') {
+        const hasSiteChips = spotlightFilterRow('site');
+        if (!hasSiteChips) {
+            showNotification('No sites are available yet.', 'info');
+            animateSearchBarFocus({ select: true });
+            return;
+        }
+        showNotification('Sites are ready. Pick one or more chips to browse.', 'info');
+        return;
+    }
+
+    if (action === 'clear-filters') {
+        clearActiveSearchFilters();
+        if (searchInput.value.trim()) {
+            performSearch();
+        } else {
+            resetSearchResultsView();
+            showEmpty();
+        }
+        return;
+    }
+
+    if (action === 'reset-db') {
+        if (dbSourceSelect) {
+            dbSourceSelect.value = '';
+        }
+        sessionStorage.setItem(DB_SOURCE_STORAGE_KEY, '');
+
+        if (searchInput.value.trim() || filterMeta.hasFilters) {
+            performSearch();
+        } else {
+            resetSearchResultsView();
+            showEmpty();
+        }
+        return;
+    }
+
+    if (action === 'clear-search') {
+        setSearchInputValue('', { focus: true });
+        hideAnswerPanel({ clearContent: true });
+        resetSearchResultsView();
+        showEmpty();
     }
 }
 
@@ -327,6 +696,8 @@ async function submitExplicitFeedback(result, feedbackValue, comment = '') {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    initializeDbSourceControl();
+    renderSearchLandingState();
     attachLoginListeners();
     attachEventListeners();
     attachModalEventListeners();
@@ -815,7 +1186,12 @@ async function populateSearchCategoryFilter() {
             chip.className = 'category-chip';
             chip.dataset.category = cat;
             chip.textContent = cat;
-            chip.addEventListener('click', () => chip.classList.toggle('active'));
+            chip.addEventListener('click', () => {
+                chip.classList.toggle('active');
+                if (searchInput.value.trim() || isSearchRunning) {
+                    performSearch();
+                }
+            });
             container.appendChild(chip);
         });
     } catch (e) { /* ignore */ }
@@ -838,7 +1214,12 @@ async function populateSearchSiteFilter() {
             chip.className = 'category-chip site-chip';
             chip.dataset.site = site;
             chip.textContent = site;
-            chip.addEventListener('click', () => chip.classList.toggle('active'));
+            chip.addEventListener('click', () => {
+                chip.classList.toggle('active');
+                if (searchInput.value.trim() || isSearchRunning) {
+                    performSearch();
+                }
+            });
             container.appendChild(chip);
         });
     } catch (e) { /* ignore */ }
@@ -875,10 +1256,14 @@ async function checkHealth() {
         const response = await fetch(`${API_BASE_URL}/health`);
         const data = await response.json();
 
-        if (data.status === 'healthy') {
+        if (data.status === 'healthy' || data.status === 'degraded') {
+            const isDegraded = data.status === 'degraded';
             statusIndicator.className = 'stat-value status-indicator online';
+            if (isDegraded) {
+                statusIndicator.classList.add('degraded');
+            }
             statusIndicator.textContent = ''; // Dot handled by CSS
-            statusText.textContent = 'Online';
+            statusText.textContent = isDegraded ? 'Degraded' : 'Online';
             return data;
         } else {
             throw new Error('API unhealthy');
@@ -1155,6 +1540,8 @@ function attachEventListeners() {
         hideAnswerPanel({ clearContent: true });
     }
 
+    document.addEventListener('click', handleSearchAssistActionClick);
+
     // Search button
     searchBtn.addEventListener('click', () => {
         if (isSearchRunning) {
@@ -1210,6 +1597,20 @@ function attachEventListeners() {
         }
     });
 
+    if (dbSourceSelect) {
+        dbSourceSelect.addEventListener('change', () => {
+            sessionStorage.setItem(DB_SOURCE_STORAGE_KEY, dbSourceSelect.value || '');
+            if (selectedImageFile) return;
+
+            const hasQuery = Boolean(searchInput.value.trim());
+            const hasActiveCategories = document.querySelectorAll('#searchCategoryFilter .category-chip.active').length > 0;
+            const hasActiveSites = document.querySelectorAll('#searchSiteFilter .site-chip.active').length > 0;
+            if (hasQuery || hasActiveCategories || hasActiveSites) {
+                performSearch();
+            }
+        });
+    }
+
     // Enter key on search input
     searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
@@ -1233,8 +1634,6 @@ function attachEventListeners() {
         clearBtn.style.display = 'none';
         searchInput.focus();
     });
-
-    // Quick search buttons removed from UI
 
     // ====== Image Upload Listeners ======
     // Image-based search removed from UI; skip wiring if elements aren't present.
@@ -1666,6 +2065,7 @@ async function performSearch() {
                 limit: limit,
                 facet: currentFacet,
             });
+            appendDbSourceParam(baseParams);
 
             if (video) {
                 baseParams.append('video', video);
@@ -1903,6 +2303,11 @@ function displayResults(data, qaData = null) {
         Array.isArray(lastSearchSets.multimodal.results) &&
         lastSearchSets.multimodal.results.length > 0
     );
+    const activeDbMode =
+        data?.db_query_mode ||
+        data?.search_metadata?.db_query_mode ||
+        data?.search_sets?.text?.db_query_mode ||
+        null;
     const hasComponentScores = Boolean(
         Array.isArray(lastSearchSets.text?.results) &&
         lastSearchSets.text.results.some(
@@ -1929,14 +2334,27 @@ function displayResults(data, qaData = null) {
     if (hasMultimodalDataset) {
         countText += ` • ${multimodalCount} visual result${multimodalCount !== 1 ? 's' : ''}`;
     }
+    if (activeDbMode) {
+        countText += ` • DB: ${formatDbSourceLabel(activeDbMode)}`;
+    }
     if (search_time_seconds !== undefined) {
         countText += ` (${search_time_seconds} seconds)`;
     }
     resultsCount.textContent = countText;
 
     if (textCount === 0 && multimodalCount === 0) {
+        resultsTitle.textContent = query ? `No matches for "${query}"` : 'No matches found';
+        let emptyCountText = '0 matches';
+        if (activeDbMode) {
+            emptyCountText += ` | DB: ${formatDbSourceLabel(activeDbMode)}`;
+        }
+        if (search_time_seconds !== undefined) {
+            emptyCountText += ` (${search_time_seconds} seconds)`;
+        }
+        resultsCount.textContent = emptyCountText;
+
         if (askAiBtn) askAiBtn.style.display = 'none';
-        showEmptyResults();
+        showEmptyResults(query);
         document.getElementById('resultTabs').style.display = 'none';
         renderFacetChips(data.facets || [], currentFacet);
         // Show did_you_mean or sense suggestions even on zero results
@@ -2241,6 +2659,7 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
             if (idx >= 2) row.classList.add('occurrence-hidden');
             const textMeta = getResultTextMeta(occ);
             const sourceMeta = textMeta.sourceMeta;
+            const dbMeta = getResultDbSourceMeta(occ);
 
             const thumbnailHtml = occ.keyframe_path
                 ? `<img class="occurrence-thumb" src="${API_BASE_URL}/keyframe?path=${encodeURIComponent(occ.keyframe_path)}&token=${authToken}" 
@@ -2272,6 +2691,7 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
                         <span class="result-source-group">
                             <span class="result-source source-${sourceMeta.id}">${sourceMeta.label}</span>
                             ${textMeta.hasOcrTag ? '<span class="result-source source-ocr">OCR</span>' : ''}
+                            ${dbMeta ? `<span class="result-source source-${dbMeta.id}">${dbMeta.label}</span>` : ''}
                         </span>
                         ${scoreHtml}
                     </div>
@@ -2409,6 +2829,7 @@ function createResultCard(result, index) {
     const keyframePath = result.keyframe_path || '';
     const textMeta = getResultTextMeta(result);
     const sourceMeta = textMeta.sourceMeta;
+    const dbMeta = getResultDbSourceMeta(result);
 
     // Determine which score to highlight based on current view
     let primaryScore;
@@ -2471,6 +2892,7 @@ function createResultCard(result, index) {
                 <div class="result-source-group">
                     <div class="result-source source-${sourceMeta.id}">${sourceMeta.label}</div>
                     ${textMeta.hasOcrTag ? '<div class="result-source source-ocr">OCR</div>' : ''}
+                    ${dbMeta ? `<div class="result-source source-${dbMeta.id}">${dbMeta.label}</div>` : ''}
                 </div>
                 <div class="result-score">${primaryLabel}: ${primaryScore.toFixed(3)}</div>
             </div>
@@ -2676,10 +3098,20 @@ function openDocumentResult(result) {
     }
 
     const page = getDocumentPageNumber(result);
-    const baseUrl = `${API_BASE_URL}/documents/stream/${encodeURIComponent(docId)}?token=${encodeURIComponent(authToken)}`;
     const fileType = String(result?.document_file_type || '').toLowerCase();
-    const shouldAnchorPage = fileType === 'pdf' || String(result?.video_filename || '').toLowerCase().endsWith('.pdf');
-    const openUrl = shouldAnchorPage && page ? `${baseUrl}#page=${page}` : baseUrl;
+    const filename = String(result?.video_filename || '').trim();
+    const isPdf = fileType === 'pdf' || filename.toLowerCase().endsWith('.pdf');
+    const baseUrl = `${API_BASE_URL}/documents/stream/${encodeURIComponent(docId)}?token=${encodeURIComponent(authToken)}`;
+
+    let openUrl = baseUrl;
+    if (isPdf) {
+        const params = new URLSearchParams();
+        params.set('doc_id', String(docId));
+        params.set('token', authToken);
+        if (filename) params.set('filename', filename);
+        if (page) params.set('page', String(page));
+        openUrl = `${API_BASE_URL}/document_viewer.html?${params.toString()}`;
+    }
 
     logFeedbackEvent('document_open', result, {
         metadata: {
@@ -2844,6 +3276,7 @@ function hideLoading() {
 }
 
 function showEmpty() {
+    renderSearchLandingState();
     emptyState.style.display = 'flex';
     resultsSection.style.display = 'none';
 }
@@ -2852,17 +3285,9 @@ function hideEmpty() {
     emptyState.style.display = 'none';
 }
 
-function showEmptyResults() {
+function showEmptyResults(query = '') {
     resultsSection.style.display = 'block';
-    resultsContainer.innerHTML = `
-        <div class="empty-state" style="padding: 2rem;">
-            <svg class="empty-icon" style="width: 60px; height: 60px;" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <h3>No Results Found</h3>
-            <p>Try different keywords or check your spelling</p>
-        </div>
-    `;
+    resultsContainer.innerHTML = buildNoResultsStateMarkup(query);
 }
 
 // Notification System

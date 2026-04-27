@@ -18,7 +18,7 @@ IF OBJECT_ID(N'dbo.documents', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.documents (
         id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_documents PRIMARY KEY,
-        filename VARCHAR(500) NOT NULL,
+        filename NVARCHAR(500) NOT NULL,
         file_path NVARCHAR(2000) NOT NULL,
         file_type VARCHAR(20) NOT NULL,
         file_size_mb FLOAT NULL,
@@ -27,7 +27,7 @@ BEGIN
         ocr_model VARCHAR(100) NULL,
         language VARCHAR(10) NOT NULL CONSTRAINT DF_documents_language DEFAULT 'en',
         category_id INT NULL,
-        label VARCHAR(255) NULL,
+        label NVARCHAR(255) NULL,
         file_identity_hash AS CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', LOWER(CONCAT(filename, N'|', file_path))), 2) PERSISTED,
         processed_at DATETIME2(3) NOT NULL CONSTRAINT DF_documents_processed_at DEFAULT SYSUTCDATETIME(),
         created_at DATETIME2(3) NOT NULL CONSTRAINT DF_documents_created_at DEFAULT SYSUTCDATETIME(),

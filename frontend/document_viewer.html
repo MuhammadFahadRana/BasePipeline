@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ATLAS Document Viewer</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      :root {
+        --dv-bg: #0d1412;
+        --dv-panel: rgba(255, 255, 255, 0.06);
+        --dv-panel-2: rgba(255, 255, 255, 0.09);
+        --dv-border: rgba(255, 255, 255, 0.14);
+        --dv-text: rgba(255, 255, 255, 0.92);
+        --dv-muted: rgba(255, 255, 255, 0.65);
+        --dv-accent: #3ddc97;
+      }
+
+      body.dv-body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(900px 500px at 15% 10%, rgba(61, 220, 151, 0.16), transparent 60%),
+          radial-gradient(800px 520px at 92% 0%, rgba(117, 227, 255, 0.14), transparent 55%),
+          linear-gradient(180deg, #070b0a, var(--dv-bg));
+        color: var(--dv-text);
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      }
+
+      .dv-shell {
+        max-width: min(1120px, calc(100vw - 32px));
+        margin: 18px auto 32px;
+      }
+
+      .dv-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 12px 14px;
+        border: 1px solid var(--dv-border);
+        border-radius: 14px;
+        background: linear-gradient(180deg, var(--dv-panel), rgba(0, 0, 0, 0.14));
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.46);
+        backdrop-filter: blur(12px);
+      }
+
+      .dv-title {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .dv-title strong {
+        font-size: 14px;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .dv-title span {
+        font-size: 12px;
+        color: var(--dv-muted);
+      }
+
+      .dv-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .dv-btn,
+      .dv-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        background: rgba(255, 255, 255, 0.07);
+        color: var(--dv-text);
+        font-size: 12.5px;
+        cursor: pointer;
+        user-select: none;
+        text-decoration: none;
+      }
+
+      .dv-btn:hover,
+      .dv-link:hover {
+        background: var(--dv-panel-2);
+        border-color: rgba(255, 255, 255, 0.16);
+      }
+
+      .dv-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      .dv-link {
+        border-color: rgba(61, 220, 151, 0.32);
+        color: rgba(61, 220, 151, 0.95);
+        background: rgba(61, 220, 151, 0.08);
+      }
+
+      .dv-canvas-wrap {
+        margin-top: 14px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(0, 0, 0, 0.2);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+      }
+
+      .dv-canvas-scroll {
+        width: 100%;
+        overflow: auto;
+        max-height: calc(100vh - 130px);
+        padding: 18px;
+      }
+
+      canvas#dvCanvas {
+        display: block;
+        margin: 0 auto;
+        background: #ffffff;
+        border-radius: 10px;
+        box-shadow: 0 20px 55px rgba(0, 0, 0, 0.4);
+      }
+
+      .dv-error {
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 76, 76, 0.35);
+        background: rgba(255, 76, 76, 0.08);
+        color: rgba(255, 255, 255, 0.9);
+      }
+
+      .dv-error code {
+        color: rgba(255, 255, 255, 0.86);
+      }
+
+      @media (max-width: 720px) {
+        .dv-shell {
+          max-width: calc(100vw - 18px);
+          margin: 12px auto 20px;
+        }
+
+        .dv-header {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 10px;
+        }
+
+        .dv-controls {
+          justify-content: flex-start;
+        }
+
+        .dv-canvas-scroll {
+          padding: 12px;
+          max-height: calc(100vh - 168px);
+        }
+      }
+    </style>
+  </head>
+  <body class="dv-body">
+    <div class="dv-shell">
+      <header class="dv-header">
+        <div class="dv-title">
+          <strong id="dvFilename">Document</strong>
+          <span id="dvStatus">Loading...</span>
+        </div>
+        <div class="dv-controls">
+          <button class="dv-btn" id="dvPrevBtn" type="button" title="Previous page">Prev</button>
+          <button class="dv-btn" id="dvNextBtn" type="button" title="Next page">Next</button>
+          <button class="dv-btn" id="dvZoomOutBtn" type="button" title="Zoom out">-</button>
+          <button class="dv-btn" id="dvZoomInBtn" type="button" title="Zoom in">+</button>
+          <a class="dv-link" id="dvDownloadLink" href="#" target="_blank" rel="noopener">Open Original</a>
+        </div>
+      </header>
+
+      <div class="dv-canvas-wrap">
+        <div class="dv-canvas-scroll" id="dvScroll">
+          <canvas id="dvCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="dv-error" id="dvError" style="display:none;"></div>
+    </div>
+
+    <script src="vendor/pdfjs/pdf.min.js"></script>
+    <script src="document_viewer.js"></script>
+  </body>
+</html>

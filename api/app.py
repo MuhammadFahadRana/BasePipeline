@@ -63,6 +63,7 @@ TRANSCODE_EXTENSIONS = {".ts", ".mp2t", ".m2ts", ".mts", ".avi", ".mkv", ".mov"}
 _video_qa = None
 _search_engine = None
 _mm_search_engine = None
+_mm_text_search_engine = None
 
 PROJECT_ROOT = Path(__file__).parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
@@ -71,6 +72,196 @@ FRONTEND_ASSETS = ("styles.css", "app.js", "chat.js")
 _PIPELINE_JOB_LOCK = threading.Lock()
 _PIPELINE_JOBS: Dict[str, Dict[str, Any]] = {}
 _PIPELINE_MAX_JOBS = 200
+_SEARCH_ENGINE_MODE_LOCK = threading.Lock()
+_SEARCH_ENGINE_MODE_CACHE: Dict[str, Any] = {}
+
+
+def _normalize_db_query_mode(raw_mode: Optional[str], default: str = "postgres") -> str:
+    mode = (raw_mode or default).strip().lower()
+    aliases = {
+        "pg": "postgres",
+        "postgresql": "postgres",
+        "mssql": "sqlserver",
+        "sql": "sqlserver",
+        "dual": "both",
+        "all": "both",
+    }
+    normalized = aliases.get(mode, mode)
+    if normalized not in {"postgres", "sqlserver", "both"}:
+        return default
+    return normalized
+
+
+def _get_db_query_mode() -> str:
+    return _normalize_db_query_mode(os.getenv("DB_QUERY_MODE", "postgres"))
+
+
+def _get_request_db_query_mode(raw_mode: Optional[str]) -> str:
+    if raw_mode is None:
+        return _get_db_query_mode()
+
+    normalized = _normalize_db_query_mode(raw_mode, default="")
+    if normalized not in {"postgres", "sqlserver", "both"}:
+        raise HTTPException(
+            status_code=400,
+            detail="db_source must be one of: postgres, sqlserver, both",
+        )
+    return normalized
+
+
+def _test_sqlserver_connection() -> bool:
+    try:
+        from database.SQL.mssql_connection import test_connection as test_sql
+
+        return bool(test_sql())
+    except Exception as exc:
+        print(f"[search] SQL Server health check unavailable: {exc}")
+        return False
+
+
+def _build_search_engine(db: Session, query_mode: Optional[str] = None):
+    """Build search engine based on DB_QUERY_MODE env."""
+    query_mode = _normalize_db_query_mode(query_mode or _get_db_query_mode())
+    print(f"[search] DB_QUERY_MODE={query_mode}")
+
+    if query_mode == "postgres":
+        return SemanticSearchEngine(db)
+
+    if query_mode == "sqlserver":
+        try:
+            from search.sqlserver_search import SqlServerSemanticSearchEngine
+
+            return SqlServerSemanticSearchEngine()
+        except Exception as exc:
+            print(f"[search] SQL Server mode unavailable ({exc}); falling back to postgres")
+            return SemanticSearchEngine(db)
+
+    # both
+    try:
+        from search.dual_search import DualSemanticSearchEngine
+        from search.sqlserver_search import SqlServerSemanticSearchEngine
+
+        return DualSemanticSearchEngine(
+            postgres_engine=SemanticSearchEngine(db),
+            sqlserver_engine=SqlServerSemanticSearchEngine(),
+            mode="both",
+        )
+    except Exception as exc:
+        print(f"[search] Dual mode unavailable ({exc}); falling back to postgres")
+        return SemanticSearchEngine(db)
+
+
+def _session_dialect_name(db: Optional[Session]) -> str:
+    bind = getattr(db, "bind", None)
+    dialect = getattr(bind, "dialect", None)
+    return str(getattr(dialect, "name", "") or "").lower()
+
+
+def _close_engine(engine: Any) -> None:
+    if engine is None:
+        return
+    try:
+        close = getattr(engine, "close", None)
+        if callable(close):
+            close()
+    except Exception:
+        pass
+
+    for child_name in ("postgres_engine", "sqlserver_engine"):
+        child = getattr(engine, child_name, None)
+        if child is not None:
+            _close_engine(child)
+
+
+def _engine_matches_mode(engine: Any, requested_mode: str) -> bool:
+    if engine is None:
+        return False
+
+    requested_mode = _normalize_db_query_mode(requested_mode)
+    if requested_mode == "both":
+        postgres_engine = getattr(engine, "postgres_engine", None)
+        sqlserver_engine = getattr(engine, "sqlserver_engine", None)
+        return _engine_matches_mode(postgres_engine, "postgres") and _engine_matches_mode(
+            sqlserver_engine, "sqlserver"
+        )
+
+    dialect_name = _session_dialect_name(getattr(engine, "db", None))
+    if requested_mode == "postgres":
+        return dialect_name.startswith("postgres")
+    if requested_mode == "sqlserver":
+        return dialect_name.startswith("mssql")
+    return False
+
+
+def _sync_engine_db(engine: Any, db: Session) -> None:
+    if engine is None:
+        return
+    try:
+        if hasattr(engine, "update_db"):
+            engine.update_db(db)
+        elif hasattr(engine, "db"):
+            engine.db = db
+    except Exception:
+        # Keep request path resilient; engine can still be rebuilt lazily.
+        pass
+
+
+def _sync_search_engine_db(db: Session) -> None:
+    """Update active search engine's DB session when supported."""
+    global _search_engine
+    _sync_engine_db(_search_engine, db)
+
+
+def _get_search_engine_for_mode(db: Session, raw_mode: Optional[str] = None):
+    global _search_engine
+
+    requested_mode = _get_request_db_query_mode(raw_mode)
+    default_mode = _get_db_query_mode()
+
+    if requested_mode == default_mode:
+        if _search_engine is None or not _engine_matches_mode(_search_engine, requested_mode):
+            if _search_engine is not None:
+                print(
+                    f"[search] Rebuilding default engine for mode={requested_mode} "
+                    f"(session dialect mismatch)"
+                )
+                _close_engine(_search_engine)
+            _search_engine = _build_search_engine(db, query_mode=requested_mode)
+        else:
+            _sync_engine_db(_search_engine, db)
+        return _search_engine, requested_mode
+
+    with _SEARCH_ENGINE_MODE_LOCK:
+        engine = _SEARCH_ENGINE_MODE_CACHE.get(requested_mode)
+        if engine is None or not _engine_matches_mode(engine, requested_mode):
+            if engine is not None:
+                print(
+                    f"[search] Rebuilding cached engine for mode={requested_mode} "
+                    f"(session dialect mismatch)"
+                )
+                _close_engine(engine)
+            engine = _build_search_engine(db, query_mode=requested_mode)
+            _SEARCH_ENGINE_MODE_CACHE[requested_mode] = engine
+        else:
+            _sync_engine_db(engine, db)
+    return engine, requested_mode
+
+
+def _get_multimodal_text_engine(db: Session) -> SemanticSearchEngine:
+    """
+    Multi-modal search requires postgres-native text/vision joins.
+    Keep this path on SemanticSearchEngine even when DB_QUERY_MODE=both/sqlserver.
+    """
+    global _search_engine, _mm_text_search_engine
+    if isinstance(_search_engine, SemanticSearchEngine):
+        _search_engine.db = db
+        return _search_engine
+
+    if _mm_text_search_engine is None:
+        _mm_text_search_engine = SemanticSearchEngine(db)
+    else:
+        _mm_text_search_engine.db = db
+    return _mm_text_search_engine
 
 
 def _server_capabilities() -> dict:
@@ -738,6 +929,10 @@ class SearchRequest(BaseModel):
     text_weight: float = Field(0.3, description="Weight for text matching", ge=0, le=1)
     min_score: float = Field(0.1, description="Minimum score threshold", ge=0, le=1)
     video_filter: Optional[str] = Field(None, description="Filter by video filename")
+    db_source: Optional[str] = Field(
+        None,
+        description="Optional database source override: postgres, sqlserver, or both. Defaults to DB_QUERY_MODE.",
+    )
     language: Optional[str] = Field(
         None,
         description="Language hint for search (e.g. 'en', 'no'). Auto-detected if not set.",
@@ -901,9 +1096,14 @@ async def lifespan(app: FastAPI):
     try:
         global _search_engine, _mm_search_engine
         if _search_engine is None:
-            _search_engine = SemanticSearchEngine(warmup_db)
+            _search_engine = _build_search_engine(warmup_db)
+        else:
+            _sync_search_engine_db(warmup_db)
         if has_cuda and _mm_search_engine is None:
-            _mm_search_engine = MultiModalSearchEngine(db=warmup_db, text_search=_search_engine)
+            _mm_search_engine = MultiModalSearchEngine(
+                db=warmup_db,
+                text_search=_get_multimodal_text_engine(warmup_db),
+            )
             
         if has_cuda:
             # Only preload heavy stuff on GPU
@@ -961,25 +1161,25 @@ def get_video_qa(db: Session = Depends(get_db)):
 
 
 def get_search_engine(db: Session = Depends(get_db)):
-    """Lazy loader for SemanticSearchEngine (singleton)."""
+    """Lazy loader for configured search engine (postgres/sqlserver/both)."""
     global _search_engine
     if _search_engine is None:
         print("Initializing Semantic Search Engine (this may take a moment)...")
-        _search_engine = SemanticSearchEngine(db)
+        _search_engine = _build_search_engine(db)
     else:
-        _search_engine.db = db
+        _sync_search_engine_db(db)
     return _search_engine
 
 
 def get_mm_search_engine(db: Session = Depends(get_db)):
     """Lazy loader for MultiModalSearchEngine (singleton, reuses text search engine)."""
-    global _mm_search_engine, _search_engine
+    global _mm_search_engine
     if _mm_search_engine is None:
-        # Ensure the text search singleton exists first
-        if _search_engine is None:
-            _search_engine = SemanticSearchEngine(db)
         print("Initializing Multi-Modal Search Engine (this may take a moment)...")
-        _mm_search_engine = MultiModalSearchEngine(db=db, text_search=_search_engine)
+        _mm_search_engine = MultiModalSearchEngine(
+            db=db,
+            text_search=_get_multimodal_text_engine(db),
+        )
     else:
         _mm_search_engine.update_db(db)
     return _mm_search_engine
@@ -989,11 +1189,19 @@ def get_mm_search_engine(db: Session = Depends(get_db)):
 async def health_check():
     """Health check endpoint."""
     db_ok = test_connection()
-    return {
+    payload = {
         "status": "healthy" if db_ok else "unhealthy",
         "database": "ok" if db_ok else "error",
+        "db_query_mode": _get_db_query_mode(),
         **_server_capabilities(),
     }
+    query_mode = _get_db_query_mode()
+    if query_mode in {"sqlserver", "both"}:
+        sql_ok = _test_sqlserver_connection()
+        payload["sqlserver_database"] = "ok" if sql_ok else "error"
+        if db_ok and not sql_ok and query_mode == "both":
+            payload["status"] = "degraded"
+    return payload
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -2012,7 +2220,6 @@ async def ask_video_question(
 @app.post("/search", response_model=SearchResponse)
 async def search(
     request: SearchRequest,
-    search_engine: SemanticSearchEngine = Depends(get_search_engine),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -2024,6 +2231,7 @@ async def search(
     start_time = time.time()
 
     try:
+        search_engine, active_db_mode = _get_search_engine_for_mode(db, request.db_source)
         allowed_filenames = _get_allowed_filenames(user, db)
         allowed_document_ids = _get_allowed_document_ids(user, db)
         results = search_engine.search(
@@ -2053,6 +2261,7 @@ async def search(
             facet=None,
             filters={
                 "video_filter": request.video_filter,
+                "db_source": active_db_mode,
                 "semantic_weight": request.semantic_weight,
                 "text_weight": request.text_weight,
                 "min_score": request.min_score,
@@ -2066,6 +2275,7 @@ async def search(
             results_count=len(result_dicts),
             results=result_dicts,
             search_time_seconds=round(search_time, 3),
+            search_metadata={"db_query_mode": active_db_mode},
         )
 
     except Exception as e:
@@ -2077,6 +2287,10 @@ async def quick_search(
     q: str = Query(..., description="Search query", min_length=1),
     limit: int = Query(10, description="Number of results", ge=1, le=50),
     video: Optional[str] = Query(None, description="Filter by video filename"),
+    db_source: Optional[str] = Query(
+        None,
+        description="Optional database source override: postgres, sqlserver, or both",
+    ),
     category: Optional[List[str]] = Query(
         None, description="Filter by video category name(s)"
     ),
@@ -2090,7 +2304,6 @@ async def quick_search(
         "auto",
         description="Optional meaning facet: auto, oil_gas, tools, analytics",
     ),
-    search_engine: SemanticSearchEngine = Depends(get_search_engine),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -2130,6 +2343,7 @@ async def quick_search(
     allowed_document_ids = _get_allowed_document_ids(user, db)
 
     try:
+        search_engine, active_db_mode = _get_search_engine_for_mode(db, db_source)
         fallback_data = search_engine.search_with_fallback(
             query=q,
             top_k=limit * 3 if allowed_filenames else limit,
@@ -2157,6 +2371,7 @@ async def quick_search(
             filters={
                 "limit": limit,
                 "video_filter": video,
+                "db_source": active_db_mode,
                 "category": cats,
                 "site": sites,
                 "label": label,
@@ -2183,6 +2398,7 @@ async def quick_search(
             "results_count": len(result_dicts),
             "results": result_dicts,
             "grouped_results": grouped_results,
+            "db_query_mode": active_db_mode,
             "search_time_seconds": round(search_time, 3),
             "search_strategy": metadata.get("search_strategy"),
             "search_message": metadata.get("search_message"),
@@ -2319,7 +2535,10 @@ async def browse_by_category(
 async def exact_search(
     phrase: str = Query(..., description="Exact phrase to search", min_length=1),
     video: Optional[str] = Query(None, description="Filter by video filename"),
-    search_engine: SemanticSearchEngine = Depends(get_search_engine),
+    db_source: Optional[str] = Query(
+        None,
+        description="Optional database source override: postgres, sqlserver, or both",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -2329,6 +2548,7 @@ async def exact_search(
     start_time = time.time()
 
     try:
+        search_engine, active_db_mode = _get_search_engine_for_mode(db, db_source)
         results = search_engine.search_exact_phrase(phrase=phrase, video_filter=video)
         allowed_filenames = _get_allowed_filenames(user, db)
         allowed_document_ids = _get_allowed_document_ids(user, db)
@@ -2346,7 +2566,7 @@ async def exact_search(
             search_mode="search_exact",
             results=results,
             latency_seconds=search_time,
-            filters={"video_filter": video},
+            filters={"video_filter": video, "db_source": active_db_mode},
         )
 
         return {
@@ -2354,6 +2574,7 @@ async def exact_search(
             "request_id": request_id,
             "results_count": len(result_dicts),
             "results": result_dicts,
+            "db_query_mode": active_db_mode,
             "search_time_seconds": round(search_time, 3),
         }
 
@@ -2388,12 +2609,11 @@ async def multimodal_search(
         vision_weight = request.vision_weight
 
         # Reuse singleton multi-modal search engine
-        global _mm_search_engine, _search_engine
+        global _mm_search_engine
         if _mm_search_engine is None:
-            if _search_engine is None:
-                _search_engine = SemanticSearchEngine(db)
             _mm_search_engine = MultiModalSearchEngine(
-                db=db, text_search=_search_engine
+                db=db,
+                text_search=_get_multimodal_text_engine(db),
             )
         _mm_search_engine.update_db(db)
         _mm_search_engine.text_weight = text_weight
@@ -2455,12 +2675,10 @@ async def multimodal_search(
         # Fallback to text-only search if vision fails
         if any(w in str(e).lower() for w in ["vision", "clip", "siglip", "embedding"]):
             print(f"Vision search failed, falling back to text-only: {e}")
-            if _search_engine is None:
-                _search_engine = SemanticSearchEngine(db)
-            _search_engine.db = db
+            text_engine = _get_multimodal_text_engine(db)
             allowed_filenames = _get_allowed_filenames(user, db)
             allowed_document_ids = _get_allowed_document_ids(user, db)
-            results = _search_engine.search(
+            results = text_engine.search(
                 query=request.query,
                 top_k=request.top_k * 3
                 if allowed_filenames is not None
@@ -2565,12 +2783,11 @@ async def quick_multimodal_search(
         start_time = time.time()
 
         # Reuse singleton multi-modal search engine
-        global _mm_search_engine, _search_engine
+        global _mm_search_engine
         if _mm_search_engine is None:
-            if _search_engine is None:
-                _search_engine = SemanticSearchEngine(db)
             _mm_search_engine = MultiModalSearchEngine(
-                db=db, text_search=_search_engine
+                db=db,
+                text_search=_get_multimodal_text_engine(db),
             )
         _mm_search_engine.update_db(db)
         _mm_search_engine.text_weight = text_weight
@@ -2653,10 +2870,8 @@ async def quick_multimodal_search(
         # Graceful fallback to text-only
         if any(w in str(e).lower() for w in ["vision", "clip", "siglip", "embedding"]):
             print(f"Vision search unavailable, using text-only: {e}")
-            if _search_engine is None:
-                _search_engine = SemanticSearchEngine(db)
-            _search_engine.db = db
-            fallback_data = _search_engine.search_with_fallback(
+            text_engine = _get_multimodal_text_engine(db)
+            fallback_data = text_engine.search_with_fallback(
                 query=q,
                 top_k=limit * 3 if allowed_filenames else limit,
                 video_filter=video,
