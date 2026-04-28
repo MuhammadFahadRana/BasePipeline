@@ -37,7 +37,7 @@ DEFAULT_TEXT_MODEL = os.getenv(
     os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B"),
 )
 DEFAULT_VISION_MODEL = os.getenv(
-    "VISION_EMBEDDING_MODEL", "google/siglip-base-patch16-224"
+    "VISION_EMBEDDING_MODEL", "google/siglip2-base-patch16-224"
 )
 DEFAULT_TEXT_DEVICE = os.getenv("TEXT_EMBEDDING_DEVICE", "auto")
 DEFAULT_VISION_DEVICE = os.getenv("VISION_EMBEDDING_DEVICE", "auto")
@@ -98,6 +98,9 @@ class SqlServerIngester:
         self.visual_embedding_col_info = self._get_vector_column_info(
             "visual_embeddings", "embedding"
         )
+        self.video_embedding_col_info = self._get_vector_column_info_optional(
+            "video_embeddings", "embedding"
+        )
 
         if self.enable_text_projection and not (1 <= self.text_projection_dim <= 1998):
             raise ValueError(
@@ -152,6 +155,12 @@ class SqlServerIngester:
                 col_info=self.visual_embedding_col_info,
                 label="dbo.visual_embeddings.embedding",
             )
+            if self.video_embedding_col_info is not None:
+                self._assert_dimension_compat(
+                    model_dim=vision_gen.embedding_dim,
+                    col_info=self.video_embedding_col_info,
+                    label="dbo.video_embeddings.embedding",
+                )
 
     @property
     def text_gen(self):
@@ -543,6 +552,59 @@ class SqlServerIngester:
             },
         )
 
+    def _insert_video_embedding(
+        self,
+        conn,
+        video_id: int,
+        embedding: list[float],
+        model_name: str,
+        frame_count: int,
+    ) -> None:
+        if self.video_embedding_col_info is None:
+            return
+        emb_json = self._to_json_string(embedding)
+        emb_expr = self._insert_embedding_value_sql(
+            self.video_embedding_col_info, "embedding_json"
+        )
+        sql = text(
+            f"""
+            INSERT INTO dbo.video_embeddings
+                (video_id, embedding, embedding_model, aggregation_method, frame_count)
+            VALUES
+                (:video_id, {emb_expr}, :embedding_model, 'temporal_mean', :frame_count)
+            """
+        )
+        conn.execute(
+            sql,
+            {
+                "video_id": video_id,
+                "embedding_json": emb_json,
+                "embedding_model": model_name,
+                "frame_count": frame_count,
+            },
+        )
+
+    @staticmethod
+    def _mean_normalized(vectors: list[list[float]]) -> list[float]:
+        if not vectors:
+            return []
+        dim = len(vectors[0])
+        accum = [0.0] * dim
+        valid = 0
+        for vec in vectors:
+            if len(vec) != dim:
+                continue
+            valid += 1
+            for i, value in enumerate(vec):
+                accum[i] += float(value)
+        if valid == 0:
+            return []
+        mean = [value / valid for value in accum]
+        norm = math.sqrt(sum(value * value for value in mean))
+        if norm > 0:
+            mean = [value / norm for value in mean]
+        return mean
+
     @staticmethod
     def _find_scene_id_for_segment(
         scenes: list[dict[str, Any]], segment_start: float
@@ -555,6 +617,15 @@ class SqlServerIngester:
     @staticmethod
     def _delete_existing_video(conn, video_id: int) -> None:
         # Delete scene-level embeddings first (segment-level rows cascade via transcript FK).
+        conn.execute(
+            text(
+                """
+                DELETE FROM dbo.video_embeddings
+                WHERE video_id = :video_id
+                """
+            ),
+            {"video_id": video_id},
+        )
         conn.execute(
             text(
                 """
@@ -807,6 +878,8 @@ class SqlServerIngester:
                     )
 
             visual_embedding_count = 0
+            video_embedding_count = 0
+            video_level_vectors: list[list[float]] = []
             if self.enable_visual_embeddings and scenes_inserted:
                 scene_with_frame: list[tuple[int, str, float | None]] = []
                 for s in scenes_inserted:
@@ -822,6 +895,7 @@ class SqlServerIngester:
                         paths, batch_size=len(paths), show_progress=False, normalize=True
                     )
                     for (db_scene_id, keyframe_path, midpoint), vec in zip(batch, vectors):
+                        vec_list = vec.tolist()
                         self._insert_visual_embedding(
                             conn=conn,
                             scene_id=db_scene_id,
@@ -829,10 +903,22 @@ class SqlServerIngester:
                             sample_time=midpoint,
                             frame_role="mid",
                             frame_index=None,
-                            embedding=vec.tolist(),
+                            embedding=vec_list,
                             model_name=self.vision_gen.model_name,
                         )
+                        video_level_vectors.append(vec_list)
                         visual_embedding_count += 1
+
+                video_vector = self._mean_normalized(video_level_vectors)
+                if video_vector and self.video_embedding_col_info is not None:
+                    self._insert_video_embedding(
+                        conn=conn,
+                        video_id=int(video_id),
+                        embedding=video_vector,
+                        model_name=f"video-temporal-mean:{self.vision_gen.model_name}",
+                        frame_count=len(video_level_vectors),
+                    )
+                    video_embedding_count = 1
 
         return {
             "video": filename,
@@ -843,6 +929,7 @@ class SqlServerIngester:
             "text_embeddings": text_embedding_count,
             "text_projections": text_projection_count,
             "visual_embeddings": visual_embedding_count,
+            "video_embeddings": video_embedding_count,
         }
 
     @staticmethod

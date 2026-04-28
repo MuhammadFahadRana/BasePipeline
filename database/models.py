@@ -60,6 +60,9 @@ class Video(Base):
     transcript_segments = relationship(
         "TranscriptSegment", back_populates="video", cascade="all, delete-orphan"
     )
+    video_embeddings = relationship(
+        "VideoEmbedding", back_populates="video", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<Video(id={self.id}, filename='{self.filename}', label='{self.label}')>"
@@ -145,7 +148,7 @@ class Embedding(Base):
     scene_id = Column(
         Integer, ForeignKey("scenes.id", ondelete="CASCADE"), nullable=True
     )
-    embedding = Column(Vector(1024))
+    embedding = Column(Vector())
     embedding_model = Column(String(100), default="Qwen/Qwen3-Embedding-0.6B")
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -182,7 +185,7 @@ class QueryCache(Base):
 
 
 class VisualEmbedding(Base):
-    """Visual embeddings for keyframes/scenes using CLIP."""
+    """Visual embeddings for sampled keyframes/scenes using SigLIP 2."""
 
     __tablename__ = "visual_embeddings"
 
@@ -194,8 +197,8 @@ class VisualEmbedding(Base):
     sample_time = Column(Float)  # Timestamp (seconds) of sampled frame
     frame_role = Column(String(20), default="mid")  # start/mid/end/extra_n
     frame_index = Column(Integer)  # Absolute frame index in source video
-    embedding = Column(Vector(768))  # 768-dim for SigLIP (google/siglip-base-patch16-224)
-    embedding_model = Column(String(100), default="google/siglip-base-patch16-224")
+    embedding = Column(Vector())
+    embedding_model = Column(String(100), default="google/siglip2-base-patch16-224")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -215,6 +218,39 @@ class VisualEmbedding(Base):
         return f"<VisualEmbedding(id={self.id}, scene_id={self.scene_id}, model='{self.embedding_model}')>"
 
 
+class VideoEmbedding(Base):
+    """Video-level embedding aggregated from sampled visual evidence."""
+
+    __tablename__ = "video_embeddings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(Integer, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    embedding = Column(Vector())
+    embedding_model = Column(
+        String(100), default="video-temporal-mean:google/siglip2-base-patch16-224"
+    )
+    aggregation_method = Column(String(50), default="temporal_mean")
+    frame_count = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    video = relationship("Video", back_populates="video_embeddings")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "video_id",
+            "embedding_model",
+            "aggregation_method",
+            name="uq_video_embedding",
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"<VideoEmbedding(id={self.id}, video_id={self.video_id}, "
+            f"model='{self.embedding_model}')>"
+        )
+
+
 class SearchQuery(Base):
     """Log search queries for analytics."""
 
@@ -222,7 +258,7 @@ class SearchQuery(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     query_text = Column(Text, nullable=False)
-    query_embedding = Column(Vector(1024))
+    query_embedding = Column(Vector())
     search_type = Column(String(20), default="text")  # text, visual, image, hybrid
     results_count = Column(Integer)
     top_result_id = Column(
@@ -242,8 +278,8 @@ class SearchImageCache(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     filename = Column(String(255))
     image_hash = Column(String(64), unique=True, index=True)  # SHA256 of image bytes
-    embedding = Column(Vector(768))  # 768-dim for SigLIP
-    embedding_model = Column(String(100), default="google/siglip-base-patch16-224")
+    embedding = Column(Vector())
+    embedding_model = Column(String(100), default="google/siglip2-base-patch16-224")
     search_count = Column(Integer, default=1)
     last_used = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -48,7 +48,7 @@ class VisualSearchEngine:
         Returns:
             List of SearchResult objects with visual matches
         """
-        print(f"🔍 Visual Search (SigLIP): '{query}'")
+        print(f"Visual Search ({self.vision_model.model_name}): '{query}'")
         
         # 1. Encode the text query as a vision embedding
         query_embedding = self.vision_model.encode_text(query, normalize=True)
@@ -77,7 +77,7 @@ class VisualSearchEngine:
         Returns:
             List of SearchResult objects
         """
-        print("🔍 Reverse Image Search (SigLIP)")
+        print(f"Reverse Image Search ({self.vision_model.model_name})")
         
         # 1. Encode the image query
         query_embedding = self.vision_model.encode_image(image_input, normalize=True)
@@ -124,7 +124,7 @@ class VisualSearchEngine:
                     AND ts.start_time <= s.start_time + 1
                     AND ts.end_time >= s.start_time - 1
                 )
-                WHERE 1=1 {query_filter}
+                WHERE ve.embedding_model = :model_name {query_filter}
             )
             SELECT * FROM ranked
             WHERE rn = 1
@@ -134,7 +134,8 @@ class VisualSearchEngine:
         
         params = {
             'query_embedding': query_embedding.tolist(),
-            'top_k': top_k * 2
+            'top_k': top_k * 2,
+            'model_name': self.vision_model.model_name,
         }
         
         if video_filter:
@@ -202,14 +203,15 @@ class VisualSearchEngine:
                 FROM visual_embeddings ve
                 JOIN scenes s ON ve.scene_id = s.id  
                 JOIN videos v ON s.video_id = v.id
-                WHERE 1=1 {query_filter}
+                WHERE ve.embedding_model = :model_name {query_filter}
                 ORDER BY ve.embedding <=> CAST(:query_embedding AS vector)
                 LIMIT :top_k
             """)
             
             params = {
                 'query_embedding': query_embedding.tolist(),
-                'top_k': top_k
+                'top_k': top_k,
+                'model_name': self.vision_model.model_name,
             }
             
             if video_filter:
@@ -239,6 +241,65 @@ class VisualSearchEngine:
             traceback.print_exc()
             return []
 
+    def search_video_level(
+        self,
+        query: str,
+        top_k: int = 10,
+        video_filter: Optional[str] = None,
+    ) -> List[dict]:
+        """Search video-level visual embeddings for whole-video discovery."""
+        try:
+            query_embedding = self.vision_model.encode_text(query, normalize=True)
+            video_embedding_model = f"video-temporal-mean:{self.vision_model.model_name}"
+
+            query_filter = ""
+            if video_filter:
+                query_filter = "AND v.filename = :video_filter"
+
+            sql_query = text(f"""
+                SELECT
+                    v.id AS video_id,
+                    v.filename,
+                    v.file_path,
+                    v.duration_seconds,
+                    ve.frame_count,
+                    1 - (ve.embedding <=> CAST(:query_embedding AS vector)) AS similarity
+                FROM video_embeddings ve
+                JOIN videos v ON ve.video_id = v.id
+                WHERE ve.embedding_model = :model_name
+                {query_filter}
+                ORDER BY ve.embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :top_k
+            """)
+
+            params = {
+                "query_embedding": query_embedding.tolist(),
+                "model_name": video_embedding_model,
+                "top_k": top_k,
+            }
+            if video_filter:
+                params["video_filter"] = video_filter
+
+            rows = self.db.execute(sql_query, params).fetchall()
+            return [
+                {
+                    "video_id": row.video_id,
+                    "video_filename": row.filename,
+                    "video_path": row.file_path,
+                    "duration_seconds": row.duration_seconds,
+                    "frame_count": row.frame_count,
+                    "similarity": float(row.similarity),
+                    "embedding_model": video_embedding_model,
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"  Video-level visual search error: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return []
+
     def search_by_image_and_text(
         self,
         image_input: Union[str, Path, bytes, Image.Image],
@@ -265,7 +326,10 @@ class VisualSearchEngine:
         Returns:
             List of SearchResult objects
         """
-        print(f"🔍 Combined Image+Text Search (SigLIP) (image={image_weight}, text={text_weight})")
+        print(
+            f"Combined Image+Text Search ({self.vision_model.model_name}) "
+            f"(image={image_weight}, text={text_weight})"
+        )
         
         # Encode both inputs
         image_embedding = self.vision_model.encode_image(image_input, normalize=True)

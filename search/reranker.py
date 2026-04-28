@@ -37,7 +37,7 @@ def _safe_env_int(name: str, default: int) -> int:
         return default
 
 
-DEFAULT_RERANKER_MODEL = os.getenv("RERANKER_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
+DEFAULT_RERANKER_MODEL = os.getenv("RERANKER_MODEL", "Qwen/Qwen3-Reranker-4B")
 DEFAULT_RERANKER_MODE = os.getenv("RERANKER_MODE", "hybrid").strip().lower()
 DEFAULT_RERANKER_BLEND = _safe_env_float("RERANKER_BLEND", 0.7)
 DEFAULT_RERANK_LIMIT = _safe_env_int("RERANKER_TOP_N", 12)

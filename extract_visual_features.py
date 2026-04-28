@@ -8,6 +8,7 @@ Hugging Face vision-language models that support image-text generation.
 import torch
 import json
 import os
+import re
 import warnings
 from PIL import Image
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -15,6 +16,14 @@ from pathlib import Path
 
 try:
     from transformers import AutoModelForVision2Seq, AutoProcessor
+    try:
+        from transformers import AutoModelForImageTextToText
+    except ImportError:  # Older Transformers builds.
+        AutoModelForImageTextToText = None
+    try:
+        from transformers import Qwen2_5_VLForConditionalGeneration
+    except ImportError:  # Optional; Auto classes may still work.
+        Qwen2_5_VLForConditionalGeneration = None
 except ImportError:
     raise ImportError("Required libraries missing. Run: pip install transformers accelerate")
 
@@ -30,7 +39,7 @@ class VisualFeatureExtractor:
     Extracts visual features (captions, labels) using a HF vision-language model.
     """
     
-    DEFAULT_MODEL = "Qwen/Qwen2-VL-7B-Instruct"
+    DEFAULT_MODEL = os.getenv("VISUAL_ENRICHMENT_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct")
     
     def __init__(
         self,
@@ -66,12 +75,18 @@ class VisualFeatureExtractor:
         self._surya_det_model = None
         self._surya_rec_model = None
         self._surya_rec_processor = None
+        self._paddle_initialized = False
+        self._paddle_available = False
+        self._paddle_model = None
+        self._paddle_processor = None
         self.enable_ocr_fallback = (
             os.getenv("VISUAL_OCR_FALLBACK", "true").strip().lower()
             in ("1", "true", "yes", "on")
         )
+        # For video frames prefer PaddleOCR first, then EasyOCR as fallback.
+        # Keep an env override for advanced users.
         self.ocr_fallback_engine = os.getenv(
-            "VISUAL_OCR_FALLBACK_ENGINE", "surya_easyocr"
+            "VISUAL_OCR_FALLBACK_ENGINE", "paddle_easyocr"
         ).strip().lower()
         
         print(f"\n{'='*60}")
@@ -114,11 +129,12 @@ class VisualFeatureExtractor:
         
         if quantization_config:
             model_kwargs["quantization_config"] = quantization_config
-        elif self.device == "cuda":
+        if self.device == "cuda":
             model_kwargs["device_map"] = "auto"
             
         try:
-            self.model = AutoModelForVision2Seq.from_pretrained(
+            model_cls = self._resolve_model_class()
+            self.model = model_cls.from_pretrained(
                 self.model_name,
                 **model_kwargs
             )
@@ -133,7 +149,8 @@ class VisualFeatureExtractor:
                 if "quantization_config" in model_kwargs:
                     del model_kwargs["quantization_config"]
                 
-                self.model = AutoModelForVision2Seq.from_pretrained(
+                model_cls = self._resolve_model_class()
+                self.model = model_cls.from_pretrained(
                     self.model_name,
                     **model_kwargs
                 )
@@ -144,6 +161,15 @@ class VisualFeatureExtractor:
             self.model = self.model.to("cpu")
             
         print(f"[OK] {self.model_name} loaded successfully.")
+
+    def _resolve_model_class(self):
+        """Prefer model-specific/current multimodal loaders when available."""
+        model_lower = self.model_name.lower()
+        if "qwen2.5-vl" in model_lower and Qwen2_5_VLForConditionalGeneration is not None:
+            return Qwen2_5_VLForConditionalGeneration
+        if AutoModelForImageTextToText is not None:
+            return AutoModelForImageTextToText
+        return AutoModelForVision2Seq
 
     def _resolve_torch_dtype(self):
         """Resolve user-configured dtype to a torch dtype."""
@@ -335,20 +361,133 @@ class VisualFeatureExtractor:
 
         return self._ocr_reader
 
+    def _ensure_paddle_ocr_vl(self) -> bool:
+        """Lazy-load PaddleOCR-VL for diagram/presentation OCR fallback."""
+        if self._paddle_initialized:
+            return self._paddle_available
+
+        self._paddle_initialized = True
+        try:
+            try:
+                from transformers import PaddleOCRVLForConditionalGeneration
+            except ImportError:
+                print("Warning: PaddleOCR-VL class unavailable in installed Transformers.")
+                self._paddle_available = False
+                return False
+
+            model_name = os.getenv("PADDLE_OCR_VL_MODEL", "PaddlePaddle/PaddleOCR-VL")
+            dtype = self._resolve_torch_dtype()
+            print(f"Loading PaddleOCR-VL fallback: {model_name}")
+            self._paddle_processor = AutoProcessor.from_pretrained(
+                model_name, trust_remote_code=True
+            )
+            self._paddle_model = PaddleOCRVLForConditionalGeneration.from_pretrained(
+                model_name,
+                torch_dtype=dtype,
+                trust_remote_code=True,
+            )
+            if self.device == "cpu":
+                self._paddle_model = self._paddle_model.to("cpu")
+            elif self.device == "cuda":
+                self._paddle_model = self._paddle_model.to("cuda")
+            self._paddle_model.eval()
+            self._paddle_available = True
+            print("[OK] PaddleOCR-VL fallback ready.")
+        except Exception as exc:
+            self._paddle_available = False
+            print(f"Warning: PaddleOCR-VL fallback unavailable: {exc}")
+
+        return self._paddle_available
+
+    def _fallback_ocr_text_paddle(self, image_path: Union[str, Path]) -> Optional[str]:
+        """Extract visible text using PaddleOCR-VL when available."""
+        if not self._ensure_paddle_ocr_vl():
+            return None
+
+        prompt = (
+            "Extract all readable text visible in this image. Preserve reading order. "
+            "Return only the text; do not describe the image."
+        )
+        try:
+            image = Image.open(str(image_path)).convert("RGB")
+            inputs = self._paddle_processor(
+                text=[prompt],
+                images=[image],
+                return_tensors="pt",
+                padding=True,
+            )
+            inputs = {
+                k: v.to(self.device) if hasattr(v, "to") else v
+                for k, v in inputs.items()
+            }
+            with torch.no_grad():
+                generated_ids = self._paddle_model.generate(**inputs, max_new_tokens=512)
+            input_ids = inputs.get("input_ids")
+            try:
+                if input_ids is not None:
+                    generated_ids = [
+                        out_ids[len(in_ids):]
+                        for in_ids, out_ids in zip(input_ids, generated_ids)
+                    ]
+                output_text = self._paddle_processor.batch_decode(
+                    generated_ids,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                )[0]
+            except Exception:
+                output_text = self._paddle_processor.batch_decode(
+                    generated_ids,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                )[0]
+        except Exception as exc:
+            print(f"Warning: PaddleOCR-VL OCR failed for {image_path}: {exc}")
+            return None
+
+        text = " ".join((output_text or "").split()).strip()
+        if not text or text.lower() in {"none", "null", "n/a", "na", "no text"}:
+            return None
+        return text
+
     def _fallback_ocr_text(self, image_path: Union[str, Path]) -> Optional[str]:
         """Fallback OCR extraction when the vision model omits OCR text."""
         if not self.enable_ocr_fallback:
             return None
 
+        if self.ocr_fallback_engine in {
+            "paddle",
+            "paddle_surya",
+            "paddle_easyocr",
+            "paddle_surya_easyocr",
+            "auto",
+        }:
+            text = self._fallback_ocr_text_paddle(image_path)
+            if text:
+                return text
+            if self.ocr_fallback_engine == "paddle":
+                return None
+
         # Prefer Surya (document OCR) when available, then fall back to EasyOCR.
-        if self.ocr_fallback_engine in {"surya", "surya_easyocr", "auto"}:
+        if self.ocr_fallback_engine in {
+            "surya",
+            "surya_easyocr",
+            "paddle_surya",
+            "paddle_surya_easyocr",
+            "auto",
+        }:
             text = self._fallback_ocr_text_surya(image_path)
             if text:
                 return text
             if self.ocr_fallback_engine == "surya":
                 return None
 
-        if self.ocr_fallback_engine in {"easyocr", "surya_easyocr", "auto"}:
+        if self.ocr_fallback_engine in {
+            "easyocr",
+            "surya_easyocr",
+            "paddle_easyocr",
+            "paddle_surya_easyocr",
+            "auto",
+        }:
             reader = self._get_ocr_reader()
             if reader is None:
                 return None
@@ -415,10 +554,15 @@ class VisualFeatureExtractor:
     def _run_inference(self, image_path) -> dict:
         """Internal: run the model on a single image."""
         query = (
-            "1. Describe this video scene in a short, descriptive sentence. "
-            "Always provide this sentence; do not answer 'None' for item 1.\n"
-            "2. List all important objects visible in the scene as comma-separated tags.\n"
-            "3. Extract all visible text (OCR) from the scene. If no text is visible, say 'None'."
+            "Analyze this video frame for retrieval indexing. Return valid JSON only with keys: "
+            "caption, object_labels, ocr_text.\n"
+            "- caption: one concise sentence describing the visible scene.\n"
+            "- object_labels: 8 to 20 lowercase searchable tags for visible subjects, objects, "
+            "scene type, diagram/chart type, and visual style. Include specific labels when visually "
+            "supported, for example: samurai, sword, armor, cherry blossom, japanese art, subtitle, "
+            "flow diagram, process diagram, pump, valve, platform, timeline.\n"
+            "- ocr_text: all readable on-screen text in reading order, or an empty string.\n"
+            "Do not include explanations outside JSON."
         )
 
         inputs = self._build_model_inputs(image_path=image_path, prompt=query)
@@ -464,10 +608,15 @@ class VisualFeatureExtractor:
         Using re.match anchored to line-start prevents false triggers on
         content that happens to contain "2." (e.g. "25th year stand-up").
         """
-        import re
-
         # JSON fallback first (some checkpoints answer in JSON-like format).
         stripped = (text or "").strip()
+        if stripped.startswith("```"):
+            stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+            stripped = re.sub(r"\s*```$", "", stripped)
+        if not (stripped.startswith("{") and stripped.endswith("}")):
+            match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+            if match:
+                stripped = match.group(0)
         if stripped.startswith("{") and stripped.endswith("}"):
             try:
                 payload = json.loads(stripped)
@@ -475,9 +624,11 @@ class VisualFeatureExtractor:
                 labels = payload.get("object_labels") or payload.get("labels") or []
                 ocr_text = payload.get("ocr_text") or payload.get("ocr") or None
                 if isinstance(labels, str):
-                    labels = [v.strip() for v in labels.split(",") if v.strip()]
+                    labels = re.split(r"[,;\n]+", labels)
+                    labels = [v.strip() for v in labels if v.strip()]
                 elif not isinstance(labels, list):
                     labels = [str(labels)] if labels else []
+                labels = self._clean_labels(labels)
                 return {
                     "caption": caption.strip() if isinstance(caption, str) else caption,
                     "object_labels": labels,
@@ -519,7 +670,9 @@ class VisualFeatureExtractor:
                     caption = content
                 elif num == 2:
                     current_section = "labels"
-                    object_labels = [t.strip() for t in content.split(",") if t.strip()]
+                    object_labels = self._clean_labels(
+                        [t.strip() for t in content.split(",") if t.strip()]
+                    )
                 elif num == 3:
                     current_section = "ocr"
                     if content.lower() not in NONE_VALS:
@@ -535,7 +688,9 @@ class VisualFeatureExtractor:
                     if section == "caption":
                         caption = content
                     elif section == "labels":
-                        object_labels = [t.strip() for t in content.split(",") if t.strip()]
+                        object_labels = self._clean_labels(
+                            [t.strip() for t in content.split(",") if t.strip()]
+                        )
                     elif section == "ocr":
                         if content.lower() not in NONE_VALS:
                             ocr_parts = [content]
@@ -566,11 +721,30 @@ class VisualFeatureExtractor:
             if fallback:
                 caption = fallback[:700]
 
+        object_labels = self._clean_labels(object_labels)
         return {
             "caption":       caption or None,
             "object_labels": object_labels,
             "ocr_text":      ocr_text or None,
         }
+
+    @staticmethod
+    def _clean_labels(labels: List[Any]) -> List[str]:
+        """Normalize object/style tags for stable indexing."""
+        invalid = {"none", "null", "n/a", "na", "no objects", "unknown", ""}
+        out: List[str] = []
+        for raw in labels or []:
+            label = str(raw).strip().lower()
+            label = re.sub(r"^[\-\*\d\.\)\s:]+", "", label).strip()
+            label = re.sub(r"\s+", " ", label)
+            label = label.strip(" .,;:/|")
+            if not label or label in invalid:
+                continue
+            # Keep labels compact and search-friendly.
+            if len(label) > 80:
+                label = label[:80].rstrip()
+            out.append(label)
+        return list(dict.fromkeys(out))
 
 if __name__ == "__main__":
     # Test script if run directly

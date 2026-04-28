@@ -161,7 +161,7 @@ CREATE TABLE dbo.visual_embeddings (
     frame_role VARCHAR(20) NOT NULL CONSTRAINT DF_visual_embeddings_frame_role DEFAULT ''mid'',
     frame_index INT NULL,
     ' + @VisualEmbeddingColumnDef + N'
-    embedding_model VARCHAR(100) NOT NULL CONSTRAINT DF_visual_embeddings_model DEFAULT ''google/siglip-base-patch16-224'',
+    embedding_model VARCHAR(100) NOT NULL CONSTRAINT DF_visual_embeddings_model DEFAULT ''google/siglip2-base-patch16-224'',
     created_at DATETIME2(3) NOT NULL CONSTRAINT DF_visual_embeddings_created_at DEFAULT SYSUTCDATETIME(),
     ' + @VisualEmbeddingJsonConstraint + N'
     CONSTRAINT FK_visual_embeddings_scene
@@ -170,6 +170,33 @@ CREATE TABLE dbo.visual_embeddings (
 );';
 
     EXEC sp_executesql @VisualSql;
+END;
+GO
+
+IF OBJECT_ID(N'dbo.video_embeddings', N'U') IS NULL
+BEGIN
+    DECLARE @HasVectorVideo BIT = CASE WHEN EXISTS (SELECT 1 FROM sys.types WHERE name = N'vector') THEN 1 ELSE 0 END;
+    DECLARE @VideoEmbeddingColumnDef NVARCHAR(200) =
+        CASE WHEN @HasVectorVideo = 1 THEN N'embedding VECTOR(768) NULL,' ELSE N'embedding NVARCHAR(MAX) NULL,' END;
+    DECLARE @VideoEmbeddingJsonConstraint NVARCHAR(MAX) =
+        CASE WHEN @HasVectorVideo = 1 THEN N'' ELSE N'CONSTRAINT CK_video_embeddings_embedding_json CHECK (embedding IS NULL OR ISJSON(embedding) = 1),' END;
+
+    DECLARE @VideoEmbSql NVARCHAR(MAX) = N'
+CREATE TABLE dbo.video_embeddings (
+    id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_video_embeddings PRIMARY KEY,
+    video_id INT NOT NULL,
+    ' + @VideoEmbeddingColumnDef + N'
+    embedding_model VARCHAR(100) NOT NULL CONSTRAINT DF_video_embeddings_model DEFAULT ''video-temporal-mean:google/siglip2-base-patch16-224'',
+    aggregation_method VARCHAR(50) NOT NULL CONSTRAINT DF_video_embeddings_aggregation DEFAULT ''temporal_mean'',
+    frame_count INT NULL,
+    created_at DATETIME2(3) NOT NULL CONSTRAINT DF_video_embeddings_created_at DEFAULT SYSUTCDATETIME(),
+    ' + @VideoEmbeddingJsonConstraint + N'
+    CONSTRAINT FK_video_embeddings_video
+        FOREIGN KEY (video_id) REFERENCES dbo.videos(id) ON DELETE CASCADE,
+    CONSTRAINT UQ_video_embedding UNIQUE (video_id, embedding_model, aggregation_method)
+);';
+
+    EXEC sp_executesql @VideoEmbSql;
 END;
 GO
 
@@ -322,7 +349,7 @@ CREATE TABLE dbo.search_image_cache (
     filename VARCHAR(255) NULL,
     image_hash VARCHAR(64) NULL,
     ' + @SearchImageEmbeddingColumnDef + N'
-    embedding_model VARCHAR(100) NOT NULL CONSTRAINT DF_search_image_cache_model DEFAULT ''google/siglip-base-patch16-224'',
+    embedding_model VARCHAR(100) NOT NULL CONSTRAINT DF_search_image_cache_model DEFAULT ''google/siglip2-base-patch16-224'',
     search_count INT NOT NULL CONSTRAINT DF_search_image_cache_search_count DEFAULT 1,
     last_used DATETIME2(3) NOT NULL CONSTRAINT DF_search_image_cache_last_used DEFAULT SYSUTCDATETIME(),
     created_at DATETIME2(3) NOT NULL CONSTRAINT DF_search_image_cache_created_at DEFAULT SYSUTCDATETIME(),
@@ -373,6 +400,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'idx_embeddings_model' AN
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'idx_visual_embeddings_model' AND object_id = OBJECT_ID(N'dbo.visual_embeddings'))
     CREATE INDEX idx_visual_embeddings_model ON dbo.visual_embeddings(embedding_model);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'idx_video_embeddings_model' AND object_id = OBJECT_ID(N'dbo.video_embeddings'))
+    CREATE INDEX idx_video_embeddings_model ON dbo.video_embeddings(embedding_model);
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'idx_search_requests_uuid' AND object_id = OBJECT_ID(N'dbo.search_requests'))
     CREATE INDEX idx_search_requests_uuid ON dbo.search_requests(request_uuid);
@@ -498,6 +528,20 @@ BEGIN
     FROM dbo.visual_embeddings ve
     LEFT JOIN dbo.scenes s ON s.id = ve.scene_id
     WHERE s.id IS NULL;
+
+    SELECT @@ROWCOUNT AS deleted_count;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.cleanup_stale_video_embeddings
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE ve
+    FROM dbo.video_embeddings ve
+    LEFT JOIN dbo.videos v ON v.id = ve.video_id
+    WHERE v.id IS NULL;
 
     SELECT @@ROWCOUNT AS deleted_count;
 END;

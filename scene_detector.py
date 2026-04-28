@@ -80,9 +80,9 @@ class SceneConfig:
     #   - Lower value (e.g., 0.80) = Aggressive merging (more scenes are grouped together).
     clip_sim_merge_threshold: float = 0.90
 
-    # Visual Enrichment (Qwen2-VL) — primary enrichment: captions, object labels, OCR
+    # Visual Enrichment (Qwen2.5-VL) - primary enrichment: captions, object labels, OCR
     enable_visual_enrichment: bool = True
-    qwen_vl_model: str = "Qwen/Qwen2-VL-7B-Instruct"
+    qwen_vl_model: str = "Qwen/Qwen2.5-VL-7B-Instruct"
     qwen_vl_load_in_4bit: bool = True
 
     # Format conversion
@@ -114,7 +114,7 @@ class SceneConfig:
 class SceneDetector:
     """
     Unified scene processing:
-    detect → refine (CLIP) → enrich (Qwen2-VL: captions, labels, OCR) → save
+    detect -> refine (CLIP) -> enrich (Qwen2.5-VL: captions, labels, OCR) -> save
     """
 
     def __init__(self, config: Optional[SceneConfig] = None, threshold: float = None):
@@ -163,10 +163,13 @@ class SceneDetector:
             from extract_visual_features import VisualFeatureExtractor
 
             primary_model = self.config.qwen_vl_model
-            fallback_model = "Qwen/Qwen2-VL-2B-Instruct"
             model_candidates = [primary_model]
-            if primary_model != fallback_model:
-                model_candidates.append(fallback_model)
+            for fallback_model in (
+                "Qwen/Qwen2.5-VL-3B-Instruct",
+                "Qwen/Qwen2-VL-2B-Instruct",
+            ):
+                if primary_model != fallback_model:
+                    model_candidates.append(fallback_model)
 
             last_error = None
             for model_name in model_candidates:
@@ -565,11 +568,11 @@ class SceneDetector:
 
         return merged
 
-    # ── 4. Visual Enrichment (Qwen2-VL) ─────────
+    # 4. Visual Enrichment (Qwen2.5-VL)
 
     def enrich_with_visual_features(self, scenes: List[Dict]) -> List[Dict]:
         """
-        Enrich scenes with captions and object labels using Qwen2-VL.
+        Enrich scenes with captions and object labels using Qwen2.5-VL.
 
         Args:
             scenes: List of scene dicts (must have keyframe_path)
@@ -584,7 +587,7 @@ class SceneDetector:
         if qwen is None:
             return scenes
 
-        print(f"  Running visual enrichment (Qwen2-VL) on {len(scenes)} scenes...")
+        print(f"  Running visual enrichment ({self.config.qwen_vl_model}) on {len(scenes)} scenes...")
         count = 0
 
         for scene in scenes:
@@ -626,7 +629,7 @@ class SceneDetector:
         run_refinement: bool = None,
     ) -> List[Dict]:
         """
-        Full scene processing pipeline: detect → refine (CLIP) → enrich (Qwen2-VL).
+        Full scene processing pipeline: detect -> refine (CLIP) -> enrich (Qwen2.5-VL).
 
         Args:
             video_path: Path to video file (any format)
@@ -656,7 +659,7 @@ class SceneDetector:
             except Exception as e:
                 print(f"  ! Refinement failed: {e}")
 
-        # Visual Enrichment (Qwen2-VL) — captions, object labels, OCR
+        # Visual Enrichment (Qwen2.5-VL) - captions, object labels, OCR
         if self.config.enable_visual_enrichment and scenes:
             try:
                 scenes = self.enrich_with_visual_features(scenes)

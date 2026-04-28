@@ -101,10 +101,22 @@ CREATE TABLE IF NOT EXISTS visual_embeddings (
     sample_time FLOAT,
     frame_role VARCHAR(20) DEFAULT 'mid',
     frame_index INTEGER,
-    embedding vector(768), -- SigLIP dimension
-    embedding_model VARCHAR(100) DEFAULT 'google/siglip-base-patch16-224',
+    embedding vector(768), -- SigLIP 2 base dimension
+    embedding_model VARCHAR(100) DEFAULT 'google/siglip2-base-patch16-224',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_scene_visual_embedding UNIQUE (scene_id, embedding_model, frame_role, sample_time)
+);
+
+-- Video Embeddings table: Store video-level visual embeddings for discovery/ranking
+CREATE TABLE IF NOT EXISTS video_embeddings (
+    id SERIAL PRIMARY KEY,
+    video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    embedding vector(768), -- temporal mean of SigLIP 2 frame embeddings by default
+    embedding_model VARCHAR(100) DEFAULT 'video-temporal-mean:google/siglip2-base-patch16-224',
+    aggregation_method VARCHAR(50) DEFAULT 'temporal_mean',
+    frame_count INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_video_embedding UNIQUE (video_id, embedding_model, aggregation_method)
 );
 
 -- Query cache table: Store query results for performance
@@ -191,8 +203,8 @@ CREATE TABLE IF NOT EXISTS search_image_cache (
     id SERIAL PRIMARY KEY,
     filename VARCHAR(255),
     image_hash VARCHAR(64) UNIQUE,
-    embedding vector(768), -- SigLIP dimension
-    embedding_model VARCHAR(100) DEFAULT 'google/siglip-base-patch16-224',
+    embedding vector(768), -- SigLIP 2 base dimension
+    embedding_model VARCHAR(100) DEFAULT 'google/siglip2-base-patch16-224',
     search_count INTEGER DEFAULT 1,
     last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -213,12 +225,16 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_vector ON embeddings USING hnsw (embed
 CREATE INDEX IF NOT EXISTS idx_visual_embeddings_vector ON visual_embeddings USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 200);
 
+CREATE INDEX IF NOT EXISTS idx_video_embeddings_vector ON video_embeddings USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 200);
+
 CREATE INDEX IF NOT EXISTS idx_search_image_cache_vector ON search_image_cache USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 200);
 
 -- Partitioning support: composite index for fast lookup by model
 CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(embedding_model);
 CREATE INDEX IF NOT EXISTS idx_visual_embeddings_model ON visual_embeddings(embedding_model);
+CREATE INDEX IF NOT EXISTS idx_video_embeddings_model ON video_embeddings(embedding_model);
 CREATE INDEX IF NOT EXISTS idx_search_requests_uuid ON search_requests(request_uuid);
 CREATE INDEX IF NOT EXISTS idx_search_requests_mode_time ON search_requests(search_mode, created_at);
 CREATE INDEX IF NOT EXISTS idx_search_impressions_request ON search_impressions(request_id);
@@ -235,6 +251,21 @@ BEGIN
     DELETE FROM visual_embeddings ve
     WHERE NOT EXISTS (
         SELECT 1 FROM scenes s WHERE s.id = ve.scene_id
+    );
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Cleanup function: remove orphaned video embeddings
+CREATE OR REPLACE FUNCTION cleanup_stale_video_embeddings()
+RETURNS INTEGER AS $$
+DECLARE
+    deleted_count INTEGER;
+BEGIN
+    DELETE FROM video_embeddings ve
+    WHERE NOT EXISTS (
+        SELECT 1 FROM videos v WHERE v.id = ve.video_id
     );
     GET DIAGNOSTICS deleted_count = ROW_COUNT;
     RETURN deleted_count;

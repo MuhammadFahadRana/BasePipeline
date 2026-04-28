@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from search.semantic_search import SemanticSearchEngine, SearchResult
-from embeddings.vision_embeddings import get_vision_embedding_generator
+from embeddings.vision_embeddings import (
+    DEFAULT_VISION_EMBEDDING_MODEL,
+    get_vision_embedding_generator,
+)
 from llm.query_parser import get_query_parser
 
 
@@ -41,7 +44,7 @@ class MultiModalSearchEngine:
         db: Session,
         text_weight: float = 0.5,
         vision_weight: float = 0.5,
-        vision_model: str = "google/siglip-base-patch16-224",
+        vision_model: str = DEFAULT_VISION_EMBEDDING_MODEL,
         text_search: SemanticSearchEngine = None,
     ):
         """
@@ -51,7 +54,7 @@ class MultiModalSearchEngine:
             db: Database session
             text_weight: Default weight for text similarity (0-1)
             vision_weight: Default weight for vision similarity (0-1)
-            vision_model: Vision model name (SigLIP)
+            vision_model: Vision model name (SigLIP 2 by default)
             text_search: Optional pre-existing SemanticSearchEngine singleton to reuse
         """
         self.db = db
@@ -493,7 +496,7 @@ class MultiModalSearchEngine:
         v_min = min(all_v) if all_v else 0
         v_max = max(all_v) if all_v else 0
         
-        # If the best vision score is very weak (under 0.22 typical SigLIP noise floor),
+        # If the best vision score is very weak (under 0.22 typical SigLIP-family noise floor),
         # don't scale it up to 1.0. Anchor the min to at least 0.20 to compress weak signals.
         effective_v_min = max(0.20, v_min) if v_max < 0.3 else v_min
         v_range = v_max - effective_v_min if v_max > effective_v_min else 1.0

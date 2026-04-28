@@ -1,35 +1,42 @@
-"""Generate vision embeddings for keyframes using SigLIP (SOTA CLIP alternative)."""
+"""Generate vision embeddings for keyframes using SigLIP 2."""
 
+import os
 import torch
 from PIL import Image
 from transformers import AutoProcessor, AutoModel
-from typing import List, Union
+from typing import List, Optional, Tuple, Union
 import numpy as np
 from pathlib import Path
 
 
+DEFAULT_VISION_EMBEDDING_MODEL = os.getenv(
+    "VISION_EMBEDDING_MODEL", "google/siglip2-so400m-patch14-384"
+)
+LEGACY_VISION_EMBEDDING_MODELS = ("google/siglip-base-patch16-224",)
+
+
 class VisionEmbeddingGenerator:
-    """Generate vision embeddings for images using SigLIP."""
+    """Generate image/text-aligned vision embeddings using SigLIP-style encoders."""
 
     def __init__(
-        self, model_name: str = "google/siglip-base-patch16-224", device: str = "auto"
+        self, model_name: Optional[str] = None, device: str = "auto"
     ):
         """
-        Initialize SigLIP vision model.
+        Initialize the vision embedding model.
 
         Args:
-            model_name: HuggingFace model name (default: google/siglip-base-patch16-224)
-            SigLIP2:google/siglip2-base-patch16-224
+            model_name: HuggingFace model name. Defaults to SigLIP 2.
             device: "auto", "cpu", or "cuda"
         """
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        model_name = model_name or DEFAULT_VISION_EMBEDDING_MODEL
         self.device = device
         self.model_name = model_name
 
         device_tag = "[GPU]" if "cuda" in self.device else "[CPU]"
-        print(f"{device_tag} Loading SigLIP vision model: {model_name} on {self.device}")
+        print(f"{device_tag} Loading vision embedding model: {model_name} on {self.device}")
 
         try:
             self.model = AutoModel.from_pretrained(model_name).to(device)
@@ -48,7 +55,7 @@ class VisionEmbeddingGenerator:
         self.embedding_dim = self.model.config.vision_config.hidden_size
 
         # Avoid Unicode symbols to keep Windows cp1252 consoles happy.
-        print(f"[OK] SigLIP model loaded (dim={self.embedding_dim})")
+        print(f"[OK] Vision embedding model loaded (dim={self.embedding_dim})")
 
     def encode_image(
         self, image_input: Union[str, Path, bytes, Image.Image], normalize: bool = True
@@ -241,16 +248,22 @@ class VisionEmbeddingGenerator:
         return embedding
 
 
-# Global instance (lazy loaded)
-_vision_generator = None
+# Global instances (lazy loaded, keyed by model/device)
+_vision_generators = {}
 
 
 def get_vision_embedding_generator(
-    model_name: str = "google/siglip-base-patch16-224",
+    model_name: Optional[str] = None,
     device: str = "auto",
 ) -> VisionEmbeddingGenerator:
-    """Get or create global vision embedding generator instance."""
-    global _vision_generator
-    if _vision_generator is None:
-        _vision_generator = VisionEmbeddingGenerator(model_name=model_name, device=device)
-    return _vision_generator
+    """Get or create a cached vision embedding generator."""
+    resolved_model_name = model_name or DEFAULT_VISION_EMBEDDING_MODEL
+    cache_key: Tuple[str, str] = (resolved_model_name, device)
+
+    if cache_key not in _vision_generators:
+        _vision_generators[cache_key] = VisionEmbeddingGenerator(
+            model_name=resolved_model_name,
+            device=device,
+        )
+
+    return _vision_generators[cache_key]

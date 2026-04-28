@@ -1497,6 +1497,7 @@ EMBEDDING_MODELS = [
 ]
 
 VISION_MODELS = [
+    {"id": "siglip2-base", "label": "google/siglip2-base-patch16-224"},
     {"id": "siglip-base", "label": "google/siglip-base-patch16-224"},
     {"id": "clip-vit-b32", "label": "CLIP ViT-B/32 (OpenAI)"},
 ]
@@ -2942,7 +2943,7 @@ async def visual_image_search(
     Reverse image search - upload an image to find similar moments in videos!
 
     **How it works:**
-    - Uploads the image and generates a vision embedding (SigLIP)
+    - Uploads the image and generates a vision embedding (SigLIP 2)
     - Matches against all indexed keyframes
     - Returns timestamps of similar visual scenes
     """
@@ -3152,7 +3153,7 @@ async def visual_search(
     - "ocean scenes"
 
     **How it works:**
-    - Searches visual embeddings (SigLIP) directly
+    - Searches visual embeddings (SigLIP 2) directly
     - IGNORES transcript completely
     - Finds what's SHOWN, not what's SAID
 
@@ -3202,6 +3203,41 @@ async def visual_search(
 
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Visual search failed: {str(e)}")
+
+
+@app.get("/search/visual/videos")
+async def visual_video_search(
+    q: str = Query(..., description="Whole-video visual search query", min_length=1),
+    limit: int = Query(10, description="Number of videos", ge=1, le=50),
+    video: Optional[str] = Query(None, description="Filter by video filename"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Search video-level visual embeddings for whole-video discovery."""
+    start_time = time.time()
+    try:
+        from search.visual_search import VisualSearchEngine
+
+        visual_engine = VisualSearchEngine(db)
+        rows = visual_engine.search_video_level(q, top_k=limit * 3, video_filter=video)
+        allowed_filenames = _get_allowed_filenames(user, db)
+        if allowed_filenames is not None:
+            rows = [r for r in rows if r.get("video_filename") in allowed_filenames]
+        rows = rows[:limit]
+        return {
+            "query": q,
+            "search_type": "video_level_visual",
+            "results_count": len(rows),
+            "results": rows,
+            "search_time_seconds": round(time.time() - start_time, 3),
+        }
+    except Exception as e:
+        print(f"Video-level visual search error: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Video-level visual search failed: {str(e)}",
+        )
 
 
 @app.get("/search/hybrid")
@@ -3705,10 +3741,10 @@ async def enrich_captions(
     admin: User = Depends(require_admin),
 ):
     """
-    Re-enrich existing scenes with Qwen2-VL captions, object labels, and OCR text.
+    Re-enrich existing scenes with Qwen2.5-VL captions, object labels, and OCR text.
 
-    Finds all scenes with NULL captions (and an existing keyframe), runs Qwen2-VL
-    on each keyframe, saves the results back to the scenes table, and generates a
+    Finds scenes missing captions, object labels, or OCR, runs the visual model
+    on each keyframe, saves the results back to the scenes table, and refreshes a
     text embedding from the caption so that vector (semantic) search can find these scenes.
 
     **This is a long-running operation.** For large libraries call it with a small
@@ -3722,35 +3758,47 @@ async def enrich_captions(
         from scene_detector import SceneDetector, SceneConfig
         from database.models import Scene, Embedding
         from embeddings.text_embeddings import get_embedding_generator
+        from database.ingest import DataIngester
 
-        # Query scenes that need enrichment: caption IS NULL + keyframe exists
+        ingester = DataIngester(db)
+
+        # Query scenes that need enrichment: missing caption, labels, or OCR attempt.
         query = db.query(Scene).filter(Scene.keyframe_path.isnot(None))
         if video_id:
             query = query.filter(Scene.video_id == video_id)
 
         # Split into: still need enrichment vs already done
         all_scenes = query.all()
-        unenriched = [s for s in all_scenes if s.caption is None]
+        unenriched = [
+            s
+            for s in all_scenes
+            if ingester._clean_optional_text(s.caption) is None
+            or not ingester._normalize_object_labels(s.object_labels)
+            or (
+                ingester._clean_optional_text(s.ocr_text) is None
+                and s.ocr_processed_at is None
+            )
+        ]
         total_remaining = len(unenriched)
 
         if total_remaining == 0:
             return {
                 "status": "already_complete",
-                "message": "All scenes with keyframes already have captions.",
+                "message": "All scenes with keyframes already have captions, labels, and OCR.",
                 "scenes_enriched": 0,
                 "scenes_remaining": 0,
             }
 
         batch = unenriched[:batch_size]
 
-        # Load Qwen2-VL via SceneDetector (lazy-loads the model)
+        # Load Qwen2.5-VL via SceneDetector (lazy-loads the model)
         cfg = SceneConfig(enable_visual_enrichment=True)
         detector = SceneDetector(config=cfg)
         qwen = detector._ensure_qwen_vl()
         if qwen is None:
             raise HTTPException(
                 status_code=503,
-                detail="Qwen2-VL model could not be loaded. Check server logs.",
+                detail="Qwen2.5-VL model could not be loaded. Check server logs.",
             )
 
         # Load text embedding generator for indexing captions
@@ -3776,14 +3824,19 @@ async def enrich_captions(
 
             try:
                 result = qwen.analyze_image(str(kf_path))
-                caption = result.get("caption")
-                object_labels = result.get("object_labels", [])
-                ocr_text = result.get("ocr_text")
+                caption = ingester._clean_optional_text(result.get("caption"))
+                object_labels = ingester._normalize_object_labels(
+                    result.get("object_labels", [])
+                )
+                ocr_text = ingester._clean_optional_text(result.get("ocr_text"))
 
                 # Update scene columns
                 scene.caption = caption
                 scene.object_labels = object_labels
                 scene.ocr_text = ocr_text
+                scene.ocr_text_norm = ingester._normalize_ocr_text(ocr_text)
+                if ocr_text or scene.ocr_processed_at is None:
+                    scene.ocr_processed_at = datetime.utcnow()
                 enriched_count += 1
 
                 # Build the text to embed: caption + object labels + OCR
@@ -3800,12 +3853,13 @@ async def enrich_captions(
                     embed_text = " ".join(parts)
                     vec = emb_gen.encode_single(embed_text)
 
-                    # Upsert: skip if an embedding for this scene already exists
+                    # Upsert/refresh the scene text embedding after enrichment changes.
                     existing_emb = (
                         db.query(Embedding)
                         .filter(
                             Embedding.scene_id == scene.id,
                             Embedding.segment_id == None,  # noqa: E711
+                            Embedding.embedding_model == emb_gen.model_name,
                         )
                         .first()
                     )
@@ -3853,18 +3907,44 @@ async def enrich_captions(
 async def caption_stats(
     db: Session = Depends(get_db), admin: User = Depends(require_admin)
 ):
-    """Returns how many scenes have captions vs still need enrichment."""
+    """Returns scene visual-enrichment coverage."""
     from database.models import Scene
 
     total = db.query(Scene).count()
     with_caption = db.query(Scene).filter(Scene.caption.isnot(None)).count()
-    with_keyframe = db.query(Scene).filter(Scene.keyframe_path.isnot(None)).count()
+    with_ocr = db.query(Scene).filter(Scene.ocr_text.isnot(None)).count()
+    def _labels_present(value):
+        if isinstance(value, list):
+            return len(value) > 0
+        if isinstance(value, str):
+            raw = value.strip()
+            return bool(raw and raw not in {"[]", "null", "None"})
+        return bool(value)
+
+    with_labels = sum(
+        1
+        for scene in db.query(Scene.object_labels).all()
+        if _labels_present(scene[0])
+    )
+    keyframed_scenes = db.query(Scene).filter(Scene.keyframe_path.isnot(None)).all()
+    with_keyframe = len(keyframed_scenes)
+    scenes_needing = sum(
+        1
+        for scene in keyframed_scenes
+        if not scene.caption
+        or not _labels_present(scene.object_labels)
+        or (not scene.ocr_text and scene.ocr_processed_at is None)
+    )
     return {
         "total_scenes": total,
         "scenes_with_caption": with_caption,
-        "scenes_needing_enrichment": with_keyframe - with_caption,
+        "scenes_with_ocr": with_ocr,
+        "scenes_with_object_labels": with_labels,
+        "scenes_needing_enrichment": scenes_needing,
         "scenes_without_keyframe": total - with_keyframe,
         "caption_coverage_pct": round(with_caption / total * 100, 1) if total else 0,
+        "ocr_coverage_pct": round(with_ocr / total * 100, 1) if total else 0,
+        "object_label_coverage_pct": round(with_labels / total * 100, 1) if total else 0,
     }
 
 

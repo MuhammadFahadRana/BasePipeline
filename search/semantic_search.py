@@ -1565,7 +1565,7 @@ class SemanticSearchEngine:
 
                 UNION ALL
 
-                -- Branch 3: Visual caption + object-label matches (Qwen2-VL enrichment)
+                -- Branch 3: Visual caption + object-label matches (Qwen2.5-VL enrichment)
                 -- Uses negative offset -2000000 to avoid ID collision with OCR branch
                 SELECT
                     -(s.id + 2000000) AS result_id,
@@ -1839,7 +1839,7 @@ class SemanticSearchEngine:
             if is_ocr_only and semantic_score == 0 and fuzzy_score_norm > 0:
                 combined_score = max(combined_score, 0.60 * fuzzy_score_norm)
 
-            # Visual-caption matches also get a floor — Qwen2-VL captions are
+            # Visual-caption matches also get a floor — Qwen2.5-VL captions are
             # rich descriptions and deserve to surface even when no semantic
             # embedding exists for the scene yet.
             if is_visual_only and semantic_score == 0 and fuzzy_score_norm > 0:

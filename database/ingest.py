@@ -10,15 +10,26 @@ import json
 import os
 import re
 import cv2
+import numpy as np
 from typing import Dict, Optional, List, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from database.config import SessionLocal
-from database.models import Video, Scene, TranscriptSegment, Embedding, VisualEmbedding
+from database.models import (
+    Video,
+    Scene,
+    TranscriptSegment,
+    Embedding,
+    VisualEmbedding,
+    VideoEmbedding,
+)
 from embeddings.text_embeddings import get_embedding_generator
-from embeddings.vision_embeddings import get_vision_embedding_generator
+from embeddings.vision_embeddings import (
+    DEFAULT_VISION_EMBEDDING_MODEL,
+    get_vision_embedding_generator,
+)
 
 
 class DataIngester:
@@ -35,10 +46,14 @@ class DataIngester:
         self.own_session = db is None
         self.embedding_gen = get_embedding_generator()
         self.vision_gen = None  # Lazy load
-        self.visual_enricher = None  # Lazy load (Qwen2-VL captions/OCR)
+        self.visual_enricher = None  # Lazy load (Qwen2.5-VL captions/OCR)
         self.ocr_reader = None  # Lazy load (EasyOCR fallback)
         self.visual_enrichment_model = os.getenv(
-            "VISUAL_ENRICHMENT_MODEL", "Qwen/Qwen2-VL-2B-Instruct"
+            "VISUAL_ENRICHMENT_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct"
+        )
+        self.video_embedding_model = os.getenv(
+            "VIDEO_EMBEDDING_MODEL",
+            f"video-temporal-mean:{DEFAULT_VISION_EMBEDDING_MODEL}",
         )
         self.visual_enrichment_load_in_4bit = (
             os.getenv("VISUAL_ENRICHMENT_LOAD_IN_4BIT", "false").strip().lower()
@@ -56,7 +71,7 @@ class DataIngester:
         return self.vision_gen
 
     def _get_visual_enricher(self):
-        """Lazy-load the Qwen2-VL enricher used for caption/OCR backfill."""
+        """Lazy-load the Qwen2.5-VL enricher used for caption/OCR backfill."""
         if not self.visual_enrichment_enabled:
             return None
         if self.visual_enricher is not None:
@@ -103,6 +118,28 @@ class DataIngester:
 
     def _ensure_schema_extensions(self):
         """Best-effort schema evolution for multi-keyframe and OCR metadata."""
+        # Determine desired vector dimensions from loaded models when possible.
+        text_dim = None
+        vision_dim = None
+        try:
+            if self.embedding_gen is None:
+                self.embedding_gen = get_embedding_generator()
+            text_dim = int(getattr(self.embedding_gen, "embedding_dim", 0) or 0)
+        except Exception:
+            text_dim = 0
+
+        try:
+            vg = self._get_vision_gen()
+            vision_dim = int(getattr(vg, "embedding_dim", 0) or 0)
+        except Exception:
+            vision_dim = 0
+
+        # Fallback defaults
+        if not text_dim:
+            text_dim = 1024
+        if not vision_dim:
+            vision_dim = 768
+
         ddl = [
             "ALTER TABLE scenes ADD COLUMN IF NOT EXISTS ocr_text_norm TEXT",
             "ALTER TABLE scenes ADD COLUMN IF NOT EXISTS ocr_confidence FLOAT",
@@ -113,6 +150,23 @@ class DataIngester:
             "ALTER TABLE visual_embeddings ALTER COLUMN frame_role SET DEFAULT 'mid'",
             "ALTER TABLE visual_embeddings DROP CONSTRAINT IF EXISTS uq_scene_visual_embedding",
             "ALTER TABLE visual_embeddings ADD CONSTRAINT uq_scene_visual_embedding UNIQUE (scene_id, embedding_model, frame_role, sample_time)",
+            # Ensure embedding columns have compatible dimensions for current models
+            f"ALTER TABLE embeddings ALTER COLUMN embedding TYPE vector({text_dim}) USING embedding::vector",
+            f"ALTER TABLE search_queries ALTER COLUMN query_embedding TYPE vector({text_dim}) USING query_embedding::vector",
+            f"ALTER TABLE visual_embeddings ALTER COLUMN embedding TYPE vector({vision_dim}) USING embedding::vector",
+            f"ALTER TABLE search_image_cache ALTER COLUMN embedding TYPE vector({vision_dim}) USING embedding::vector",
+            f"ALTER TABLE video_embeddings DROP CONSTRAINT IF EXISTS uq_video_embedding",
+            f"""CREATE TABLE IF NOT EXISTS video_embeddings (
+                id SERIAL PRIMARY KEY,
+                video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+                embedding vector({vision_dim}),
+                embedding_model VARCHAR(100) DEFAULT '{self.video_embedding_model}',
+                aggregation_method VARCHAR(50) DEFAULT 'temporal_mean',
+                frame_count INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT uq_video_embedding UNIQUE (video_id, embedding_model, aggregation_method)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_video_embeddings_model ON video_embeddings(embedding_model)",
         ]
         for stmt in ddl:
             try:
@@ -153,7 +207,15 @@ class DataIngester:
         if isinstance(value, list):
             labels = [str(v).strip() for v in value if str(v).strip()]
         elif isinstance(value, str):
-            labels = [v.strip() for v in value.split(",") if v.strip()]
+            raw = value.strip()
+            if raw.startswith("["):
+                try:
+                    decoded = json.loads(raw)
+                    labels = [str(v).strip() for v in decoded if str(v).strip()]
+                except Exception:
+                    labels = [v.strip() for v in raw.split(",") if v.strip()]
+            else:
+                labels = [v.strip() for v in raw.split(",") if v.strip()]
         else:
             labels = [str(value).strip()] if str(value).strip() else []
         labels = [lbl for lbl in labels if lbl.lower() not in invalid]
@@ -226,38 +288,63 @@ class DataIngester:
             return None, None
 
         frame_candidates: List[Path] = []
-        if keyframe_path is not None and keyframe_path.exists():
-            frame_candidates.append(keyframe_path)
+                # If this scene is from a video, prefer using the DocumentOCREngine
+                # which uses PaddleOCR for video frames (Paddle-only policy).
+                used_engine = False
+                video_path = self._resolve_video_path(scene)
+                if video_path is not None:
+                    try:
+                        from document_ingestion.ocr_engine import DocumentOCREngine
+                        from PIL import Image
 
-        # OCR from start/end frames catches title cards that may not appear at mid-frame.
-        video_path = self._resolve_video_path(scene)
-        if video_path is not None:
-            output_dir = (
-                keyframe_path.parent
-                if keyframe_path is not None
-                and keyframe_path.parent.exists()
-                else (Path("processed") / "scenes" / video_path.stem)
-            )
-            for role, sample_time in (
-                ("start", float(scene.start_time or 0.0)),
-                ("end", float(scene.end_time or scene.start_time or 0.0)),
-            ):
-                extracted = self._extract_frame_image(
-                    video_path,
-                    sample_time,
-                    output_dir,
-                    scene.scene_id,
-                    role,
-                )
-                if extracted is None:
+                        ocr_engine = DocumentOCREngine()
+                        img = Image.open(str(frame)).convert("RGB")
+                        txt, conf = ocr_engine.extract_text_from_image(img, source="video")
+                        if txt and txt.strip():
+                            merged = " ".join([ln.strip() for ln in txt.splitlines() if ln.strip()])
+                            if merged:
+                                best_text = merged if (best_text is None) else best_text
+                                best_conf = conf if (best_conf is None or (conf or 0.0) > (best_conf or 0.0)) else best_conf
+                                used_engine = True
+                    except Exception as exc:
+                        print(f"Warning: DocumentOCREngine (video) failed for {frame}: {exc}")
+
+                if used_engine:
                     continue
-                frame_path, _ = extracted
-                if frame_path.exists():
-                    frame_candidates.append(frame_path)
 
-        # Stable de-dup preserving order.
-        seen = set()
-        unique_frames: List[Path] = []
+                # Fallback to generic OCR reader (EasyOCR) for non-video or if engine failed
+                try:
+                    detections = reader.extract_with_confidence(
+                        str(frame), confidence_threshold=0.35
+                    )
+                except Exception as exc:
+                    print(f"Warning: OCR fallback failed for {frame}: {exc}")
+                    continue
+
+                if not detections:
+                    continue
+
+                texts = []
+                confidences = []
+                for det in detections:
+                    txt = det.get("text")
+                    conf = det.get("confidence")
+                    if txt and txt.strip():
+                        texts.append(str(txt).strip())
+                    if conf is not None:
+                        try:
+                            confidences.append(float(conf))
+                        except Exception:
+                            pass
+
+                if not texts:
+                    continue
+
+                merged = " ".join(texts).strip()
+                mean_conf = sum(confidences) / len(confidences) if confidences else None
+                if merged and (best_text is None or (mean_conf or 0.0) > (best_conf or 0.0)):
+                    best_text = merged
+                    best_conf = mean_conf
         for frame in frame_candidates:
             key = str(frame.resolve()) if frame.exists() else str(frame)
             if key in seen:
@@ -304,6 +391,70 @@ class DataIngester:
                 best_conf = mean_conf
 
         return best_text, best_conf
+
+    @staticmethod
+    def _merge_text_candidates(candidates: List[Optional[str]]) -> Optional[str]:
+        parts: List[str] = []
+        for candidate in candidates:
+            txt = DataIngester._clean_optional_text(candidate)
+            if not txt:
+                continue
+            txt_norm = re.sub(r"\s+", " ", txt).strip()
+            if not txt_norm:
+                continue
+            lower = txt_norm.lower()
+            if any(lower in existing.lower() for existing in parts):
+                continue
+            parts.append(txt_norm)
+        merged = " ".join(parts).strip()
+        return merged or None
+
+    def _analysis_frames_for_scene(
+        self, scene: Scene, keyframe_path: Optional[Path]
+    ) -> List[tuple[str, Path]]:
+        """
+        Return sampled frame paths for visual caption/tag/OCR enrichment.
+        Uses the same temporal coverage as visual embeddings.
+        """
+        video_path = self._resolve_video_path(scene)
+        if video_path is None:
+            if keyframe_path is not None and keyframe_path.exists():
+                return [("mid", keyframe_path)]
+            return []
+
+        output_dir = (
+            keyframe_path.parent
+            if keyframe_path is not None and keyframe_path.parent.exists()
+            else (Path("processed") / "scenes" / video_path.stem)
+        )
+
+        frames: List[tuple[str, Path]] = []
+        for role, sample_time in self._scene_sample_specs(scene):
+            if role == "mid" and keyframe_path is not None and keyframe_path.exists():
+                frame_path = keyframe_path
+            else:
+                extracted = self._extract_frame_image(
+                    video_path,
+                    sample_time,
+                    output_dir,
+                    scene.scene_id,
+                    role,
+                )
+                if extracted is None:
+                    continue
+                frame_path, _ = extracted
+            if frame_path.exists():
+                frames.append((role, frame_path))
+
+        seen = set()
+        unique: List[tuple[str, Path]] = []
+        for role, frame in frames:
+            key = str(frame.resolve()) if frame.exists() else str(frame)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append((role, frame))
+        return unique
 
     @classmethod
     def _fallback_caption_from_signals(
@@ -386,6 +537,8 @@ class DataIngester:
                         s.caption IS NULL
                         OR BTRIM(s.caption) = ''
                         OR LOWER(BTRIM(s.caption)) IN ('none', 'null', 'n/a', 'na')
+                        OR s.object_labels IS NULL
+                        OR s.object_labels::text IN ('[]', 'null')
                         OR (
                             (
                                 s.ocr_text IS NULL
@@ -410,6 +563,7 @@ class DataIngester:
                 LEFT JOIN embeddings e
                     ON e.scene_id = s.id
                    AND e.segment_id IS NULL
+                   AND e.embedding_model = :embedding_model
                 WHERE s.video_id = :video_id
                   AND (
                         (
@@ -427,7 +581,25 @@ class DataIngester:
                   AND e.id IS NULL
                 """
             ),
-            {"video_id": video_id},
+            {"video_id": video_id, "embedding_model": self.embedding_gen.model_name},
+        ).first()
+        return int(row[0] if row else 0)
+
+    def _count_missing_video_embedding(self, video_id: int) -> int:
+        row = self.db.execute(
+            text(
+                """
+                SELECT COUNT(*) AS missing_count
+                FROM videos v
+                LEFT JOIN video_embeddings ve
+                    ON ve.video_id = v.id
+                   AND ve.embedding_model = :embedding_model
+                   AND ve.aggregation_method = 'temporal_mean'
+                WHERE v.id = :video_id
+                  AND ve.id IS NULL
+                """
+            ),
+            {"video_id": video_id, "embedding_model": self.video_embedding_model},
         ).first()
         return int(row[0] if row else 0)
 
@@ -490,6 +662,7 @@ class DataIngester:
 
     def _scenes_missing_visual_coverage(self, video_id: int) -> List[Scene]:
         required_roles = {"start", "mid", "end"}
+        model_name = self._current_vision_model_name()
         scenes = (
             self.db.query(Scene)
             .filter(Scene.video_id == video_id, Scene.keyframe_path.isnot(None))
@@ -502,13 +675,21 @@ class DataIngester:
         for scene in scenes:
             rows = (
                 self.db.query(VisualEmbedding.frame_role)
-                .filter(VisualEmbedding.scene_id == scene.id)
+                .filter(
+                    VisualEmbedding.scene_id == scene.id,
+                    VisualEmbedding.embedding_model == model_name,
+                )
                 .all()
             )
             existing_roles = {str(role[0]) for role in rows if role and role[0]}
             if not required_roles.issubset(existing_roles):
                 missing.append(scene)
         return missing
+
+    def _current_vision_model_name(self) -> str:
+        if self.vision_gen is not None:
+            return self.vision_gen.model_name
+        return os.getenv("VISION_EMBEDDING_MODEL", DEFAULT_VISION_EMBEDDING_MODEL)
 
     def _enrich_missing_scenes(
         self, video: Video, scenes_data: Optional[List[Dict]] = None
@@ -607,19 +788,36 @@ class DataIngester:
                     enricher = self._get_visual_enricher()
 
                 if enricher is not None:
-                    try:
-                        model_out = enricher.analyze_image(str(keyframe_path)) or {}
-                    except Exception as exc:
-                        print(
-                            f"Warning: scene enrichment failed for scene {scene.id}: {exc}"
-                        )
-                        model_out = {}
+                    frame_outputs = []
+                    for role, frame_path in self._analysis_frames_for_scene(
+                        scene, keyframe_path
+                    ):
+                        try:
+                            model_out = enricher.analyze_image(str(frame_path)) or {}
+                            model_out["_frame_role"] = role
+                            frame_outputs.append(model_out)
+                        except Exception as exc:
+                            print(
+                                "Warning: scene enrichment failed for "
+                                f"scene {scene.id} frame {role}: {exc}"
+                            )
 
-                    model_caption = self._clean_optional_text(model_out.get("caption"))
-                    model_labels = self._normalize_object_labels(
-                        model_out.get("object_labels")
-                    )
-                    model_ocr = self._clean_optional_text(model_out.get("ocr_text"))
+                    model_captions = [
+                        self._clean_optional_text(out.get("caption"))
+                        for out in frame_outputs
+                    ]
+                    model_ocr_values = [
+                        self._clean_optional_text(out.get("ocr_text"))
+                        for out in frame_outputs
+                    ]
+                    model_labels = []
+                    for out in frame_outputs:
+                        model_labels.extend(
+                            self._normalize_object_labels(out.get("object_labels"))
+                        )
+                    model_labels = list(dict.fromkeys(model_labels))
+                    model_caption = next((c for c in model_captions if c), None)
+                    model_ocr = self._merge_text_candidates(model_ocr_values)
 
                     if need_caption and model_caption:
                         caption = model_caption
@@ -723,10 +921,13 @@ class DataIngester:
             self.db.flush()
         return stats
 
-    def _ensure_scene_text_embeddings(self, video_id: int) -> int:
+    def _ensure_scene_text_embeddings(
+        self, video_id: int, refresh_existing: bool = False
+    ) -> int:
         scenes = self.db.query(Scene).filter(Scene.video_id == video_id).all()
         targets: List[Scene] = []
         texts: List[str] = []
+        existing_by_scene: Dict[int, Embedding] = {}
 
         for scene in scenes:
             text_to_embed = self._compose_scene_text(
@@ -737,11 +938,17 @@ class DataIngester:
 
             existing = (
                 self.db.query(Embedding)
-                .filter(Embedding.scene_id == scene.id, Embedding.segment_id.is_(None))
+                .filter(
+                    Embedding.scene_id == scene.id,
+                    Embedding.segment_id.is_(None),
+                    Embedding.embedding_model == self.embedding_gen.model_name,
+                )
                 .first()
             )
-            if existing:
+            if existing and not refresh_existing:
                 continue
+            if existing:
+                existing_by_scene[scene.id] = existing
 
             targets.append(scene)
             texts.append(text_to_embed)
@@ -751,16 +958,108 @@ class DataIngester:
 
         vectors = self.embedding_gen.encode(texts, batch_size=16, show_progress=False)
         for scene, vec in zip(targets, vectors):
-            emb = Embedding(
-                scene_id=scene.id,
-                segment_id=None,
-                embedding=vec.tolist(),
-                embedding_model=self.embedding_gen.model_name,
-            )
-            self.db.add(emb)
+            existing = existing_by_scene.get(scene.id)
+            if existing:
+                existing.embedding = vec.tolist()
+            else:
+                emb = Embedding(
+                    scene_id=scene.id,
+                    segment_id=None,
+                    embedding=vec.tolist(),
+                    embedding_model=self.embedding_gen.model_name,
+                )
+                self.db.add(emb)
 
         self.db.flush()
         return len(targets)
+
+    @staticmethod
+    def _embedding_to_array(raw_embedding: Any) -> Optional[np.ndarray]:
+        if raw_embedding is None:
+            return None
+        if isinstance(raw_embedding, str):
+            try:
+                values = json.loads(raw_embedding)
+            except Exception:
+                values = raw_embedding.replace("[", "").replace("]", "").split(",")
+            try:
+                arr = np.array([float(v) for v in values], dtype=np.float32)
+            except Exception:
+                return None
+        else:
+            try:
+                arr = np.array(raw_embedding, dtype=np.float32)
+            except Exception:
+                return None
+        if arr.size == 0:
+            return None
+        norm = np.linalg.norm(arr)
+        if norm > 0:
+            arr = arr / norm
+        return arr
+
+    def _ensure_video_embedding(
+        self, video_id: int, refresh_existing: bool = False
+    ) -> int:
+        """
+        Store a video-level embedding by temporally aggregating sampled frame embeddings.
+        This gives the system a video-level visual signal while remaining compatible
+        with the SigLIP 2 text/image space used by frame retrieval.
+        """
+        model_name = self._current_vision_model_name()
+        rows = self.db.execute(
+            text(
+                """
+                SELECT ve.embedding
+                FROM visual_embeddings ve
+                JOIN scenes s ON s.id = ve.scene_id
+                WHERE s.video_id = :video_id
+                  AND ve.embedding_model = :embedding_model
+                ORDER BY s.start_time ASC,
+                         COALESCE(ve.sample_time, s.start_time) ASC
+                """
+            ),
+            {"video_id": video_id, "embedding_model": model_name},
+        ).fetchall()
+
+        vectors = [
+            arr for arr in (self._embedding_to_array(row[0]) for row in rows) if arr is not None
+        ]
+        if not vectors:
+            return 0
+
+        stacked = np.vstack(vectors)
+        video_vec = stacked.mean(axis=0)
+        norm = np.linalg.norm(video_vec)
+        if norm > 0:
+            video_vec = video_vec / norm
+
+        existing = (
+            self.db.query(VideoEmbedding)
+            .filter(
+                VideoEmbedding.video_id == video_id,
+                VideoEmbedding.embedding_model == self.video_embedding_model,
+                VideoEmbedding.aggregation_method == "temporal_mean",
+            )
+            .first()
+        )
+        if existing and not refresh_existing:
+            return 0
+        if existing:
+            existing.embedding = video_vec.tolist()
+            existing.frame_count = len(vectors)
+        else:
+            self.db.add(
+                VideoEmbedding(
+                    video_id=video_id,
+                    embedding=video_vec.tolist(),
+                    embedding_model=self.video_embedding_model,
+                    aggregation_method="temporal_mean",
+                    frame_count=len(vectors),
+                )
+            )
+        self.db.flush()
+        return 1
 
     def ingest_video(
         self,
@@ -840,24 +1139,32 @@ class DataIngester:
                         if generate_embeddings
                         else 0
                     )
+                    missing_video_emb_count = (
+                        self._count_missing_video_embedding(existing_video.id)
+                        if generate_visual_embeddings
+                        else 0
+                    )
 
                     need_text = missing_text_emb_count > 0
                     need_visual = len(missing_visual_scenes) > 0
                     need_scene_enrichment = missing_enrichment_count > 0
                     need_scene_text_embeddings = missing_scene_emb_count > 0
+                    need_video_embedding = missing_video_emb_count > 0
 
                     if (
                         need_text
                         or need_visual
                         or need_scene_enrichment
                         or need_scene_text_embeddings
+                        or need_video_embedding
                     ):
                         print(
                             "Repairing existing video data for "
                             f"{video_name} (missing_text={missing_text_emb_count}, "
                             f"missing_visual_scenes={len(missing_visual_scenes)}, "
                             f"missing_enrichment={missing_enrichment_count}, "
-                            f"missing_scene_embeddings={missing_scene_emb_count})"
+                            f"missing_scene_embeddings={missing_scene_emb_count}, "
+                            f"missing_video_embeddings={missing_video_emb_count})"
                         )
                         filled = self._fill_missing_embeddings(
                             existing_video,
@@ -865,6 +1172,7 @@ class DataIngester:
                             need_visual=need_visual,
                             need_scene_enrichment=need_scene_enrichment,
                             need_scene_text_embeddings=need_scene_text_embeddings,
+                            need_video_embedding=need_video_embedding,
                             scenes_data=results.get("scene_analysis", {}).get(
                                 "scenes", []
                             ),
@@ -1016,8 +1324,10 @@ class DataIngester:
 
         # Visual Embeddings
         visual_count = 0
+        video_embedding_count = 0
         if generate_visual_embeddings:
             visual_count = self.ingest_visual_embeddings(scene_db_objects)
+            video_embedding_count = self._ensure_video_embedding(video.id)
 
         # Scene text embeddings (caption + object labels + OCR).
         scene_text_embs_added = 0
@@ -1038,6 +1348,7 @@ class DataIngester:
             "segments_count": len(transcript_segments),
             "text_embeddings": generate_embeddings,
             "visual_embeddings": visual_count,
+            "video_embeddings": video_embedding_count,
         }
 
     def _fill_missing_embeddings(
@@ -1047,6 +1358,7 @@ class DataIngester:
         need_visual: bool,
         need_scene_enrichment: bool = False,
         need_scene_text_embeddings: bool = False,
+        need_video_embedding: bool = False,
         scenes_data: Optional[List[Dict]] = None,
         precomputed_missing_visual_scenes: Optional[List[Scene]] = None,
     ) -> Dict:
@@ -1056,6 +1368,7 @@ class DataIngester:
         result = {
             "text_embeddings_added": 0,
             "visual_embeddings_added": 0,
+            "video_embeddings_added": 0,
             "scene_text_embeddings_added": 0,
             "segments_relinked": 0,
             "scenes_enriched": 0,
@@ -1070,6 +1383,8 @@ class DataIngester:
 
         if need_scene_enrichment:
             enrich_stats = self._enrich_missing_scenes(video, scenes_data=scenes_data)
+            if enrich_stats.get("scenes_enriched", 0):
+                need_scene_text_embeddings = True
             result.update(enrich_stats)
             if enrich_stats.get("scenes_enriched", 0):
                 print(
@@ -1112,7 +1427,10 @@ class DataIngester:
                 print(f"  [OK] {len(segments_without_emb)} text embeddings generated")
 
         if need_scene_text_embeddings:
-            scene_text_added = self._ensure_scene_text_embeddings(video.id)
+            scene_text_added = self._ensure_scene_text_embeddings(
+                video.id,
+                refresh_existing=need_scene_enrichment,
+            )
             if scene_text_added:
                 result["scene_text_embeddings_added"] = scene_text_added
                 print(f"  [OK] {scene_text_added} scene text embeddings generated")
@@ -1126,6 +1444,15 @@ class DataIngester:
             if scenes_without_emb:
                 count = self.ingest_visual_embeddings(scenes_without_emb)
                 result["visual_embeddings_added"] = count
+
+        if need_video_embedding or need_visual:
+            video_emb_added = self._ensure_video_embedding(
+                video.id,
+                refresh_existing=need_visual,
+            )
+            if video_emb_added:
+                result["video_embeddings_added"] = video_emb_added
+                print("  [OK] Video-level visual embedding generated")
 
         self.db.commit()
         print(f"  [OK] Missing data repaired for {video.filename}")
@@ -1397,6 +1724,7 @@ class DataIngester:
         total_segs = self.db.query(TranscriptSegment).count()
         total_text_emb = self.db.query(Embedding).count()
         total_vis_emb = self.db.query(VisualEmbedding).count()
+        total_video_emb = self.db.query(VideoEmbedding).count()
 
         print(f"\n{'=' * 60}")
         print("DATABASE VERIFICATION")
@@ -1406,20 +1734,26 @@ class DataIngester:
         print(f"Transcript segments: {total_segs}")
         print(f"Text embeddings:     {total_text_emb}")
         print(f"Visual embeddings:   {total_vis_emb}")
+        print(f"Video embeddings:    {total_video_emb}")
 
         issues = []
+        current_vision_model = self._current_vision_model_name()
         videos = self.db.query(Video).all()
         for v in videos:
             scene_count = self.db.query(Scene).filter(Scene.video_id == v.id).count()
             vis_emb = (
                 self.db.query(VisualEmbedding)
                 .join(Scene)
-                .filter(Scene.video_id == v.id)
+                .filter(
+                    Scene.video_id == v.id,
+                    VisualEmbedding.embedding_model == current_vision_model,
+                )
                 .count()
             )
             if vis_emb == 0 and scene_count > 0 and not v.filename.endswith(".wav"):
                 issues.append(
-                    f"  [{v.id}] {v.filename}: {scene_count} scenes, 0 visual embeddings"
+                    f"  [{v.id}] {v.filename}: {scene_count} scenes, "
+                    f"0 visual embeddings for {current_vision_model}"
                 )
 
         print("\nRemaining issues:")
@@ -1435,6 +1769,7 @@ class DataIngester:
             "segments": total_segs,
             "text_embeddings": total_text_emb,
             "visual_embeddings": total_vis_emb,
+            "video_embeddings": total_video_emb,
             "issues": len(issues),
         }
 
