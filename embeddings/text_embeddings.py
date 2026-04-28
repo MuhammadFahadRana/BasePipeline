@@ -57,21 +57,6 @@ class EmbeddingGenerator:
                 )
             else:
                 raise
-        
-        # Load LoRA Adapter if specified in environment
-        lora_path = os.getenv("EMBEDDING_LORA_PATH")
-        if lora_path and os.path.exists(lora_path):
-            try:
-                from peft import PeftModel
-                print(f"Loading LoRA adapter from: {lora_path}")
-                base_transformer = self.model[0].auto_model
-                self.model[0].auto_model = PeftModel.from_pretrained(
-                    base_transformer, lora_path
-                )
-                print(f"[OK] LoRA adapter successfully loaded for {model_name}")
-            except Exception as e:
-                print(f"[ERROR] Failed to load LoRA adapter: {e}")
-
         self.embedding_dim = self.model.get_sentence_embedding_dimension()
 
         # Avoid Unicode symbols to keep Windows cp1252 consoles happy.

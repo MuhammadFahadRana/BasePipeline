@@ -85,70 +85,10 @@ class SimpleTranscriber:
         if self.backend == "whisper":
             # default display name
             self.model_name = f"Whisper-{self.model_size.capitalize()}"
-
-            # local LoRA adapter path
-            lora_path = self._resolve_lora_path(os.getenv("ASR_LORA_PATH"))
-            base_model_id = f"openai/whisper-{self.model_size}"
-
-            if lora_path and os.path.exists(lora_path):
-                from peft import PeftConfig, PeftModel
-
-                peft_config = PeftConfig.from_pretrained(lora_path)
-                base_model_id = (
-                    peft_config.base_model_name_or_path or base_model_id
-                )
-
-                print(f"Base model from adapter config: {base_model_id}")
-                requested_variant = str(self.model_size).lower()
-                mismatch = bool(
-                    requested_variant and requested_variant not in base_model_id.lower()
-                )
-                allow_mismatch = (
-                    os.getenv("ASR_ALLOW_MISMATCH_LORA", "0").strip().lower()
-                    in {"1", "true", "yes"}
-                )
-                if mismatch and not allow_mismatch:
-                    print(
-                        "Warning: Adapter base model does not match requested variant "
-                        f"('{self.model_size}' vs '{base_model_id}'). "
-                        "Ignoring LoRA adapter and using base Whisper model."
-                    )
-                    lora_path = None
-
-            if lora_path and os.path.exists(lora_path):
-                print(f"Loading Hugging Face Whisper + LoRA from: {lora_path}")
-
-                from peft import PeftModel
-                self.processor = AutoProcessor.from_pretrained(base_model_id)
-
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                    base_model_id,
-                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                    use_safetensors=True,
-                ).to(device)
-
-                self.model = PeftModel.from_pretrained(base_model, lora_path)
-                self.model.eval()
-                self._init_hf_asr_pipeline()
-
-                adapter_tag = Path(lora_path).name
-                base_variant = base_model_id.split("/")[-1].replace("whisper-", "")
-                self.model_name = f"Whisper-{base_variant.capitalize()}-LoRA-{adapter_tag}"
-                self._backend_type = "hf_whisper"
-                self.lora_path = lora_path
-
-                print(f"[OK] LoRA adapter successfully loaded")
-                print(f"[OK] Effective model name: {self.model_name}")
-
-            else:
-                if os.getenv("ASR_LORA_PATH"):
-                    print(
-                        f"Warning: ASR_LORA_PATH was set but not found: {os.getenv('ASR_LORA_PATH')}"
-                    )
-                print(f"Loading OpenAI Whisper {self.model_name} on {device}")
-                self.model = whisper.load_model(self.model_size, device=device)
-                self._backend_type = "openai_whisper"
-                self.lora_path = None
+            print(f"Loading OpenAI Whisper {self.model_name} on {device}")
+            self.model = whisper.load_model(self.model_size, device=device)
+            self._backend_type = "openai_whisper"
+            self.lora_path = None
 
         elif self.backend == "whisperx":
             self.model_name = f"WhisperX-{self.model_size.capitalize()}"
