@@ -276,6 +276,108 @@ class SceneDetector:
 
     # ── 2. Scene Detection ──────────────────────
 
+    @staticmethod
+    def _frame_is_valid(frame) -> bool:
+        return frame is not None and getattr(frame, "size", 0) > 0
+
+    def _read_frame_opencv(
+        self, video_path: Path, timestamp: float
+    ) -> Tuple[Optional[np.ndarray], Optional[str]]:
+        """Read one frame with OpenCV, returning an error string instead of raising."""
+        cap = None
+        try:
+            cap = cv2.VideoCapture(str(video_path))
+            if not cap.isOpened():
+                return None, "could not open video"
+
+            fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            timestamp = max(0.0, float(timestamp))
+
+            if fps > 0 and frame_count > 0:
+                max_frame = max(0, frame_count - 1)
+                target_frame = int(round(timestamp * fps))
+                target_frame = max(0, min(target_frame, max_frame))
+                cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+            else:
+                cap.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000.0)
+
+            ret, frame = cap.read()
+            if not ret or not self._frame_is_valid(frame):
+                return None, "no frame returned"
+            return frame, None
+        except cv2.error as exc:
+            error = (str(exc).splitlines() or [exc.__class__.__name__])[0]
+            return None, error
+        except Exception as exc:
+            return None, str(exc)
+        finally:
+            if cap is not None:
+                cap.release()
+
+    def _extract_frame_ffmpeg(
+        self, video_path: Path, timestamp: float, output_file: Path
+    ) -> bool:
+        """Extract one frame with FFmpeg as a fallback for fragile OpenCV decodes."""
+        ffmpeg = self.config.ffmpeg_path
+        if not shutil.which(ffmpeg):
+            return False
+
+        timestamp = max(0.0, float(timestamp))
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        commands = [
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                f"{timestamp:.3f}",
+                "-i",
+                str(video_path),
+                "-frames:v",
+                "1",
+                "-q:v",
+                "2",
+                str(output_file),
+            ],
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(video_path),
+                "-ss",
+                f"{timestamp:.3f}",
+                "-frames:v",
+                "1",
+                "-q:v",
+                "2",
+                str(output_file),
+            ],
+        ]
+
+        for cmd in commands:
+            try:
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120
+                )
+            except Exception:
+                continue
+
+            if (
+                result.returncode == 0
+                and output_file.exists()
+                and output_file.stat().st_size > 0
+            ):
+                return True
+
+        return False
+
     def detect_scenes(
         self,
         video_path: str,
@@ -454,23 +556,64 @@ class SceneDetector:
             Path to saved keyframe image
         """
         video_path = Path(video_path)
+        keyframe_file = output_dir / f"{output_dir.name}_scene_{scene_idx}.jpg"
+
+        start_time = max(0.0, float(start_time))
+        end_time = max(start_time, float(end_time))
+        duration = end_time - start_time
         mid_time = (start_time + end_time) / 2
 
-        cap = cv2.VideoCapture(str(video_path))
-        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-        mid_frame = int(mid_time * fps)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, mid_frame)
+        sample_times = [mid_time]
+        if duration > 0:
+            edge_offset = min(0.1, duration / 2)
+            sample_times.extend(
+                [
+                    start_time + edge_offset,
+                    max(start_time, end_time - edge_offset),
+                ]
+            )
+        sample_times.append(start_time)
 
-        ret, frame = cap.read()
-        cap.release()
+        # Preserve order while avoiding duplicate timestamps for very short scenes.
+        unique_times = []
+        seen = set()
+        for sample_time in sample_times:
+            key = round(sample_time, 3)
+            if key not in seen:
+                seen.add(key)
+                unique_times.append(sample_time)
 
-        if not ret:
-            return None
+        last_error = None
+        for sample_time in unique_times:
+            frame, error = self._read_frame_opencv(video_path, sample_time)
+            if frame is not None:
+                try:
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    if cv2.imwrite(str(keyframe_file), frame):
+                        return keyframe_file
+                    last_error = "cv2.imwrite returned false"
+                except cv2.error as exc:
+                    last_error = (
+                        str(exc).splitlines() or [exc.__class__.__name__]
+                    )[0]
+            elif error:
+                last_error = error
 
-        # Save keyframe — use the original video stem for naming
-        keyframe_file = output_dir / f"{output_dir.name}_scene_{scene_idx}.jpg"
-        cv2.imwrite(str(keyframe_file), frame)
-        return keyframe_file
+        if last_error:
+            print(
+                f"  OpenCV keyframe extraction failed for scene {scene_idx} "
+                f"near {mid_time:.2f}s ({last_error}); trying FFmpeg."
+            )
+
+        for sample_time in unique_times:
+            if self._extract_frame_ffmpeg(video_path, sample_time, keyframe_file):
+                return keyframe_file
+
+        print(
+            f"  ! Could not extract keyframe for scene {scene_idx} "
+            f"({start_time:.2f}s - {end_time:.2f}s)"
+        )
+        return None
 
     # ── 3. Semantic Refinement ──────────────────
 
@@ -683,23 +826,16 @@ class SceneDetector:
         Generates a strip of thumbnails for each scene.
         """
         video_path = Path(video_path)
-        cap = cv2.VideoCapture(str(video_path))
-        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-
         thumb_width = 160
         thumb_height = 90
         thumbnails = []
 
         for scene in scenes:
             mid_time = (scene["start_time"] + scene["end_time"]) / 2
-            mid_frame = int(mid_time * fps)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, mid_frame)
-            ret, frame = cap.read()
-            if ret:
+            frame, _ = self._read_frame_opencv(video_path, mid_time)
+            if frame is not None:
                 thumb = cv2.resize(frame, (thumb_width, thumb_height))
                 thumbnails.append(thumb)
-
-        cap.release()
 
         if not thumbnails:
             print("No thumbnails to visualize")

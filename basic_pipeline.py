@@ -395,7 +395,9 @@ class BasicVideoPipeline:
             )
             print("\n2. Detecting & refining scenes...")
             scenes = self.scene_detector.detect_scenes(
-                video_path, base_output_dir=str(output_base / "scenes")
+                video_path,
+                base_output_dir=str(output_base / "scenes"),
+                force_reprocess=force,
             )
 
             print("\n2b. Refining scenes...")
