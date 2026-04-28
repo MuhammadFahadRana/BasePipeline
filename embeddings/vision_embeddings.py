@@ -8,10 +8,21 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
 
-DEFAULT_VISION_EMBEDDING_MODEL = os.getenv(
-    "VISION_EMBEDDING_MODEL", "google/siglip2-so400m-patch14-384"
-)
+    load_dotenv()
+except Exception:
+    pass
+
+FALLBACK_VISION_EMBEDDING_MODEL = "google/siglip2-so400m-patch14-384"
+
+
+def get_default_vision_embedding_model() -> str:
+    return os.getenv("VISION_EMBEDDING_MODEL", FALLBACK_VISION_EMBEDDING_MODEL)
+
+
+DEFAULT_VISION_EMBEDDING_MODEL = get_default_vision_embedding_model()
 LEGACY_VISION_EMBEDDING_MODELS = ("google/siglip-base-patch16-224",)
 
 
@@ -31,7 +42,7 @@ class VisionEmbeddingGenerator:
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        model_name = model_name or DEFAULT_VISION_EMBEDDING_MODEL
+        model_name = model_name or get_default_vision_embedding_model()
         self.device = device
         self.model_name = model_name
 
@@ -257,7 +268,7 @@ def get_vision_embedding_generator(
     device: str = "auto",
 ) -> VisionEmbeddingGenerator:
     """Get or create a cached vision embedding generator."""
-    resolved_model_name = model_name or DEFAULT_VISION_EMBEDDING_MODEL
+    resolved_model_name = model_name or get_default_vision_embedding_model()
     cache_key: Tuple[str, str] = (resolved_model_name, device)
 
     if cache_key not in _vision_generators:

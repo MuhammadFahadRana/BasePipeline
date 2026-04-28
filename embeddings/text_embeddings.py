@@ -7,11 +7,25 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
+try:
+    from dotenv import load_dotenv
 
-DEFAULT_EMBEDDING_MODEL = os.getenv(
-    "TEXT_EMBEDDING_MODEL",
-    os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-4B"),
-)
+    load_dotenv()
+except Exception:
+    pass
+
+FALLBACK_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+
+
+def get_default_embedding_model() -> str:
+    """Resolve the text embedding model from the current environment."""
+    return os.getenv(
+        "TEXT_EMBEDDING_MODEL",
+        os.getenv("EMBEDDING_MODEL", FALLBACK_EMBEDDING_MODEL),
+    )
+
+
+DEFAULT_EMBEDDING_MODEL = get_default_embedding_model()
 
 
 class EmbeddingGenerator:
@@ -32,7 +46,7 @@ class EmbeddingGenerator:
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        model_name = model_name or DEFAULT_EMBEDDING_MODEL
+        model_name = model_name or get_default_embedding_model()
         self.device = device
         self.model_name = model_name
 
@@ -121,7 +135,7 @@ def get_embedding_generator(
     device: str = "auto",
 ) -> EmbeddingGenerator:
     """Get or create embedding generator instance for the given model/device."""
-    resolved_model_name = model_name or DEFAULT_EMBEDDING_MODEL
+    resolved_model_name = model_name or get_default_embedding_model()
     cache_key: Tuple[str, str] = (resolved_model_name, device)
 
     if cache_key not in _embedding_generators:

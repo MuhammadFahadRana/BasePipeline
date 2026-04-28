@@ -27,7 +27,7 @@ from database.models import (
 )
 from embeddings.text_embeddings import get_embedding_generator
 from embeddings.vision_embeddings import (
-    DEFAULT_VISION_EMBEDDING_MODEL,
+    get_default_vision_embedding_model,
     get_vision_embedding_generator,
 )
 
@@ -44,7 +44,7 @@ class DataIngester:
         """
         self.db = db or SessionLocal()
         self.own_session = db is None
-        self.embedding_gen = get_embedding_generator()
+        self.embedding_gen = None
         self.vision_gen = None  # Lazy load
         self.visual_enricher = None  # Lazy load (Qwen2.5-VL captions/OCR)
         self.ocr_reader = None  # Lazy load (EasyOCR fallback)
@@ -53,7 +53,7 @@ class DataIngester:
         )
         self.video_embedding_model = os.getenv(
             "VIDEO_EMBEDDING_MODEL",
-            f"video-temporal-mean:{DEFAULT_VISION_EMBEDDING_MODEL}",
+            f"video-temporal-mean:{get_default_vision_embedding_model()}",
         )
         self.visual_enrichment_load_in_4bit = (
             os.getenv("VISUAL_ENRICHMENT_LOAD_IN_4BIT", "false").strip().lower()
@@ -63,7 +63,12 @@ class DataIngester:
             os.getenv("VISUAL_ENRICHMENT_ENABLED", "true").strip().lower()
             in ("1", "true", "yes", "on")
         )
+        self._ensure_database_connection()
         self._ensure_schema_extensions()
+
+    def _ensure_database_connection(self):
+        """Fail fast before loading embedding models if the database is down."""
+        self.db.execute(text("SELECT 1"))
 
     def _get_vision_gen(self):
         if self.vision_gen is None:
@@ -659,7 +664,7 @@ class DataIngester:
     def _current_vision_model_name(self) -> str:
         if self.vision_gen is not None:
             return self.vision_gen.model_name
-        return os.getenv("VISION_EMBEDDING_MODEL", DEFAULT_VISION_EMBEDDING_MODEL)
+        return get_default_vision_embedding_model()
 
     def _enrich_missing_scenes(
         self, video: Video, scenes_data: Optional[List[Dict]] = None

@@ -15,17 +15,24 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 
 try:
-    from transformers import AutoModelForVision2Seq, AutoProcessor
-    try:
-        from transformers import AutoModelForImageTextToText
-    except ImportError:  # Older Transformers builds.
-        AutoModelForImageTextToText = None
-    try:
-        from transformers import Qwen2_5_VLForConditionalGeneration
-    except ImportError:  # Optional; Auto classes may still work.
-        Qwen2_5_VLForConditionalGeneration = None
+    from transformers import AutoProcessor
 except ImportError:
-    raise ImportError("Required libraries missing. Run: pip install transformers accelerate")
+    raise ImportError("Required library missing. Run: pip install transformers")
+
+try:
+    from transformers import AutoModelForVision2Seq
+except ImportError:  # Removed from some newer Transformers builds.
+    AutoModelForVision2Seq = None
+
+try:
+    from transformers import AutoModelForImageTextToText
+except ImportError:  # Older Transformers builds.
+    AutoModelForImageTextToText = None
+
+try:
+    from transformers import Qwen2_5_VLForConditionalGeneration
+except ImportError:  # Optional; Auto classes may still work.
+    Qwen2_5_VLForConditionalGeneration = None
 
 try:
     from qwen_vl_utils import process_vision_info
@@ -169,7 +176,12 @@ class VisualFeatureExtractor:
             return Qwen2_5_VLForConditionalGeneration
         if AutoModelForImageTextToText is not None:
             return AutoModelForImageTextToText
-        return AutoModelForVision2Seq
+        if AutoModelForVision2Seq is not None:
+            return AutoModelForVision2Seq
+        raise ImportError(
+            "No supported vision-language model class found. "
+            "Install a compatible Transformers build, e.g. transformers>=4.57,<5.0."
+        )
 
     def _resolve_torch_dtype(self):
         """Resolve user-configured dtype to a torch dtype."""

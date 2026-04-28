@@ -10,6 +10,13 @@ from typing import Callable, Dict, Optional, List
 from datetime import timedelta, datetime
 import time
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+
 from transcriber import SimpleTranscriber
 from scene_detector import SceneDetector, SceneConfig
 
@@ -39,6 +46,8 @@ class BasicVideoPipeline:
         scene_threshold: float = 30.0,
         device: str = "auto",
         skip_ingest: bool = False,
+        ingest_target: Optional[str] = None,
+        visual_enrichment: Optional[bool] = None,
     ):
         """
         Initialize pipeline with selected ASR backend and scene detector.
@@ -47,7 +56,15 @@ class BasicVideoPipeline:
             scene_threshold: Scene detection threshold
             device: Preferred device ("auto" recommended).
             skip_ingest: Skip database ingestion if True
+            ingest_target: "postgres", "sqlserver", "both", or "none".
+            visual_enrichment: Enable Qwen visual captions/OCR if True.
         """
+        if visual_enrichment is None:
+            visual_enrichment = (
+                os.getenv("VISUAL_ENRICHMENT_ENABLED", "true").strip().lower()
+                in ("1", "true", "yes", "on")
+            )
+
         self.transcriber = SimpleTranscriber(
             backend="whisper",
             model_variant={"name": "large-v3"},
@@ -60,14 +77,14 @@ class BasicVideoPipeline:
             threshold=scene_threshold,
             clip_sim_merge_threshold=0.90,
             device=scene_device,
+            enable_visual_enrichment=visual_enrichment,
         )
         self.scene_detector = SceneDetector(config=scene_cfg)
         self.backend = "whisper"
         self.model_variant = {"name": "large-v3"}
         self.skip_ingest = skip_ingest
-        self.ingest_target = (
-            os.getenv("PIPELINE_INGEST_TARGET", "postgres").strip().lower()
-        )
+        target = ingest_target or os.getenv("PIPELINE_INGEST_TARGET", "postgres")
+        self.ingest_target = target.strip().lower()
         if self.ingest_target not in {"postgres", "sqlserver", "both", "none"}:
             self.ingest_target = "postgres"
 
@@ -507,15 +524,23 @@ class BasicVideoPipeline:
                             generate_visual_embeddings=generate_visual_embeddings,
                             update_existing=True,
                         )
+                        report["postgres_ok"] = True
                     else:
-                        with DataIngester() as ing:
-                            ing.ingest_video(
-                                results_file,
-                                generate_embeddings=generate_embeddings,
-                                generate_visual_embeddings=generate_visual_embeddings,
-                                update_existing=True,
+                        db_error = self._postgres_connection_error()
+                        if db_error:
+                            _append_error(
+                                "postgres unavailable before loading embedding models: "
+                                f"{db_error}"
                             )
-                    report["postgres_ok"] = True
+                        else:
+                            with DataIngester() as ing:
+                                ing.ingest_video(
+                                    results_file,
+                                    generate_embeddings=generate_embeddings,
+                                    generate_visual_embeddings=generate_visual_embeddings,
+                                    update_existing=True,
+                                )
+                            report["postgres_ok"] = True
                 except Exception as e:
                     _append_error(f"postgres: {e}")
 
@@ -544,6 +569,22 @@ class BasicVideoPipeline:
             report["ok"] = True
 
         return report
+
+    @staticmethod
+    def _postgres_connection_error() -> Optional[str]:
+        """Return a connection error string, or None when PostgreSQL is reachable."""
+        try:
+            from sqlalchemy import text
+            from database.config import SessionLocal
+
+            db = SessionLocal()
+            try:
+                db.execute(text("SELECT 1"))
+            finally:
+                db.close()
+            return None
+        except Exception as exc:
+            return str(exc)
 
     def align_transcript_with_scenes(
         self, transcript: Dict, scenes: List[Dict]
@@ -776,6 +817,8 @@ class BasicVideoPipeline:
         output_base: str = "processed",
         use_hash: bool = False,
         force: bool = False,
+        generate_embeddings: bool = True,
+        generate_visual_embeddings: bool = True,
     ):
         video_folder = Path(video_folder)
 
@@ -796,9 +839,16 @@ class BasicVideoPipeline:
         # Share a single DataIngester across the batch to avoid reloading
         # embedding models for every video.
         batch_ingester = None
-        if HAS_DB and not self.skip_ingest:
+        if HAS_DB and not self.skip_ingest and self.ingest_target in {"postgres", "both"}:
             try:
-                batch_ingester = DataIngester()
+                db_error = self._postgres_connection_error()
+                if db_error:
+                    print(
+                        "  ! Could not initialise PostgreSQL ingester before loading "
+                        f"embedding models: {db_error}"
+                    )
+                else:
+                    batch_ingester = DataIngester()
             except Exception as e:
                 print(f"  ! Could not initialise ingester: {e}")
 
@@ -813,6 +863,8 @@ class BasicVideoPipeline:
                     output_base=output_base,
                     use_hash=use_hash,
                     force=force,
+                    generate_embeddings=generate_embeddings,
+                    generate_visual_embeddings=generate_visual_embeddings,
                     _ingester=batch_ingester,
                 )
                 video_elapsed = time.time() - video_start_time
@@ -963,6 +1015,34 @@ if __name__ == "__main__":
         "--skip-db", action="store_true", help="Skip database ingestion"
     )
     parser.add_argument(
+        "--ingest-target",
+        choices=["postgres", "sqlserver", "both", "none"],
+        help="Database target for ingestion. Overrides PIPELINE_INGEST_TARGET.",
+    )
+    parser.add_argument(
+        "--no-visual-enrichment",
+        action="store_true",
+        help="Skip Qwen visual captions/object labels/OCR enrichment.",
+    )
+    parser.add_argument(
+        "--text-embedding-model",
+        help="Override TEXT_EMBEDDING_MODEL for database ingestion.",
+    )
+    parser.add_argument(
+        "--vision-embedding-model",
+        help="Override VISION_EMBEDDING_MODEL for database ingestion.",
+    )
+    parser.add_argument(
+        "--no-text-embeddings",
+        action="store_true",
+        help="Skip text embedding generation during database ingestion.",
+    )
+    parser.add_argument(
+        "--no-visual-embeddings",
+        action="store_true",
+        help="Skip visual embedding generation during database ingestion.",
+    )
+    parser.add_argument(
         "--ingest-only",
         action="store_true",
         help="Only perform database ingestion (results must exist)",
@@ -973,9 +1053,16 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if args.text_embedding_model:
+        os.environ["TEXT_EMBEDDING_MODEL"] = args.text_embedding_model
+    if args.vision_embedding_model:
+        os.environ["VISION_EMBEDDING_MODEL"] = args.vision_embedding_model
+
     pipeline = BasicVideoPipeline(
         scene_threshold=args.threshold,
         skip_ingest=args.skip_db,
+        ingest_target=args.ingest_target,
+        visual_enrichment=False if args.no_visual_enrichment else None,
     )
 
     if args.ingest_only:
@@ -985,24 +1072,49 @@ if __name__ == "__main__":
             results_file = (
                 Path("processed") / "results" / video_path.stem / "results.json"
             )
-            pipeline._ingest_results(results_file)
+            pipeline._ingest_results(
+                results_file,
+                generate_embeddings=not args.no_text_embeddings,
+                generate_visual_embeddings=not args.no_visual_embeddings,
+            )
         else:
             # Batch ingest from processed/results
             try:
-                with DataIngester() as ingester:
-                    ingester.ingest_batch(
-                        processed_dir="processed",
-                        update_existing=True,
-                        force=args.force,
+                if pipeline.ingest_target in {"none", "sqlserver"}:
+                    print(
+                        "Batch ingest-only mode currently uses the PostgreSQL "
+                        "ingester; set --ingest-target postgres/both or pass --video."
                     )
+                else:
+                    db_error = pipeline._postgres_connection_error()
+                    if db_error:
+                        print(
+                            "Batch ingestion skipped because PostgreSQL is not "
+                            f"reachable: {db_error}"
+                        )
+                    else:
+                        with DataIngester() as ingester:
+                            ingester.ingest_batch(
+                                processed_dir="processed",
+                                update_existing=True,
+                                force=args.force,
+                            )
             except Exception as e:
                 print(f"Batch ingestion failed: {e}")
     elif args.video:
-        pipeline.process_video(args.video, force=args.force, use_hash=args.use_hash)
+        pipeline.process_video(
+            args.video,
+            force=args.force,
+            use_hash=args.use_hash,
+            generate_embeddings=not args.no_text_embeddings,
+            generate_visual_embeddings=not args.no_visual_embeddings,
+        )
     else:
         pipeline.batch_process(
             video_folder=args.folder,
             limit=args.limit,
             force=args.force,
             use_hash=args.use_hash,
+            generate_embeddings=not args.no_text_embeddings,
+            generate_visual_embeddings=not args.no_visual_embeddings,
         )
