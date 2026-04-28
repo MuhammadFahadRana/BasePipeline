@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 
 DEFAULT_EMBEDDING_MODEL = os.getenv(
     "TEXT_EMBEDDING_MODEL",
-    os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-7B"),
+    os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-4B"),
 )
 
 

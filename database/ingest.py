@@ -287,64 +287,9 @@ class DataIngester:
         if reader is None:
             return None, None
 
-        frame_candidates: List[Path] = []
-                # If this scene is from a video, prefer using the DocumentOCREngine
-                # which uses PaddleOCR for video frames (Paddle-only policy).
-                used_engine = False
-                video_path = self._resolve_video_path(scene)
-                if video_path is not None:
-                    try:
-                        from document_ingestion.ocr_engine import DocumentOCREngine
-                        from PIL import Image
-
-                        ocr_engine = DocumentOCREngine()
-                        img = Image.open(str(frame)).convert("RGB")
-                        txt, conf = ocr_engine.extract_text_from_image(img, source="video")
-                        if txt and txt.strip():
-                            merged = " ".join([ln.strip() for ln in txt.splitlines() if ln.strip()])
-                            if merged:
-                                best_text = merged if (best_text is None) else best_text
-                                best_conf = conf if (best_conf is None or (conf or 0.0) > (best_conf or 0.0)) else best_conf
-                                used_engine = True
-                    except Exception as exc:
-                        print(f"Warning: DocumentOCREngine (video) failed for {frame}: {exc}")
-
-                if used_engine:
-                    continue
-
-                # Fallback to generic OCR reader (EasyOCR) for non-video or if engine failed
-                try:
-                    detections = reader.extract_with_confidence(
-                        str(frame), confidence_threshold=0.35
-                    )
-                except Exception as exc:
-                    print(f"Warning: OCR fallback failed for {frame}: {exc}")
-                    continue
-
-                if not detections:
-                    continue
-
-                texts = []
-                confidences = []
-                for det in detections:
-                    txt = det.get("text")
-                    conf = det.get("confidence")
-                    if txt and txt.strip():
-                        texts.append(str(txt).strip())
-                    if conf is not None:
-                        try:
-                            confidences.append(float(conf))
-                        except Exception:
-                            pass
-
-                if not texts:
-                    continue
-
-                merged = " ".join(texts).strip()
-                mean_conf = sum(confidences) / len(confidences) if confidences else None
-                if merged and (best_text is None or (mean_conf or 0.0) > (best_conf or 0.0)):
-                    best_text = merged
-                    best_conf = mean_conf
+        frame_candidates: List[Path] = [keyframe_path] if keyframe_path else []
+        seen = set()
+        unique_frames = []
         for frame in frame_candidates:
             key = str(frame.resolve()) if frame.exists() else str(frame)
             if key in seen:
@@ -355,6 +300,31 @@ class DataIngester:
         best_text = None
         best_conf = None
         for frame in unique_frames:
+            # If this scene is from a video, prefer using the DocumentOCREngine
+            # which uses PaddleOCR for video frames (Paddle-only policy).
+            used_engine = False
+            video_path = self._resolve_video_path(scene)
+            if video_path is not None:
+                try:
+                    from document_ingestion.ocr_engine import DocumentOCREngine
+                    from PIL import Image
+
+                    ocr_engine = DocumentOCREngine()
+                    img = Image.open(str(frame)).convert("RGB")
+                    txt, conf = ocr_engine.extract_text_from_image(img, source="video")
+                    if txt and txt.strip():
+                        merged = " ".join([ln.strip() for ln in txt.splitlines() if ln.strip()])
+                        if merged:
+                            best_text = merged if (best_text is None) else best_text
+                            best_conf = conf if (best_conf is None or (conf or 0.0) > (best_conf or 0.0)) else best_conf
+                            used_engine = True
+                except Exception as exc:
+                    print(f"Warning: DocumentOCREngine (video) failed for {frame}: {exc}")
+
+            if used_engine:
+                continue
+
+            # Fallback to generic OCR reader (EasyOCR) for non-video or if engine failed
             try:
                 detections = reader.extract_with_confidence(
                     str(frame), confidence_threshold=0.35

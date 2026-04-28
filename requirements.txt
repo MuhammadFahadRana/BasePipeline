@@ -33,3 +33,5 @@ torchaudio==2.6.0+cu124
 torchvision==0.21.0+cu124
 tqdm==4.67.1
 transformers>=4.57,<5.0
+paddleocr==2.0.0
+paddlepaddle==2.6.0
