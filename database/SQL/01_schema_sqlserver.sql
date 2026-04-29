@@ -639,6 +639,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.hybrid_search
     @query_text NVARCHAR(MAX),
     @query_embedding NVARCHAR(MAX) = NULL,
+    @embedding_model VARCHAR(100) = NULL,
     @text_weight FLOAT = 0.3,
     @semantic_weight FLOAT = 0.7,
     @limit_results INT = 10
@@ -684,15 +685,19 @@ semantic_scores AS (
     SELECT
         e.segment_id,
         ' + @SemanticExpr + N' AS semantic_score
-    FROM dbo.embeddings e
-    WHERE e.segment_id IS NOT NULL
+FROM dbo.embeddings e
+WHERE e.segment_id IS NOT NULL
+  AND (@embedding_model IS NULL OR e.embedding_model = @embedding_model)
 )
 SELECT TOP (@limit_results)
     ts.id AS segment_id,
+    v.id AS video_id,
     v.filename AS video_filename,
+    v.file_path AS video_path,
     ts.start_time,
     ts.end_time,
     ts.[text],
+    ts.[language] AS result_language,
     (COALESCE(txt.text_score, 0.0) * @text_weight +
      COALESCE(sem.semantic_score, 0.0) * @semantic_weight) AS combined_score
 FROM dbo.transcript_segments ts
@@ -704,9 +709,10 @@ ORDER BY combined_score DESC;';
 
     EXEC sp_executesql
         @Sql,
-        N'@query_text NVARCHAR(MAX), @query_embedding NVARCHAR(MAX), @text_weight FLOAT, @semantic_weight FLOAT, @limit_results INT',
+        N'@query_text NVARCHAR(MAX), @query_embedding NVARCHAR(MAX), @embedding_model VARCHAR(100), @text_weight FLOAT, @semantic_weight FLOAT, @limit_results INT',
         @query_text = @query_text,
         @query_embedding = @query_embedding,
+        @embedding_model = @embedding_model,
         @text_weight = @text_weight,
         @semantic_weight = @semantic_weight,
         @limit_results = @limit_results;

@@ -25,11 +25,12 @@ The schema is idempotent (`IF NOT EXISTS` patterns), so it can be re-run safely.
 
 ## Important Notes on Embeddings
 
-- SQL Server `VECTOR` has a 1998-dimension cap. With the current 4096-dim Qwen text model, text/document/query embeddings fall back to `NVARCHAR(MAX)` JSON storage, while visual/image columns still use `VECTOR(768)`.
+- SQL Server `VECTOR` has a 1998-dimension cap. If you use a >1998-dim Qwen text model, text/document/query embeddings fall back to `NVARCHAR(MAX)` JSON storage, while visual/image columns still use `VECTOR(768)`.
 - Dual storage is supported: canonical full embeddings remain in `dbo.embeddings` / `dbo.document_embeddings`, and optional low-dim projected vectors are stored in `dbo.embedding_projections` / `dbo.document_embedding_projections`.
 - If `VECTOR` is not available (common on many Express installs), embedding columns automatically fall back to `NVARCHAR(MAX)` JSON with `ISJSON` validation.
 - This keeps embedding dimensions from blocking database creation.
-- `ingest_sqlserver.py` now defaults to `TEXT_EMBEDDING_MODEL` / `EMBEDDING_MODEL` env vars, so model switching is centralized.
+- `ingest_sqlserver.py` uses the same `TEXT_EMBEDDING_MODEL` / `EMBEDDING_MODEL` resolution as runtime search, so ingestion and query embeddings stay compatible.
+- For mixed English/Norwegian retrieval, use one multilingual text embedding model for all transcript segments and query variants.
 - If switching to a model with a different vector dimension, update SQL schema `VECTOR(...)` dimensions in:
   - `01_schema_sqlserver.sql` (`embeddings`, `search_queries`)
   - `02_document_schema_sqlserver.sql` (`document_embeddings`)
@@ -116,12 +117,20 @@ If needed, set env vars before running Python helpers:
 $env:MSSQL_SERVER = "LAPTOP-GMO7MPTH\SQLEXPRESS"
 $env:MSSQL_DATABASE = "VideoSemanticDB"
 $env:TEXT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-8B"
+$env:SEARCH_QUERY_TRANSLATION_ENABLED = "1"
+$env:SEARCH_QUERY_TRANSLATION_PROVIDER = "mymemory"  # or "marian" / "nllb" for local models
+$env:SEARCH_QUERY_TRANSLATION_TIMEOUT = "0.75"
 $env:RERANKER_MODEL = "Qwen/Qwen3-4B-Instruct"
 $env:RERANKER_MODE = "hybrid"
 $env:RERANKER_BLEND = "0.70"
 $env:MSSQL_TEXT_PROJECTION_DIM = "1024"
 $env:MSSQL_ENABLE_TEXT_PROJECTION = "yes"
 ```
+
+Local translation defaults:
+
+- `marian`: `Helsinki-NLP/opus-mt-en-gmq` and `Helsinki-NLP/opus-mt-gmq-en`
+- `nllb`: `facebook/nllb-200-distilled-600M`
 
 `mssql_connection.py` now reads `MSSQL_*` settings only by default, so PostgreSQL
 `DB_*` values in `.env` will not override SQL Server settings.

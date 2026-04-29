@@ -29,13 +29,10 @@ from sqlalchemy import text
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from database.SQL.mssql_connection import engine, test_connection
-from embeddings.text_embeddings import get_embedding_generator
+from embeddings.text_embeddings import get_default_embedding_model, get_embedding_generator
 from embeddings.vision_embeddings import get_vision_embedding_generator
 
-DEFAULT_TEXT_MODEL = os.getenv(
-    "TEXT_EMBEDDING_MODEL",
-    os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B"),
-)
+DEFAULT_TEXT_MODEL = get_default_embedding_model()
 DEFAULT_VISION_MODEL = os.getenv(
     "VISION_EMBEDDING_MODEL", "google/siglip2-base-patch16-224"
 )

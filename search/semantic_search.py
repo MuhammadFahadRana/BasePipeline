@@ -3,10 +3,7 @@
 import re
 import hashlib
 import json
-import os
 import time
-import urllib.parse
-import urllib.request
 from typing import List, Dict, Optional, Tuple, Set
 from dataclasses import dataclass
 from difflib import SequenceMatcher, get_close_matches
@@ -17,6 +14,11 @@ from sqlalchemy.orm import Session
 
 from database.models import Video, TranscriptSegment, Embedding, SearchQuery
 from embeddings.text_embeddings import get_embedding_generator
+from search.query_translation import (
+    QueryTranslator,
+    detect_query_language,
+    normalize_lang_code,
+)
 from search.reranker import get_reranker
 from search.norwegian_stemmer import stem_matches_in_text
 
@@ -544,90 +546,70 @@ class SemanticSearchEngine:
             "db_hits": 0,
             "avg_latency_ms": 0.0,
         }
-        self.query_translation_enabled = os.getenv(
-            "SEARCH_QUERY_TRANSLATION_ENABLED", "1"
-        ).strip().lower() in {"1", "true", "yes", "on"}
-        self.query_translation_timeout = float(
-            os.getenv("SEARCH_QUERY_TRANSLATION_TIMEOUT", "1.5")
-        )
-        self.query_translation_targets = tuple(
-            code.strip().lower()
-            for code in os.getenv("SEARCH_QUERY_TRANSLATION_TARGETS", "en,no").split(",")
-            if code.strip()
-        )
-        self._query_translation_cache: Dict[Tuple[str, str, str], Optional[str]] = {}
+        self.query_translator = QueryTranslator.from_env()
+        self._content_language_cache: Optional[Set[str]] = None
 
     @staticmethod
     def _normalize_lang_code(lang: Optional[str]) -> Optional[str]:
-        if not lang:
-            return None
-        code = str(lang).strip().lower()
-        if not code:
-            return None
-        if code.startswith("no") or code in {"nb", "nn", "nor"}:
-            return "no"
-        if code.startswith("en"):
-            return "en"
-        return code
+        return normalize_lang_code(lang)
 
     def _detect_query_language(self, query: str) -> str:
-        return "no" if self._is_norwegian_query(query) else "en"
+        return detect_query_language(query)
 
     def _translate_query(
         self, query: str, source_lang: str, target_lang: str
     ) -> Optional[str]:
-        source = self._normalize_lang_code(source_lang)
-        target = self._normalize_lang_code(target_lang)
-        if not query or not source or not target or source == target:
-            return None
+        return self.query_translator.translate(query, source_lang, target_lang)
 
-        cache_key = (query.strip().lower(), source, target)
-        if cache_key in self._query_translation_cache:
-            return self._query_translation_cache[cache_key]
+    def _get_content_languages(self) -> Set[str]:
+        if self._content_language_cache is not None:
+            return self._content_language_cache
 
-        translated: Optional[str] = None
+        languages: Set[str] = set()
         try:
-            lang_pair = f"{source}|{target}"
-            url = (
-                "https://api.mymemory.translated.net/get?"
-                f"q={urllib.parse.quote(query[:500])}&langpair={lang_pair}"
-            )
-            with urllib.request.urlopen(url, timeout=self.query_translation_timeout) as resp:
-                payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
-            candidate = (
-                payload.get("responseData", {}).get("translatedText", "").strip()
-            )
-            if candidate and candidate.lower() != query.strip().lower():
-                translated = candidate
+            rows = self.db.execute(
+                text("""
+                SELECT DISTINCT language
+                FROM transcript_segments
+                WHERE language IS NOT NULL AND BTRIM(language) <> ''
+                """)
+            ).fetchall()
+            for row in rows:
+                code = self._normalize_lang_code(row[0])
+                if code:
+                    languages.add(code)
         except Exception:
-            translated = None
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
 
-        self._query_translation_cache[cache_key] = translated
-        return translated
+        try:
+            rows = self.db.execute(
+                text("""
+                SELECT DISTINCT language
+                FROM documents
+                WHERE language IS NOT NULL AND BTRIM(language) <> ''
+                """)
+            ).fetchall()
+            for row in rows:
+                code = self._normalize_lang_code(row[0])
+                if code:
+                    languages.add(code)
+        except Exception:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+
+        self._content_language_cache = languages
+        return languages
 
     def _build_multilingual_query_variants(self, query: str) -> List[str]:
-        base = (query or "").strip()
-        if not base:
-            return []
-
-        variants: List[str] = [base]
-        seen = {base.lower()}
-        source_lang = self._detect_query_language(base)
-
-        if self.query_translation_enabled:
-            for target in self.query_translation_targets:
-                target = self._normalize_lang_code(target)
-                if not target or target == source_lang:
-                    continue
-                translated = self._translate_query(base, source_lang, target)
-                if not translated:
-                    continue
-                key = translated.lower()
-                if key not in seen:
-                    variants.append(translated)
-                    seen.add(key)
-
-        return variants
+        return self.query_translator.build_variants(
+            query,
+            available_languages=self._get_content_languages(),
+        )
 
     @staticmethod
     def _collect_anchor_keywords(queries: List[str]) -> List[str]:
@@ -654,6 +636,49 @@ class SemanticSearchEngine:
                 if existing is None or entry[0] > existing[0]:
                     merged[key] = entry
         return merged
+
+    def _semantic_search_multi(
+        self,
+        query_embeddings,
+        top_k: int = 20,
+        video_filter: Optional[str] = None,
+    ) -> Dict:
+        """Run vector search for each query variant and keep the best hit per source."""
+        merged: Dict = {}
+        for idx, embedding in enumerate(query_embeddings):
+            partial = self._semantic_search(
+                embedding,
+                top_k=top_k,
+                video_filter=video_filter,
+            )
+            # Give translated variants a tiny guardrail against noisy translations
+            # while still allowing them to outrank weak original-language matches.
+            variant_weight = 1.0 if idx == 0 else 0.98
+            for key, entry in partial.items():
+                weighted_entry = (float(entry[0]) * variant_weight, entry[1], entry[2])
+                existing = merged.get(key)
+                if existing is None or weighted_entry[0] > existing[0]:
+                    merged[key] = weighted_entry
+        return merged
+
+    def _document_semantic_search_multi(
+        self,
+        query_embeddings,
+        top_k: int = 10,
+    ) -> List["SearchResult"]:
+        """Run document vector search for each query variant and dedupe chunks."""
+        merged: Dict[Tuple[int, int], SearchResult] = {}
+        for idx, embedding in enumerate(query_embeddings):
+            partial = self._document_semantic_search(embedding, top_k=top_k)
+            variant_weight = 1.0 if idx == 0 else 0.98
+            for result in partial:
+                result.score = float(result.score) * variant_weight
+                key = (int(result.video_id or 0), int(result.segment_id or 0))
+                existing = merged.get(key)
+                if existing is None or result.score > existing.score:
+                    merged[key] = result
+        rows = sorted(merged.values(), key=lambda item: item.score, reverse=True)
+        return rows[:top_k]
 
     def _apply_reranking(
         self,
@@ -814,6 +839,7 @@ class SemanticSearchEngine:
         self.stats["queries"] += 1
 
         # OPTIMIZATION #5: Check cache if enabled
+        cache_settings = self.query_translator.cache_key_settings
         cache_key = self._cache_key(
             query,
             top_k,
@@ -822,6 +848,8 @@ class SemanticSearchEngine:
             min_score=min_score,
             video_filter=video_filter,
             deep_search=deep_search,
+            retrieval_version="multilingual-query-v2",
+            **cache_settings,
         )
 
         if self.cache_enabled and use_cache:
@@ -839,15 +867,19 @@ class SemanticSearchEngine:
 
         self.stats["cache_misses"] += 1
 
-        # Generate query embedding (semantic-first, no autocorrection)
+        query_variants = self._build_multilingual_query_variants(query)
+        if not query_variants:
+            query_variants = [query]
+
+        # Generate multilingual query embeddings in one model call.
         query_instruction = (
             "Given a query, retrieve relevant passages that answer the query\nQuery: "
         )
-        query_embedding = self.embedding_gen.encode_single(
-            query, instruction=query_instruction
+        query_embeddings = self.embedding_gen.encode(
+            query_variants,
+            instruction=query_instruction,
+            show_progress=False,
         )
-
-        query_variants = self._build_multilingual_query_variants(query)
         fuzzy_queries: List[str] = []
         for variant in query_variants:
             variant_keywords = extract_keywords(variant)
@@ -864,8 +896,8 @@ class SemanticSearchEngine:
         # OPTIMIZATION #4: Parallel execution if enabled
         if self.parallel_enabled and self._executor:
             semantic_future = self._executor.submit(
-                self._semantic_search,
-                query_embedding,
+                self._semantic_search_multi,
+                query_embeddings,
                 top_k=top_k * 3,
                 video_filter=video_filter,
             )
@@ -876,22 +908,22 @@ class SemanticSearchEngine:
                 video_filter=video_filter,
             )
             doc_future = self._executor.submit(
-                self._document_semantic_search,
-                query_embedding,
+                self._document_semantic_search_multi,
+                query_embeddings,
                 top_k=top_k,
             )
             semantic_results = semantic_future.result()
             fuzzy_results = fuzzy_future.result()
             doc_results = doc_future.result()
         else:
-            semantic_results = self._semantic_search(
-                query_embedding, top_k=top_k * 3, video_filter=video_filter
+            semantic_results = self._semantic_search_multi(
+                query_embeddings, top_k=top_k * 3, video_filter=video_filter
             )
             fuzzy_results = self._fuzzy_text_search_multi(
                 fuzzy_queries, top_k=top_k * 3, video_filter=video_filter
             )
-            doc_results = self._document_semantic_search(
-                query_embedding, top_k=top_k
+            doc_results = self._document_semantic_search_multi(
+                query_embeddings, top_k=top_k
             )
 
         # Combine and re-rank results
@@ -991,7 +1023,7 @@ class SemanticSearchEngine:
         if log_query and final_results:
             self._log_query(
                 query,
-                query_embedding.tolist(),
+                query_embeddings[0].tolist(),
                 len(final_results),
                 final_results[0].segment_id,
             )
@@ -1285,12 +1317,16 @@ class SemanticSearchEngine:
                 LIMIT 1
             ) ve ON TRUE
             JOIN videos v ON (ts.video_id = v.id OR s.video_id = v.id)
-            WHERE 1=1 {query_filter}
+            WHERE e.embedding_model = :embedding_model {query_filter}
             ORDER BY e.embedding <=> CAST(:query_embedding AS vector)
             LIMIT :top_k
         """)
 
-        params = {"query_embedding": query_embedding.tolist(), "top_k": top_k}
+        params = {
+            "query_embedding": query_embedding.tolist(),
+            "top_k": top_k,
+            "embedding_model": self.embedding_gen.model_name,
+        }
         if video_filter:
             params["video_filter"] = video_filter
 
@@ -1397,11 +1433,16 @@ class SemanticSearchEngine:
                 FROM document_embeddings de
                 JOIN document_chunks dc ON de.chunk_id = dc.id
                 JOIN documents d ON dc.document_id = d.id
+                WHERE de.embedding_model = :embedding_model
                 ORDER BY de.embedding <=> CAST(:query_embedding AS vector)
                 LIMIT :top_k
             """)
 
-            params = {"query_embedding": query_embedding.tolist(), "top_k": top_k}
+            params = {
+                "query_embedding": query_embedding.tolist(),
+                "top_k": top_k,
+                "embedding_model": self.embedding_gen.model_name,
+            }
             rows = self.db.execute(sql_query, params).fetchall()
         except Exception as e:
             # Table may not exist yet — fail silently
