@@ -30,12 +30,13 @@ CREATE TABLE dbo.embedding_projections (
     projection_method VARCHAR(50) NOT NULL CONSTRAINT DF_embedding_projections_method DEFAULT ''head_l2_norm'',
     created_at DATETIME2(3) NOT NULL CONSTRAINT DF_embedding_projections_created_at DEFAULT SYSUTCDATETIME(),
     ' + @ProjectionJsonConstraint + N'
+    -- Cascade through embedding_id only; extra cascades create multiple cascade paths in SQL Server.
     CONSTRAINT FK_embedding_projections_embedding
         FOREIGN KEY (embedding_id) REFERENCES dbo.embeddings(id) ON DELETE CASCADE,
     CONSTRAINT FK_embedding_projections_segment
-        FOREIGN KEY (segment_id) REFERENCES dbo.transcript_segments(id) ON DELETE CASCADE,
+        FOREIGN KEY (segment_id) REFERENCES dbo.transcript_segments(id),
     CONSTRAINT FK_embedding_projections_scene
-        FOREIGN KEY (scene_id) REFERENCES dbo.scenes(id) ON DELETE CASCADE,
+        FOREIGN KEY (scene_id) REFERENCES dbo.scenes(id),
     CONSTRAINT UQ_embedding_projections_embedding UNIQUE (embedding_id, projection_dim, projection_method)
 );';
 
@@ -64,10 +65,11 @@ CREATE TABLE dbo.document_embedding_projections (
     projection_method VARCHAR(50) NOT NULL CONSTRAINT DF_doc_embedding_projections_method DEFAULT ''head_l2_norm'',
     created_at DATETIME2(3) NOT NULL CONSTRAINT DF_doc_embedding_projections_created_at DEFAULT SYSUTCDATETIME(),
     ' + @DocProjectionJsonConstraint + N'
+    -- Cascade through document_embedding_id only; chunk also cascades to document_embeddings.
     CONSTRAINT FK_doc_embedding_projections_embedding
         FOREIGN KEY (document_embedding_id) REFERENCES dbo.document_embeddings(id) ON DELETE CASCADE,
     CONSTRAINT FK_doc_embedding_projections_chunk
-        FOREIGN KEY (chunk_id) REFERENCES dbo.document_chunks(id) ON DELETE CASCADE,
+        FOREIGN KEY (chunk_id) REFERENCES dbo.document_chunks(id),
     CONSTRAINT UQ_doc_embedding_projections_embedding UNIQUE (document_embedding_id, projection_dim, projection_method)
 );';
 
