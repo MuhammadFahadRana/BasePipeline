@@ -251,8 +251,8 @@ Create a local `.env` file. Do not commit this file.
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=video_semantic_search
-DB_USER=postgres
-DB_PASSWORD=postgres
+DB_USER=user
+DB_PASSWORD=user
 
 DB_QUERY_MODE=postgres
 PIPELINE_INGEST_TARGET=postgres
@@ -322,8 +322,8 @@ http://localhost:8000/docs
 On the first startup, the API creates a default admin user if the users table is empty:
 
 ```text
-username: admin
-password: admin
+username: user
+password: user
 ```
 
 Change this account immediately for any shared or production-like deployment.
@@ -337,8 +337,8 @@ Change this account immediately for any shared or production-like deployment.
 | `DB_HOST`                   | `localhost`                         | PostgreSQL host.                                                    |
 | `DB_PORT`                   | `5432`                              | PostgreSQL port.                                                    |
 | `DB_NAME`                   | `video_semantic_search`             | PostgreSQL database name.                                           |
-| `DB_USER`                   | `postgres`                          | PostgreSQL username.                                                |
-| `DB_PASSWORD`               | `postgres`                          | PostgreSQL password.                                                |
+| `DB_USER`                   | `user`                              | PostgreSQL username.                                                |
+| `DB_PASSWORD`               | `user`                              | PostgreSQL password.                                                |
 | `DB_QUERY_MODE`             | `postgres`                          | Runtime search backend: `postgres`, `sqlserver`, or `both`.         |
 | `PIPELINE_INGEST_TARGET`    | `postgres`                          | Video ingestion target: `postgres`, `sqlserver`, `both`, or `none`. |
 | `TEXT_EMBEDDING_MODEL`      | `Qwen/Qwen3-Embedding-0.6B`         | Text embedding model.                                               |
@@ -497,7 +497,7 @@ curl "http://localhost:8000/search/quick?q=where+is+Omega+Alpha+well+discussed&l
 Example authenticated request:
 
 ```powershell
-$token = (Invoke-RestMethod -Method Post -Uri "http://localhost:8000/auth/login" -ContentType "application/json" -Body '{"username":"admin","password":"admin"}').access_token
+$token = (Invoke-RestMethod -Method Post -Uri "http://localhost:8000/auth/login" -ContentType "application/json" -Body '{"username":"user","password":"user"}').access_token
 Invoke-RestMethod -Uri "http://localhost:8000/videos" -Headers @{ Authorization = "Bearer $token" }
 ```
 
@@ -550,8 +550,8 @@ Check that `.env` matches the Docker defaults:
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=video_semantic_search
-DB_USER=postgres
-DB_PASSWORD=postgres
+DB_USER=user
+DB_PASSWORD=user
 ```
 
 ### Port 5432 Is Already in Use
