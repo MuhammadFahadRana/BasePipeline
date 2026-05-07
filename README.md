@@ -237,6 +237,12 @@ python -c "from database.config import test_connection, init_db; test_connection
 
 The Docker container also mounts `database/schema.sql` as an initialization script for a fresh volume.
 
+If you plan to use document ingestion or document search, apply the document schema after the main schema:
+
+```powershell
+Get-Content -Raw database\document_schema.sql | docker exec -i video_search_db psql -U postgres -d video_semantic_search
+```
+
 ### 4. Configure Environment
 
 Create a local `.env` file. Do not commit this file.
