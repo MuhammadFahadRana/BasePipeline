@@ -2,7 +2,7 @@
 Evaluate ATLAS retrieval variants from processed artifacts.
 
 This script is intentionally offline-first: it reads processed/results.json,
-training/retrieval_dataset.json, and training/relevance_judgments.csv, then
+retrieval_dataset.json, and relevance_judgments.csv, then
 evaluates BM25, dense, hybrid, and modality-ablation variants without requiring
 PostgreSQL or the FastAPI service to be running.
 
@@ -998,10 +998,10 @@ def parse_args() -> argparse.Namespace:
         choices=["auto", "results", "whisper", "all"],
         help="Which processed result layout to read. auto prefers processed/results.",
     )
-    parser.add_argument("--dataset", default="training/retrieval_dataset.json", help="Retrieval dataset JSON")
-    parser.add_argument("--judgments", default="training/relevance_judgments.csv", help="Relevance judgments CSV")
+    parser.add_argument("--dataset", default="retrieval_dataset.json", help="Retrieval dataset JSON")
+    parser.add_argument("--judgments", default="relevance_judgments.csv", help="Relevance judgments CSV")
     parser.add_argument("--output-dir", default=None, help="Output directory for tables")
-    parser.add_argument("--cache-dir", default="training/retrieval_eval_cache", help="Embedding cache directory")
+    parser.add_argument("--cache-dir", default="retrieval_eval_cache", help="Embedding cache directory")
     parser.add_argument(
         "--methods",
         default="all",
@@ -1010,7 +1010,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--include-lora", action="store_true", help="Run Full ATLAS + LoRA variant")
     parser.add_argument("--base-model", default="Qwen/Qwen3-Embedding-0.6B", help="Base dense embedding model")
-    parser.add_argument("--lora-model", default="training/checkpoints", help="Local LoRA/full SentenceTransformer checkpoint")
+    parser.add_argument("--lora-model", default="checkpoints", help="Local LoRA/full SentenceTransformer checkpoint")
     parser.add_argument("--batch-size", type=int, default=16, help="Dense encoding batch size")
     parser.add_argument("--device", default=None, help="SentenceTransformer device override, e.g. cuda or cpu")
     parser.add_argument("--max-queries", type=int, default=None, help="Limit queries for smoke tests")
