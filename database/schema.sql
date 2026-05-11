@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS video_categories (
 -- Seed default categories
 INSERT INTO video_categories (name) VALUES ('Oil & Gas') ON CONFLICT (name) DO NOTHING;
 INSERT INTO video_categories (name) VALUES ('Maintenance') ON CONFLICT (name) DO NOTHING;
-INSERT INTO video_categories (name) VALUES ('Installation') ON CONFLICT (name) DO NOTHING;
 INSERT INTO video_categories (name) VALUES ('Operations') ON CONFLICT (name) DO NOTHING;
 
 -- Auth / access-control tables

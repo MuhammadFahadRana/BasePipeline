@@ -2940,6 +2940,25 @@ select {
     margin-bottom: 0.75rem;
 }
 
+.admin-upload-meta label {
+    display: block;
+    margin-bottom: 0.8rem;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+
+.admin-upload-meta > label > input[type="text"] {
+    width: 100%;
+    margin-top: 0.35rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md, 8px);
+    color: var(--text-primary);
+    background: var(--bg-input);
+    font-size: 0.88rem;
+}
+
 .category-select-row {
     display: flex;
     gap: 0.5rem;

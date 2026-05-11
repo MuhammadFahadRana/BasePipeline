@@ -111,6 +111,22 @@ let _setMainTabView = null;
 let activeSearchRequestId = null; // Backend telemetry request_id for current result set
 let modalOpenedAtMs = null; // Track dwell on open video modal
 
+const HIDDEN_CATEGORY_NAMES = new Set(['comedy', 'installation', 'science', 'johan sverdrup']);
+
+function isHiddenCategoryName(name) {
+    return HIDDEN_CATEGORY_NAMES.has(String(name || '').trim().toLowerCase());
+}
+
+function visibleCategoryNames(categories) {
+    return (Array.isArray(categories) ? categories : [])
+        .filter(cat => !isHiddenCategoryName(cat));
+}
+
+function visibleCategoryObjects(categories) {
+    return (Array.isArray(categories) ? categories : [])
+        .filter(cat => !isHiddenCategoryName(cat?.name));
+}
+
 const SEARCH_ASSIST_PROMPTS = [
     'drilling techniques',
     'Omega Alpha well',
@@ -368,11 +384,11 @@ function renderSearchLandingState() {
                 <div class="empty-state-copy">
                     <span class="empty-state-kicker">Search workspace</span>
                     <h3>Find videos and documents without the clutter</h3>
-                    <p>Start with a topic, system name, site, or category. You can also browse with the chips above when you want to narrow the library before searching.</p>
+                    <p>Start with a topic, system name, installation, or category. You can also browse with the chips above when you want to narrow the library before searching.</p>
                     <div class="empty-state-actions">
                         <button type="button" class="empty-state-btn empty-state-btn-primary" data-search-assist-action="focus-search">Start typing</button>
                         <button type="button" class="empty-state-btn empty-state-btn-secondary" data-search-assist-action="browse-filters">Browse selected filters</button>
-                        <button type="button" class="empty-state-btn empty-state-btn-secondary" data-search-assist-action="browse-sites">Browse by site</button>
+                        <button type="button" class="empty-state-btn empty-state-btn-secondary" data-search-assist-action="browse-sites">Browse by installation</button>
                     </div>
                     <div class="empty-state-prompt-group">
                         <span class="empty-state-prompt-label">Try a search</span>
@@ -389,7 +405,7 @@ function renderSearchLandingState() {
                 </div>
                 <div class="empty-state-note">
                     <strong>Mix filters and text</strong>
-                    <span>Combine site and category chips with a short query to cut through noisy results faster.</span>
+                    <span>Combine installation and category chips with a short query to cut through noisy results faster.</span>
                 </div>
                 <div class="empty-state-note">
                     <strong>Browse when unsure</strong>
@@ -410,7 +426,7 @@ function buildNoResultsStateMarkup(query = '') {
         contextPills.push(`<span class="empty-state-pill">Category: ${escapeHtml(categoryLabels.join(', '))}</span>`);
     }
     if (siteLabels.length) {
-        contextPills.push(`<span class="empty-state-pill">Site: ${escapeHtml(siteLabels.join(', '))}</span>`);
+        contextPills.push(`<span class="empty-state-pill">Installation: ${escapeHtml(siteLabels.join(', '))}</span>`);
     }
     if (hasDbOverride) {
         contextPills.push(`<span class="empty-state-pill">DB: ${escapeHtml(formatDbSourceLabel(activeDbSource))}</span>`);
@@ -473,7 +489,7 @@ function buildNoResultsStateMarkup(query = '') {
                     </div>
                     <div class="empty-state-note">
                         <strong>Reduce the filters</strong>
-                        <span>One category or site chip can be enough to narrow the results before adding more detail.</span>
+                        <span>One category or installation chip can be enough to narrow the results before adding more detail.</span>
                     </div>
                     <div class="empty-state-note">
                         <strong>Check search scope</strong>
@@ -546,11 +562,11 @@ function handleSearchAssistActionClick(event) {
     if (action === 'browse-sites') {
         const hasSiteChips = spotlightFilterRow('site');
         if (!hasSiteChips) {
-            showNotification('No sites are available yet.', 'info');
+            showNotification('No installations are available yet.', 'info');
             animateSearchBarFocus({ select: true });
             return;
         }
-        showNotification('Sites are ready. Pick one or more chips to browse.', 'info');
+        showNotification('Installations are ready. Pick one or more chips to browse.', 'info');
         return;
     }
 
@@ -904,7 +920,7 @@ function getDocumentDisplayName(doc) {
 
 function getDocumentCategory(doc) {
     const categoryName = (doc?.category || '').trim();
-    return categoryName || 'Other';
+    return categoryName && !isHiddenCategoryName(categoryName) ? categoryName : 'Other';
 }
 
 function formatDocumentSize(sizeMb) {
@@ -945,9 +961,9 @@ function buildDocumentCard(doc) {
 
     const badges = [];
     if (doc?.label) {
-        badges.push(`<span class="video-meta-badge video-meta-badge-site" title="Site label: ${escapeHtml(doc.label)}">Site: ${escapeHtml(doc.label)}</span>`);
+        badges.push(`<span class="video-meta-badge video-meta-badge-site" title="Installation label: ${escapeHtml(doc.label)}">Installation: ${escapeHtml(doc.label)}</span>`);
     }
-    if (doc?.category) {
+    if (doc?.category && !isHiddenCategoryName(doc.category)) {
         badges.push(`<span class="video-meta-badge video-meta-badge-category" title="Category: ${escapeHtml(doc.category)}">Category: ${escapeHtml(doc.category)}</span>`);
     }
     const badgeRow = badges.length
@@ -1171,7 +1187,7 @@ async function populateSearchCategoryFilter() {
     try {
         const resp = await authFetch(`${API_BASE_URL}/auth/categories`);
         if (!resp.ok) return;
-        const cats = await resp.json();
+        const cats = visibleCategoryNames(await resp.json());
         container.innerHTML = '';
         cats.forEach(cat => {
             const chip = document.createElement('span');
@@ -1198,7 +1214,7 @@ async function populateSearchSiteFilter() {
         const sites = await resp.json();
         container.innerHTML = '';
         if (!sites.length) {
-            container.innerHTML = '<span class="category-filter-label" style="font-weight:400;font-style:italic;">No sites assigned yet</span>';
+            container.innerHTML = '<span class="category-filter-label" style="font-weight:400;font-style:italic;">No installations assigned yet</span>';
             return;
         }
         sites.forEach(site => {
@@ -1368,16 +1384,14 @@ function getVideoSiteLabel(video) {
 function getVideoCategory(videoOrFilename) {
     // If called with a video object that has a category field, use it
     if (typeof videoOrFilename === 'object' && videoOrFilename !== null) {
-        if (videoOrFilename.category) return videoOrFilename.category;
+        if (videoOrFilename.category && !isHiddenCategoryName(videoOrFilename.category)) return videoOrFilename.category;
         const fn = videoOrFilename.filename || '';
-        if (fn.startsWith('Johan Sverdrup')) return 'Johan Sverdrup';
         if (fn.startsWith('AkerBP'))         return 'AkerBP';
         if (fn.endsWith('- TED Talk.mp4'))   return 'TED Talks';
         return 'Other';
     }
     // Legacy: called with just a filename string
     const filename = videoOrFilename;
-    if (filename.startsWith('Johan Sverdrup')) return 'Johan Sverdrup';
     if (filename.startsWith('AkerBP'))         return 'AkerBP';
     if (filename.endsWith('- TED Talk.mp4'))   return 'TED Talks';
     return 'Other';
@@ -1395,10 +1409,11 @@ function buildVideoCard(video) {
 
     const displayName = getVideoDisplayName(video);
     const siteLabel = getVideoSiteLabel(video);
-    const categoryLabel = (video.category || '').trim();
+    const rawCategoryLabel = (video.category || '').trim();
+    const categoryLabel = rawCategoryLabel && !isHiddenCategoryName(rawCategoryLabel) ? rawCategoryLabel : '';
     const badgeParts = [];
     if (siteLabel) {
-        badgeParts.push(`<span class="video-meta-badge video-meta-badge-site" title="Site label: ${escapeHtml(siteLabel)}">Site: ${escapeHtml(siteLabel)}</span>`);
+        badgeParts.push(`<span class="video-meta-badge video-meta-badge-site" title="Installation label: ${escapeHtml(siteLabel)}">Installation: ${escapeHtml(siteLabel)}</span>`);
     }
     if (categoryLabel) {
         badgeParts.push(`<span class="video-meta-badge video-meta-badge-category" title="Category: ${escapeHtml(categoryLabel)}">Category: ${escapeHtml(categoryLabel)}</span>`);
@@ -1407,7 +1422,7 @@ function buildVideoCard(video) {
         ? `<div class="video-thumb-badges">${badgeParts.join('')}</div>`
         : '';
     const details = [];
-    if (siteLabel) details.push(`Site: ${siteLabel}`);
+    if (siteLabel) details.push(`Installation: ${siteLabel}`);
     if (categoryLabel) details.push(`Category: ${categoryLabel}`);
     details.push(`File: ${video.filename}`);
     const cardTitle = details.join(' | ');
@@ -1933,7 +1948,7 @@ async function performSearch() {
     const selectedSiteChips = document.querySelectorAll('#searchSiteFilter .site-chip.active');
 
     if (!query && selectedCatChips.length === 0 && selectedSiteChips.length === 0) {
-        showNotification('Please enter a search query or select a category/site', 'warning');
+        showNotification('Please enter a search query or select a category/installation', 'warning');
         return;
     }
 
@@ -3355,7 +3370,7 @@ async function loadAdminPanel() {
 
         // Categories for user forms/upload section
         if (catRes.status === 'fulfilled' && catRes.value.ok) {
-            adminCategories = await catRes.value.json();
+            adminCategories = visibleCategoryNames(await catRes.value.json());
         }
 
         // Users section data
@@ -3421,7 +3436,8 @@ function renderAdminUserList(users) {
     users.forEach(u => {
         const row = document.createElement('div');
         row.className = 'admin-user-row';
-        const catText = u.role === 'admin' ? 'All categories' : (u.categories.length ? u.categories.join(', ') : 'No access');
+        const visibleUserCategories = visibleCategoryNames(u.categories);
+        const catText = u.role === 'admin' ? 'All categories' : (visibleUserCategories.length ? visibleUserCategories.join(', ') : 'No access');
         row.innerHTML = `
             <span class="admin-user-name">${escapeHtml(u.username)}</span>
             <span class="admin-user-role ${u.role}">${u.role}</span>
@@ -3482,7 +3498,7 @@ function openEditUser(user) {
     document.getElementById('adminPwdHint').textContent = '(leave blank to keep current)';
     document.getElementById('adminFormRole').value = user.role;
     document.getElementById('adminFormError').textContent = '';
-    renderCategoryChecks(user.categories);
+    renderCategoryChecks(visibleCategoryNames(user.categories));
     document.getElementById('adminUserForm').style.display = 'block';
 }
 
@@ -3619,7 +3635,7 @@ async function loadVideoLabelsSection() {
             getVideos(),
         ]);
 
-        if (catResp.ok) videoCategories = await catResp.json();
+        if (catResp.ok) videoCategories = visibleCategoryObjects(await catResp.json());
         renderVideoCategoryTags();
         renderVideoLabelsTable(videosList);
         attachVideoLabelListeners();
@@ -3665,7 +3681,7 @@ function renderVideoLabelsTable(videos) {
 
         tr.innerHTML = `
             <td class="vl-filename" title="${escapeHtml(v.filename)}">${escapeHtml(v.filename)}</td>
-            <td><input type="text" class="vl-label-input" value="${escapeHtml(v.label || '')}" placeholder="Site Name e.g. Yggdrasil"></td>
+            <td><input type="text" class="vl-label-input" value="${escapeHtml(v.label || '')}" placeholder="Installation name e.g. Yggdrasil"></td>
             <td><select class="vl-category-select">${catOptions}</select></td>
             <td><button class="admin-save-btn small vl-save-btn">Save</button></td>
         `;
@@ -3706,6 +3722,10 @@ function attachVideoLabelListeners() {
             const input = document.getElementById('newVideoCategoryInput');
             const name = input.value.trim();
             if (!name) return;
+            if (isHiddenCategoryName(name)) {
+                showNotification(`"${name}" is no longer available as a category. Use the Installation field instead.`, 'warning');
+                return;
+            }
             const resp = await authFetch(`${API_BASE_URL}/admin/categories`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -3786,7 +3806,7 @@ function renderDocumentLabelsTable(rows, { append = false } = {}) {
 
         tr.innerHTML = `
             <td class="vl-filename" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</td>
-            <td><input type="text" class="vl-label-input doc-label-input" value="${escapeHtml(d.label || '')}" placeholder="Site Name e.g. Yggdrasil"></td>
+            <td><input type="text" class="vl-label-input doc-label-input" value="${escapeHtml(d.label || '')}" placeholder="Installation name e.g. Yggdrasil"></td>
             <td><select class="vl-category-select doc-category-select">${catOptions}</select></td>
             <td><button class="admin-save-btn small doc-save-btn">Save</button></td>
         `;
@@ -3844,7 +3864,7 @@ async function loadDocumentLabelsSection(reset = true) {
     try {
         const catResp = await authFetch(`${API_BASE_URL}/admin/video-categories`);
         if (catResp.ok) {
-            videoCategories = await catResp.json();
+            videoCategories = visibleCategoryObjects(await catResp.json());
         }
 
         if (reset) resetDocumentLabelsState();
@@ -3900,7 +3920,7 @@ function loadUploadSection() {
     const sel = document.getElementById('uploadCategory');
     const current = sel.value;
     sel.innerHTML = '';
-    adminCategories.forEach(cat => {
+    visibleCategoryNames(adminCategories).forEach(cat => {
         const opt = document.createElement('option');
         opt.value = cat;
         opt.textContent = cat;
@@ -3943,6 +3963,10 @@ function attachUploadListeners() {
         const input = document.getElementById('newCategoryInput');
         const name = input.value.trim();
         if (!name) return;
+        if (isHiddenCategoryName(name)) {
+            showNotification(`"${name}" is no longer available as a category. Use the Installation field instead.`, 'warning');
+            return;
+        }
         // Add to local list and dropdown
         if (!adminCategories.includes(name)) {
             adminCategories.push(name);
@@ -3978,6 +4002,7 @@ async function doVideoUpload() {
     const progressFill = document.getElementById('uploadProgressFill');
     const progressText = document.getElementById('uploadProgressText');
     const category = document.getElementById('uploadCategory').value;
+    const installationLabel = document.getElementById('uploadInstallationLabel')?.value.trim() || '';
 
     errorEl.textContent = '';
     successEl.style.display = 'none';
@@ -3992,7 +4017,9 @@ async function doVideoUpload() {
         // Use XMLHttpRequest for progress tracking
         const result = await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', `${API_BASE_URL}/admin/upload-video?category=${encodeURIComponent(category)}`);
+            const params = new URLSearchParams({ category });
+            if (installationLabel) params.set('label', installationLabel);
+            xhr.open('POST', `${API_BASE_URL}/admin/upload-video?${params.toString()}`);
             xhr.withCredentials = true;
 
             xhr.upload.onprogress = (e) => {
@@ -4016,7 +4043,8 @@ async function doVideoUpload() {
         });
 
         progressEl.style.display = 'none';
-        successEl.textContent = `Uploaded "${result.filename}" (${result.size_mb} MB) in category "${result.category}"`;
+        const installationText = result.label ? ` for installation "${result.label}"` : '';
+        successEl.textContent = `Uploaded "${result.filename}" (${result.size_mb} MB) in category "${result.category}"${installationText}`;
         successEl.style.display = '';
         uploadFile = null;
         resetVideoCache();

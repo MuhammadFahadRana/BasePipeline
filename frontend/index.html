@@ -131,9 +131,9 @@
                     <div id="searchCategoryFilter" class="category-chips-container"></div>
                 </div>
 
-                <!-- Site Filter Chips -->
+                <!-- Installation Filter Chips -->
                 <div class="category-filter-row">
-                    <span class="category-filter-label">Sites:</span>
+                    <span class="category-filter-label">Installation:</span>
                     <div id="searchSiteFilter" class="category-chips-container"></div>
                 </div>
 
@@ -306,7 +306,7 @@
                 <div class="admin-tab-header">
                     <h2>Video Labels &amp; Categories</h2>
                 </div>
-                <p class="admin-hint">Assign a site label (for example "Yggdrasil") and a separate category to each video. The video browser shows the filename as the title and surfaces site/category as separate tags.</p>
+                <p class="admin-hint">Assign an installation label (for example "Yggdrasil") and a separate category to each video. The video browser shows the filename as the title and surfaces installation/category as separate tags.</p>
 
                 <!-- Category management -->
                 <div class="video-labels-categories-mgmt">
@@ -324,7 +324,7 @@
                         <thead>
                             <tr>
                                 <th>Video Filename</th>
-                                <th>Site Label</th>
+                                <th>Installation Label</th>
                                 <th>Category</th>
                                 <th></th>
                             </tr>
@@ -341,14 +341,14 @@
                 <div class="admin-tab-header">
                     <h2>Document Labels &amp; Categories</h2>
                 </div>
-                <p class="admin-hint">Assign a site label and category to each document. This controls organization and access the same way as videos.</p>
+                <p class="admin-hint">Assign an installation label and category to each document. This controls organization and access the same way as videos.</p>
 
                 <div class="video-labels-table-wrap" style="margin-top:1.2rem;">
                     <table class="video-labels-table">
                         <thead>
                             <tr>
                                 <th>Document Filename</th>
-                                <th>Site Label</th>
+                                <th>Installation Label</th>
                                 <th>Category</th>
                                 <th></th>
                             </tr>
@@ -378,6 +378,9 @@
                 </div>
                 <div class="admin-upload-meta" id="uploadMetaSection" style="display:none;">
                     <p class="upload-file-name" id="uploadFileName"></p>
+                    <label>Installation
+                        <input type="text" id="uploadInstallationLabel" placeholder="Installation name e.g. Yggdrasil" autocomplete="off">
+                    </label>
                     <label>Category
                         <div class="category-select-row">
                             <select id="uploadCategory">

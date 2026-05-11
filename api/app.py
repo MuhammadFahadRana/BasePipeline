@@ -71,6 +71,11 @@ PROCESSED_DIR = PROJECT_ROOT / "processed"
 _PIPELINE_JOB_LOCK = threading.Lock()
 _PIPELINE_JOBS: Dict[str, Dict[str, Any]] = {}
 _PIPELINE_MAX_JOBS = 200
+_HIDDEN_VIDEO_CATEGORY_NAMES = {"comedy", "installation", "science", "johan sverdrup"}
+
+
+def _is_hidden_video_category_name(name: Optional[str]) -> bool:
+    return (name or "").strip().lower() in _HIDDEN_VIDEO_CATEGORY_NAMES
 
 
 def _cors_origins() -> List[str]:
@@ -564,7 +569,10 @@ def _get_accessible_available_videos(
 
 
 def _upsert_video_row_from_file(
-    db: Session, file_path: Path, category_name: Optional[str] = None
+    db: Session,
+    file_path: Path,
+    category_name: Optional[str] = None,
+    label: Optional[str] = None,
 ) -> Video:
     """Ensure a video file on disk has a corresponding videos-table row."""
     filename = file_path.name
@@ -578,8 +586,13 @@ def _upsert_video_row_from_file(
     video.file_path = str(file_path)
     video.file_size_mb = round(stat.st_size / (1024 * 1024), 2)
 
+    if label is not None:
+        video.label = label.strip() or None
+
     if category_name:
         category_name = category_name.strip() or "Other"
+        if _is_hidden_video_category_name(category_name):
+            category_name = "Other"
         category_obj = (
             db.query(VideoCategory).filter(VideoCategory.name == category_name).first()
         )
@@ -1047,7 +1060,7 @@ async def lifespan(app: FastAPI):
             print("[auth] Users table OK")
 
         # Seed default video categories
-        _DEFAULT_CATEGORIES = ["Oil & Gas", "Maintenance", "Installation", "Operations"]
+        _DEFAULT_CATEGORIES = ["Oil & Gas", "Maintenance", "Operations"]
         for cat_name in _DEFAULT_CATEGORIES:
             if not db.query(VideoCategory).filter(VideoCategory.name == cat_name).first():
                 db.add(VideoCategory(name=cat_name))
@@ -1247,7 +1260,7 @@ async def list_all_categories(
     """Return categories visible to the current user (admins see all, viewers see only allowed)."""
     # Only DB-backed categories (managed via the admin Category dropdown)
     db_cats = db.query(VideoCategory.name).order_by(VideoCategory.name).all()
-    cats = {c.name for c in db_cats}
+    cats = {c.name for c in db_cats if not _is_hidden_video_category_name(c.name)}
     # Restrict to user's allowed categories (admins get None → all)
     allowed = get_user_allowed_categories(user)
     if allowed is not None:
@@ -1283,7 +1296,7 @@ async def detect_search_intent(
     """
     # Build set of known categories visible to this user (DB-backed only)
     db_cats = db.query(VideoCategory.name).all()
-    cats = {c.name for c in db_cats}
+    cats = {c.name for c in db_cats if not _is_hidden_video_category_name(c.name)}
     allowed = get_user_allowed_categories(user)
     if allowed is not None:
         cats = cats & allowed
@@ -1500,6 +1513,11 @@ async def create_category(
     name = (req.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Category name is required")
+    if _is_hidden_video_category_name(name):
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{name}' is no longer available as a category. Use the installation label field instead.",
+        )
     existing = db.query(VideoCategory).filter(VideoCategory.name == name).first()
     if not existing:
         cat = VideoCategory(name=name)
@@ -1516,6 +1534,7 @@ async def list_video_categories(
 ):
     """List all video categories."""
     cats = db.query(VideoCategory).order_by(VideoCategory.name).all()
+    cats = [c for c in cats if not _is_hidden_video_category_name(c.name)]
     return [{"id": c.id, "name": c.name} for c in cats]
 
 
@@ -1622,6 +1641,7 @@ async def update_document_metadata(
 async def upload_video(
     file: UploadFile = File(...),
     category: str = Query("Other", description="Category for the video"),
+    label: Optional[str] = Query(None, description="Installation label for the video"),
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -1650,15 +1670,24 @@ async def upload_video(
     dest = videos_dir / safe_name
 
     category_name = (category or "Other").strip() or "Other"
+    if _is_hidden_video_category_name(category_name):
+        category_name = "Other"
+    installation_label = label.strip() if label is not None else None
     if dest.exists():
         # If file already exists on disk, treat as an idempotent register operation.
-        video_row = _upsert_video_row_from_file(db, dest, category_name=category_name)
+        video_row = _upsert_video_row_from_file(
+            db,
+            dest,
+            category_name=category_name,
+            label=installation_label,
+        )
         db.commit()
         db.refresh(video_row)
         return {
             "filename": safe_name,
             "size_mb": video_row.file_size_mb,
             "category": category_name,
+            "label": video_row.label,
             "path": str(dest),
             "video_id": video_row.id,
             "already_existed": True,
@@ -1672,14 +1701,20 @@ async def upload_video(
             f.write(chunk)
             total += len(chunk)
 
-    video_row = _upsert_video_row_from_file(db, dest, category_name=category_name)
+    video_row = _upsert_video_row_from_file(
+        db,
+        dest,
+        category_name=category_name,
+        label=installation_label,
+    )
     db.commit()
     db.refresh(video_row)
 
     return {
         "filename": safe_name,
         "size_mb": video_row.file_size_mb,
-        "category": category,
+        "category": category_name,
+        "label": video_row.label,
         "path": str(dest),
         "video_id": video_row.id,
         "already_existed": False,
@@ -2291,7 +2326,7 @@ async def quick_search(
     Quick search endpoint (GET request for easy testing).
     Supports filtering by category, label, and site.
     ```
-    GET /search/quick?q=Omega+Alpha+well&limit=5&category=Installation&site=Yggdrasil
+    GET /search/quick?q=Omega+Alpha+well&limit=5&category=Maintenance&site=Yggdrasil
     ```
     """
     start_time = time.time()

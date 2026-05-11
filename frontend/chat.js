@@ -68,7 +68,7 @@ const ChatAssistant = (() => {
             ],
         },
         filters: {
-            answer: "**Filters narrow the search space.** Categories and Sites help you restrict results before asking the model. This is useful when the same word appears in different contexts, or when you only care about one facility, project, or content type.",
+            answer: "**Filters narrow the search space.** Categories and Installations help you restrict results before asking the model. This is useful when the same word appears in different contexts, or when you only care about one facility, project, or content type.",
             options: [
                 { label: 'Search tips', target: 'searchTips' },
                 { label: 'Ask AI after filtering', target: 'askQuestion' },
