@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin;
 const ENABLE_INLINE_SEARCH_ANSWER = false;
 const MAIN_TAB_STORAGE_KEY = 'atlas_active_main_tab';
 const DB_SOURCE_STORAGE_KEY = 'atlas_search_db_source';
@@ -7,29 +7,24 @@ const DB_SOURCE_STORAGE_KEY = 'atlas_search_db_source';
 // ============================================
 // AUTH STATE
 // ============================================
-let authToken = sessionStorage.getItem('atlas_token');
 let currentUser = JSON.parse(sessionStorage.getItem('atlas_user') || 'null');
 
-/** Wrapper around fetch() that injects the JWT Authorization header. */
+/** Wrapper around fetch() that includes the HttpOnly auth cookie. */
 function authFetch(url, opts = {}) {
     if (!opts.headers) opts.headers = {};
-    if (authToken) opts.headers['Authorization'] = `Bearer ${authToken}`;
+    opts.credentials = opts.credentials || 'include';
     return fetch(url, opts);
 }
 
-function saveAuth(token, user) {
-    authToken = token;
+function saveAuth(user) {
     currentUser = user;
-    sessionStorage.setItem('atlas_token', token);
     sessionStorage.setItem('atlas_user', JSON.stringify(user));
 }
 
 function clearAuth() {
     abortActiveSearch();
     abortActiveAi();
-    authToken = null;
     currentUser = null;
-    sessionStorage.removeItem('atlas_token');
     sessionStorage.removeItem('atlas_user');
     resetVideoCache({ stopPolling: true });
     resetDocumentCache();
@@ -755,37 +750,29 @@ document.addEventListener('DOMContentLoaded', () => {
         loadMoreDocumentsBtn.addEventListener('click', () => loadMoreDocuments());
     }
 
-    // If we already have a saved token, render optimistically from session state
-    // to avoid login-page flicker, then validate in background.
-    if (authToken && currentUser) {
+    // Render optimistically from cached user state, then validate the HttpOnly cookie.
+    if (currentUser) {
         showApp();
         initializeApp();
         authFetch(`${API_BASE_URL}/auth/me`)
             .then(r => { if (!r.ok) throw new Error(); return r.json(); })
             .then(user => {
                 currentUser = user;
-                saveAuth(authToken, user);
+                saveAuth(user);
                 document.getElementById('currentUsername').textContent = currentUser?.username || '-';
             })
             .catch(() => { showLogin(); });
         return;
     }
 
-    // Fallback path when token exists but user profile is missing from session.
-    if (authToken) {
-        authFetch(`${API_BASE_URL}/auth/me`)
-            .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-            .then(user => {
-                currentUser = user;
-                saveAuth(authToken, user);
-                showApp();
-                initializeApp();
-            })
-            .catch(() => { showLogin(); });
-        return;
-    }
-
-    showLogin();
+    authFetch(`${API_BASE_URL}/auth/me`)
+        .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+        .then(user => {
+            saveAuth(user);
+            showApp();
+            initializeApp();
+        })
+        .catch(() => { showLogin(); });
 });
 
 function attachLoginListeners() {
@@ -802,6 +789,7 @@ function attachLoginListeners() {
             const resp = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ username, password }),
             });
             if (!resp.ok) {
@@ -810,7 +798,7 @@ function attachLoginListeners() {
                 return;
             }
             const data = await resp.json();
-            saveAuth(data.access_token, data.user);
+            saveAuth(data.user);
             showApp();
             initializeApp();
         } catch (err) {
@@ -818,8 +806,12 @@ function attachLoginListeners() {
         }
     });
 
-    document.getElementById('logoutBtn').addEventListener('click', () => {
-        showLogin();
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+        try {
+            await authFetch(`${API_BASE_URL}/auth/logout`, { method: 'POST' });
+        } finally {
+            showLogin();
+        }
     });
     if (atlasHomeLink) {
         atlasHomeLink.addEventListener('click', handleAtlasHomeClick);
@@ -1421,7 +1413,7 @@ function buildVideoCard(video) {
     const cardTitle = details.join(' | ');
 
     // Use server-side thumbnail endpoint instead of client-side video capture
-    const thumbUrl = `${API_BASE_URL}/video/thumbnail/${video.id}?token=${authToken}`;
+    const thumbUrl = `${API_BASE_URL}/video/thumbnail/${video.id}`;
 
     card.innerHTML = `
         <div class="video-browser-thumb">
@@ -1838,11 +1830,11 @@ async function fetchAiAnswer(query) {
 
     try {
         const headers = { 'Content-Type': 'application/json' };
-        if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
         const resp = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
             method: 'POST',
             headers,
+            credentials: 'include',
             signal: controller.signal,
             body: JSON.stringify({
                 model: 'ATLAS',
@@ -2159,7 +2151,7 @@ async function performSearch() {
 // Helper: Convert basic markdown (**bold**, *italic*) to HTML
 function renderMarkdown(text) {
     if (!text) return '';
-    return text
+    return escapeHtml(text)
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         .replace(/\n\n/g, '</p><p>')
@@ -2662,7 +2654,7 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
             const dbMeta = getResultDbSourceMeta(occ);
 
             const thumbnailHtml = occ.keyframe_path
-                ? `<img class="occurrence-thumb" src="${API_BASE_URL}/keyframe?path=${encodeURIComponent(occ.keyframe_path)}&token=${authToken}" 
+                ? `<img class="occurrence-thumb" src="${API_BASE_URL}/keyframe?path=${encodeURIComponent(occ.keyframe_path)}"
                        alt="" onerror="this.style.display='none'" />`
                 : '';
 
@@ -2854,7 +2846,7 @@ function createResultCard(result, index) {
     // Build thumbnail HTML if keyframe exists
     const thumbnailHtml = keyframePath
         ? `<div class="result-thumbnail">
-               <img src="${API_BASE_URL}/keyframe?path=${encodeURIComponent(keyframePath)}&token=${authToken}" 
+               <img src="${API_BASE_URL}/keyframe?path=${encodeURIComponent(keyframePath)}"
                     alt="Scene thumbnail" 
                     onerror="this.parentElement.style.display='none'" />
            </div>`
@@ -3092,7 +3084,7 @@ function openDocumentResult(result) {
         showNotification('Document link is missing for this result.', 'warning');
         return;
     }
-    if (!authToken) {
+    if (!currentUser) {
         showNotification('Session expired. Please log in again.', 'warning');
         return;
     }
@@ -3101,13 +3093,12 @@ function openDocumentResult(result) {
     const fileType = String(result?.document_file_type || '').toLowerCase();
     const filename = String(result?.video_filename || '').trim();
     const isPdf = fileType === 'pdf' || filename.toLowerCase().endsWith('.pdf');
-    const baseUrl = `${API_BASE_URL}/documents/stream/${encodeURIComponent(docId)}?token=${encodeURIComponent(authToken)}`;
+    const baseUrl = `${API_BASE_URL}/documents/stream/${encodeURIComponent(docId)}`;
 
     let openUrl = baseUrl;
     if (isPdf) {
         const params = new URLSearchParams();
         params.set('doc_id', String(docId));
-        params.set('token', authToken);
         if (filename) params.set('filename', filename);
         if (page) params.set('page', String(page));
         openUrl = `${API_BASE_URL}/document_viewer.html?${params.toString()}`;
@@ -3151,11 +3142,11 @@ function openVideoPlayer(result) {
     videoModalText.innerHTML = highlightText(result.text, currentQuery);
 
     // Set video source using streaming endpoint
-    const videoUrl = `${API_BASE_URL}/video/stream/${result.video_id}?token=${authToken}`;
+    const videoUrl = `${API_BASE_URL}/video/stream/${result.video_id}`;
     videoPlayer.src = videoUrl;
 
     // Set subtitles source
-    const subtitlesUrl = `${API_BASE_URL}/video/subtitles/${result.video_id}?token=${authToken}`;
+    const subtitlesUrl = `${API_BASE_URL}/video/subtitles/${result.video_id}`;
     videoSubtitles.src = subtitlesUrl;
 
     // Show modal
@@ -4002,7 +3993,7 @@ async function doVideoUpload() {
         const result = await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open('POST', `${API_BASE_URL}/admin/upload-video?category=${encodeURIComponent(category)}`);
-            xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+            xhr.withCredentials = true;
 
             xhr.upload.onprogress = (e) => {
                 if (e.lengthComputable) {

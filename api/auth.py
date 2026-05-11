@@ -4,7 +4,7 @@ Provides:
 - Password hashing (bcrypt via hashlib fallback)
 - JWT token creation / verification
 - FastAPI dependency ``get_current_user`` that extracts the caller from
-  the ``Authorization: Bearer <token>`` header
+  a bearer header or HttpOnly auth cookie
 - ``require_admin`` dependency that additionally enforces admin role
 - ``get_video_category`` helper used to check per-video access
 """
@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt  # PyJWT
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -39,6 +39,7 @@ def _get_stable_jwt_secret() -> str:
 JWT_SECRET = _get_stable_jwt_secret()
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
+AUTH_COOKIE_NAME = "atlas_token"
 
 # ---------------------------------------------------------------------------
 # Password hashing  (bcrypt when available, PBKDF2-SHA256 fallback)
@@ -112,20 +113,20 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
-    token: Optional[str] = Query(None, alias="token"),
     db: Session = Depends(get_db),
 ) -> User:
-    """Extract and validate the JWT from the Authorization header or a ?token= query param.
+    """Extract and validate the JWT from Authorization or an auth cookie.
 
-    The query-param fallback is needed for browser-native requests that cannot
-    set custom headers (e.g. <video src="...">, <track src="...">).
+    The cookie path is used for browser-native media requests that cannot set
+    custom headers.
     """
     raw_token = None
     if creds and creds.credentials:
         raw_token = creds.credentials
-    elif token:
-        raw_token = token
+    elif request.cookies.get(AUTH_COOKIE_NAME):
+        raw_token = request.cookies.get(AUTH_COOKIE_NAME)
     if not raw_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     payload = decode_access_token(raw_token)

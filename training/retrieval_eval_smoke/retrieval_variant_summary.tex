@@ -1,0 +1,16 @@
+\begin{table}[H]
+\caption{ATLAS retrieval variant evaluation.}
+\label{tab:retrieval_variant_evaluation}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lllrrrrrrr}
+\toprule
+Configuration & Method & Evidence & Recall@1 & Recall@5 & Recall@10 & Precision@10 & MRR & nDCG@10 & P95 ms \\
+\midrule
+BM25-only & bm25 & full & 0.9000 & 1.0000 & 1.0000 & 0.1000 & 0.9500 & 0.9631 & 10.3 \\
+OCR only BM25 & bm25 & ocr & 0.0000 & 0.0000 & 0.0000 & 0.0000 & 0.0020 & 0.0000 & 3.4 \\
+Caption only BM25 & bm25 & caption & 0.2000 & 0.2000 & 0.2000 & 0.0200 & 0.2033 & 0.2000 & 8.1 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

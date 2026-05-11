@@ -16,9 +16,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           }
@@ -45,9 +43,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -58,6 +54,23 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Logout",
+        "description": "Clear the browser auth cookie.",
+        "operationId": "logout_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -69,29 +82,6 @@
         "summary": "Auth Me",
         "description": "Return profile of the currently authenticated user.",
         "operationId": "auth_me_auth_me_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -102,18 +92,13 @@
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/auth/categories": {
@@ -121,51 +106,21 @@
         "summary": "List All Categories",
         "description": "Return categories visible to the current user (admins see all, viewers see only allowed).",
         "operationId": "list_all_categories_auth_categories_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/auth/sites": {
@@ -173,51 +128,21 @@
         "summary": "List All Sites",
         "description": "Return distinct non-null video labels (sites) visible to the current user.",
         "operationId": "list_all_sites_auth_sites_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/search/intent": {
@@ -241,22 +166,6 @@
               "title": "Q"
             },
             "description": "Raw user query"
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -264,9 +173,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -293,9 +200,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           }
@@ -307,92 +212,41 @@
         "summary": "List Users",
         "description": "List all users (admin only).",
         "operationId": "list_users_admin_users_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/UserInfoResponse"
                   },
+                  "type": "array",
                   "title": "Response List Users Admin Users Get"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       },
       "post": {
         "summary": "Create User",
         "description": "Create a new user (admin only).",
         "operationId": "create_user_admin_users_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RegisterRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -415,7 +269,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/admin/users/{user_id}": {
@@ -436,22 +295,6 @@
             "schema": {
               "type": "integer",
               "title": "User Id"
-            }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
             }
           }
         ],
@@ -506,22 +349,6 @@
               "type": "integer",
               "title": "User Id"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -529,9 +356,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -553,51 +378,21 @@
         "summary": "Get Pipeline Models",
         "description": "Return all available model choices for the pipeline configuration dropdowns.",
         "operationId": "get_pipeline_models_admin_pipeline_models_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/admin/categories": {
@@ -605,49 +400,24 @@
         "summary": "Create Category",
         "description": "Create a new video category. Body: {\"name\": \"My Category\"}",
         "operationId": "create_category_admin_categories_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
                 "additionalProperties": true,
+                "type": "object",
                 "title": "Req"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -661,7 +431,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/admin/video-categories": {
@@ -669,51 +444,21 @@
         "summary": "List Video Categories",
         "description": "List all video categories.",
         "operationId": "list_video_categories_admin_video_categories_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/admin/video-categories/{cat_id}": {
@@ -735,22 +480,6 @@
               "type": "integer",
               "title": "Cat Id"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -758,9 +487,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -796,22 +523,6 @@
               "type": "integer",
               "title": "Video Id"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "requestBody": {
@@ -829,9 +540,101 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
                 "schema": {
-
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/{doc_id}": {
+      "put": {
+        "summary": "Update Document Metadata",
+        "description": "Set site label and/or category on a document (admin only).",
+        "operationId": "update_document_metadata_documents__doc_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Doc Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Document",
+        "description": "Delete a document and its chunks/embeddings (admin only).",
+        "operationId": "delete_document_documents__doc_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Doc Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -870,22 +673,6 @@
               "title": "Category"
             },
             "description": "Category for the video"
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "requestBody": {
@@ -903,9 +690,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -920,6 +705,50 @@
             }
           }
         }
+      }
+    },
+    "/admin/sync-videos": {
+      "post": {
+        "summary": "Sync Videos",
+        "description": "Force-sync files in videos/ into the videos table.",
+        "operationId": "sync_videos_admin_sync_videos_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/sync-documents": {
+      "post": {
+        "summary": "Sync Documents",
+        "description": "Force-sync files in documents/ into the documents table.",
+        "operationId": "sync_documents_admin_sync_documents_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/admin/upload-ground-truth": {
@@ -927,47 +756,22 @@
         "summary": "Upload Ground Truth",
         "description": "Upload a ground-truth JSON file to the ground_truth/ directory.",
         "operationId": "upload_ground_truth_admin_upload_ground_truth_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_upload_ground_truth_admin_upload_ground_truth_post"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -981,7 +785,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/admin/ground-truths": {
@@ -989,37 +798,46 @@
         "summary": "List Ground Truths",
         "description": "List all ground-truth files.",
         "operationId": "list_ground_truths_admin_ground_truths_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/run-pipeline": {
+      "post": {
+        "summary": "Run Pipeline",
+        "description": "Trigger the pipeline for a specific video with selected models.\nBody: {\n    \"filename\": \"video.mp4\",\n    \"transcription_model\": \"whisper-large-v3\",\n    \"scene_detection\": \"pyscenedetect\",\n    \"scene_threshold\": 30.0,\n    \"device\": \"auto\"   # ignored; runtime always resolves automatically\n}\nReturns immediately with a job id; poll /admin/run-pipeline/{job_id}.",
+        "operationId": "run_pipeline_admin_run_pipeline_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Req"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -1033,14 +851,19 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
-    "/admin/run-pipeline": {
-      "post": {
-        "summary": "Run Pipeline",
-        "description": "Trigger the pipeline for a specific video with selected models.\nBody: {\n    \"filename\": \"video.mp4\",\n    \"transcription_model\": \"whisper-base\",\n    \"scene_detection\": \"pyscenedetect\",\n    \"scene_threshold\": 30.0,\n    \"device\": \"auto\"\n}\nReturns immediately with status; pipeline runs synchronously on the server.",
-        "operationId": "run_pipeline_admin_run_pipeline_post",
+    "/admin/run-pipeline/{job_id}": {
+      "get": {
+        "summary": "Get Pipeline Job Status",
+        "description": "Return progress/status for a pipeline job started via /admin/run-pipeline.",
+        "operationId": "get_pipeline_job_status_admin_run_pipeline__job_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -1048,42 +871,21 @@
         ],
         "parameters": [
           {
-            "name": "token",
-            "in": "query",
-            "required": false,
+            "name": "job_id",
+            "in": "path",
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
+              "type": "string",
+              "title": "Job Id"
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Req"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -1119,22 +921,6 @@
               "type": "integer",
               "title": "Video Id"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -1142,9 +928,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -1180,22 +964,6 @@
               "type": "integer",
               "title": "Video Id"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -1203,9 +971,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -1241,22 +1007,6 @@
               "type": "integer",
               "title": "Video Id"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -1288,55 +1038,27 @@
         "summary": "List Videos",
         "description": "List videos the current user is allowed to see.\nAdmins see all; viewers see only their assigned categories.",
         "operationId": "list_videos_videos_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/VideoInfo"
                   },
+                  "type": "array",
                   "title": "Response List Videos Videos Get"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/videos/count": {
@@ -1344,51 +1066,21 @@
         "summary": "Count Videos",
         "description": "Return the accessible count of currently available videos.",
         "operationId": "count_videos_videos_count_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/qa/ask": {
@@ -1396,38 +1088,15 @@
         "summary": "Ask Video Question",
         "description": "Ask a natural language question about the available videos.\nUses RAG (Retrieval-Augmented Generation) to answer based on transcripts and visual semantics.",
         "operationId": "ask_video_question_qa_ask_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/QARequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1450,7 +1119,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/search": {
@@ -1458,38 +1132,15 @@
         "summary": "Search",
         "description": "Semantic search endpoint.\n\nSearch video transcripts using hybrid semantic + fuzzy text matching.",
         "operationId": "search_search_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SearchRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1512,7 +1163,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/search/quick": {
@@ -1569,6 +1225,24 @@
               "title": "Video"
             },
             "description": "Filter by video filename"
+          },
+          {
+            "name": "db_source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional database source override: postgres, sqlserver, or both",
+              "title": "Db Source"
+            },
+            "description": "Optional database source override: postgres, sqlserver, or both"
           },
           {
             "name": "category",
@@ -1641,22 +1315,6 @@
               "title": "Facet"
             },
             "description": "Optional meaning facet: auto, oil_gas, tools, analytics"
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -1664,9 +1322,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -1749,22 +1405,6 @@
               "title": "Limit"
             },
             "description": "Max videos to return"
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -1772,9 +1412,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -1833,7 +1471,7 @@
             "description": "Filter by video filename"
           },
           {
-            "name": "token",
+            "name": "db_source",
             "in": "query",
             "required": false,
             "schema": {
@@ -1845,8 +1483,10 @@
                   "type": "null"
                 }
               ],
-              "title": "Token"
-            }
+              "description": "Optional database source override: postgres, sqlserver, or both",
+              "title": "Db Source"
+            },
+            "description": "Optional database source override: postgres, sqlserver, or both"
           }
         ],
         "responses": {
@@ -1854,9 +1494,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -1878,38 +1516,15 @@
         "summary": "Multimodal Search",
         "description": "Multi-modal search endpoint combining text and vision.\n\nSearch using **both transcript text and visual content** from keyframes.\nThis provides more accurate results by matching both what was said and what was shown.\n\n**Example queries:**\n- \"drilling rig\" → Finds both mentions AND visual appearances of drilling rigs\n- \"safety equipment\" → Finds helmets, vests even if not mentioned\n- \"offshore platform\" → Matches visual scenes + spoken references\n\n**Returns:**\nResults with both text_score and vision_score for transparency.",
         "operationId": "multimodal_search_search_multimodal_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/MultiModalSearchRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1932,7 +1547,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/search/multimodal/quick": {
@@ -2073,22 +1693,6 @@
               "title": "Site"
             },
             "description": "Filter by site name (exact label match)"
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -2096,9 +1700,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -2118,7 +1720,7 @@
     "/search/visual/image": {
       "post": {
         "summary": "Visual Image Search",
-        "description": "Reverse image search - upload an image to find similar moments in videos!\n\n**How it works:**\n- Uploads the image and generates a vision embedding (SigLIP)\n- Matches against all indexed keyframes\n- Returns timestamps of similar visual scenes",
+        "description": "Reverse image search - upload an image to find similar moments in videos!\n\n**How it works:**\n- Uploads the image and generates a vision embedding (SigLIP 2)\n- Matches against all indexed keyframes\n- Returns timestamps of similar visual scenes",
         "operationId": "visual_image_search_search_visual_image_post",
         "security": [
           {
@@ -2157,22 +1759,6 @@
               "title": "Video"
             },
             "description": "Filter by video filename"
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "requestBody": {
@@ -2190,9 +1776,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -2277,22 +1861,6 @@
               "title": "Image Weight"
             },
             "description": "Image embedding weight"
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "requestBody": {
@@ -2310,9 +1878,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -2332,7 +1898,7 @@
     "/search/visual": {
       "get": {
         "summary": "Visual Search",
-        "description": "Pure visual search - finds images matching your description!\n\n**Perfect for:**\n- \"picture of an oil rig\"\n- \"image of safety equipment\"\n- \"show me drilling operations\"\n- \"ocean scenes\"\n\n**How it works:**\n- Searches visual embeddings (SigLIP) directly\n- IGNORES transcript completely\n- Finds what's SHOWN, not what's SAID\n\n**Example:**\n```\nGET /search/visual?q=oil+rig&limit=10\n```",
+        "description": "Pure visual search - finds images matching your description!\n\n**Perfect for:**\n- \"picture of an oil rig\"\n- \"image of safety equipment\"\n- \"show me drilling operations\"\n- \"ocean scenes\"\n\n**How it works:**\n- Searches visual embeddings (SigLIP 2) directly\n- IGNORES transcript completely\n- Finds what's SHOWN, not what's SAID\n\n**Example:**\n```\nGET /search/visual?q=oil+rig&limit=10\n```",
         "operationId": "visual_search_search_visual_get",
         "security": [
           {
@@ -2383,9 +1949,69 @@
               "title": "Video"
             },
             "description": "Filter by video filename"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search/visual/videos": {
+      "get": {
+        "summary": "Visual Video Search",
+        "description": "Search video-level visual embeddings for whole-video discovery.",
+        "operationId": "visual_video_search_search_visual_videos_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Whole-video visual search query",
+              "title": "Q"
+            },
+            "description": "Whole-video visual search query"
           },
           {
-            "name": "token",
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Number of videos",
+              "default": 10,
+              "title": "Limit"
+            },
+            "description": "Number of videos"
+          },
+          {
+            "name": "video",
             "in": "query",
             "required": false,
             "schema": {
@@ -2397,8 +2023,10 @@
                   "type": "null"
                 }
               ],
-              "title": "Token"
-            }
+              "description": "Filter by video filename",
+              "title": "Video"
+            },
+            "description": "Filter by video filename"
           }
         ],
         "responses": {
@@ -2406,9 +2034,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -2435,80 +2061,34 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           }
         }
       }
     },
-    "/v1/models": {
-      "get": {
-        "summary": "List Models",
-        "description": "OpenAI-compatible model list.",
-        "operationId": "list_models_v1_models_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/chat/completions": {
+    "/feedback/event": {
       "post": {
-        "summary": "Chat Completions",
-        "description": "OpenAI-compatible chat completions endpoint.\n\nWorkflow:\n1. Extract the latest user message as the question\n2. Check system message for optional `video:\u003Cfilename\u003E` scoping directive\n3. Run VideoQA RAG: semantic search → Qwen2.5-1.5B generates grounded answer\n4. Stream back tokens via SSE (or return full JSON if stream=False)",
-        "operationId": "chat_completions_v1_chat_completions_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
+        "summary": "Log Feedback Event",
+        "description": "Log an implicit interaction signal (click, open, dwell, copy, etc.).",
+        "operationId": "log_feedback_event_feedback_event_post",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChatCompletionRequest"
+                "$ref": "#/components/schemas/FeedbackEventRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -2522,7 +2102,113 @@
               }
             }
           }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/feedback/rating": {
+      "post": {
+        "summary": "Log Feedback Rating",
+        "description": "Log explicit user relevance label for a shown result.",
+        "operationId": "log_feedback_rating_feedback_rating_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRatingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "summary": "List Models",
+        "description": "OpenAI-compatible model list.",
+        "operationId": "list_models_v1_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
         }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "summary": "Chat Completions",
+        "description": "OpenAI-compatible chat completions endpoint.\n\nWorkflow:\n1. Extract the latest user message as the question\n2. Check system message for optional `video:<filename>` scoping directive\n3. Run VideoQA RAG: semantic search → Qwen2.5-1.5B generates grounded answer\n4. Stream back tokens via SSE (or return full JSON if stream=False)",
+        "operationId": "chat_completions_v1_chat_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/video/thumbnail/{video_id}": {
@@ -2544,22 +2230,6 @@
               "type": "integer",
               "title": "Video Id"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -2567,9 +2237,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -2607,22 +2275,6 @@
               "title": "Path"
             },
             "description": "Path to keyframe image"
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -2630,9 +2282,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -2659,9 +2309,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           }
@@ -2673,57 +2321,27 @@
         "summary": "Search Analytics",
         "description": "Search analytics dashboard.\nReturns stats: total queries, type breakdown, top queries, zero-result queries, daily trend.",
         "operationId": "search_analytics_analytics_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/admin/enrich-captions": {
       "post": {
         "summary": "Enrich Captions",
-        "description": "Re-enrich existing scenes with Qwen2-VL captions, object labels, and OCR text.\n\nFinds all scenes with NULL captions (and an existing keyframe), runs Qwen2-VL\non each keyframe, saves the results back to the scenes table, and generates a\ntext embedding from the caption so that vector (semantic) search can find these scenes.\n\n**This is a long-running operation.** For large libraries call it with a small\nbatch_size and repeat until `scenes_remaining` returns 0.\n\nArgs:\n    video_id: Optional - restrict to a single video's scenes\n    batch_size: How many scenes to process per call (default 10)",
+        "description": "Re-enrich existing scenes with Qwen2.5-VL captions, object labels, and OCR text.\n\nFinds scenes missing captions, object labels, or OCR, runs the visual model\non each keyframe, saves the results back to the scenes table, and refreshes a\ntext embedding from the caption so that vector (semantic) search can find these scenes.\n\n**This is a long-running operation.** For large libraries call it with a small\nbatch_size and repeat until `scenes_remaining` returns 0.\n\nArgs:\n    video_id: Optional - restrict to a single video's scenes\n    batch_size: How many scenes to process per call (default 10)",
         "operationId": "enrich_captions_admin_enrich_captions_post",
         "security": [
           {
@@ -2756,22 +2374,6 @@
               "default": 10,
               "title": "Batch Size"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Token"
-            }
           }
         ],
         "responses": {
@@ -2779,9 +2381,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -2801,8 +2401,100 @@
     "/admin/caption-stats": {
       "get": {
         "summary": "Caption Stats",
-        "description": "Returns how many scenes have captions vs still need enrichment.",
+        "description": "Returns scene visual-enrichment coverage.",
         "operationId": "caption_stats_admin_caption_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/documents/upload": {
+      "post": {
+        "summary": "Upload Document",
+        "description": "Upload and process a document (PDF, DOCX, PPTX, image).\nExtracts text, generates embeddings, and stores in DB.",
+        "operationId": "upload_document_documents_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_document_documents_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/documents": {
+      "get": {
+        "summary": "List Documents",
+        "description": "List all ingested documents.",
+        "operationId": "list_documents_documents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Documents Documents Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/documents/page": {
+      "get": {
+        "summary": "List Documents Page",
+        "description": "Efficient paginated document listing (keyset pagination).",
+        "operationId": "list_documents_page_documents_page_get",
         "security": [
           {
             "HTTPBearer": []
@@ -2810,20 +2502,49 @@
         ],
         "parameters": [
           {
-            "name": "token",
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Page size",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Page size"
+          },
+          {
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "integer",
+                  "minimum": 1
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Token"
-            }
+              "description": "Return rows with id < cursor (descending keyset)",
+              "title": "Cursor"
+            },
+            "description": "Return rows with id < cursor (descending keyset)"
+          },
+          {
+            "name": "include_total",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Compute total accessible document count (set true for first page only)",
+              "default": false,
+              "title": "Include Total"
+            },
+            "description": "Compute total accessible document count (set true for first page only)"
           }
         ],
         "responses": {
@@ -2832,8 +2553,51 @@
             "content": {
               "application/json": {
                 "schema": {
-
+                  "$ref": "#/components/schemas/DocumentPageResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/stream/{doc_id}": {
+      "get": {
+        "summary": "Stream Document",
+        "description": "Serve the original document file for in-browser viewing.",
+        "operationId": "stream_document_documents_stream__doc_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Doc Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -2859,9 +2623,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           }
@@ -2877,9 +2639,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           }
@@ -2889,11 +2649,25 @@
   },
   "components": {
     "schemas": {
+      "Body_upload_document_documents_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_document_documents_upload_post"
+      },
       "Body_upload_ground_truth_admin_upload_ground_truth_post": {
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -2907,7 +2681,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -2921,7 +2695,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -2935,7 +2709,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -2966,15 +2740,15 @@
           },
           "max_tokens": {
             "type": "integer",
-            "maximum": 2048,
-            "minimum": 1,
+            "maximum": 2048.0,
+            "minimum": 1.0,
             "title": "Max Tokens",
             "default": 512
           },
           "temperature": {
             "type": "number",
-            "maximum": 2,
-            "minimum": 0,
+            "maximum": 2.0,
+            "minimum": 0.0,
             "title": "Temperature",
             "default": 0.1
           },
@@ -3013,6 +2787,262 @@
           "content"
         ],
         "title": "ChatMessage"
+      },
+      "DocumentInfo": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "file_type": {
+            "type": "string",
+            "title": "File Type"
+          },
+          "file_size_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Size Mb"
+          },
+          "total_pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Pages"
+          },
+          "extraction_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Method"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "file_type"
+        ],
+        "title": "DocumentInfo",
+        "description": "Document information model."
+      },
+      "DocumentPageResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentInfo"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "DocumentPageResponse",
+        "description": "Paginated document listing response."
+      },
+      "FeedbackEventRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Request Id"
+          },
+          "impression_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impression Id"
+          },
+          "interaction_type": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 2,
+            "title": "Interaction Type"
+          },
+          "dwell_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dwell Ms"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "interaction_type"
+        ],
+        "title": "FeedbackEventRequest",
+        "description": "Implicit interaction event payload."
+      },
+      "FeedbackRatingRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Request Id"
+          },
+          "impression_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impression Id"
+          },
+          "feedback_value": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Feedback Value"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "feedback_value"
+        ],
+        "title": "FeedbackRatingRequest",
+        "description": "Explicit relevance label payload."
       },
       "HTTPValidationError": {
         "properties": {
@@ -3057,24 +3087,24 @@
           },
           "top_k": {
             "type": "integer",
-            "maximum": 50,
-            "minimum": 1,
+            "maximum": 50.0,
+            "minimum": 1.0,
             "title": "Top K",
             "description": "Number of results to return",
             "default": 10
           },
           "text_weight": {
             "type": "number",
-            "maximum": 1,
-            "minimum": 0,
+            "maximum": 1.0,
+            "minimum": 0.0,
             "title": "Text Weight",
             "description": "Weight for text similarity",
             "default": 0.5
           },
           "vision_weight": {
             "type": "number",
-            "maximum": 1,
-            "minimum": 0,
+            "maximum": 1.0,
+            "minimum": 0.0,
             "title": "Vision Weight",
             "description": "Weight for vision similarity",
             "default": 0.5
@@ -3145,8 +3175,8 @@
           },
           "top_k": {
             "type": "integer",
-            "maximum": 10,
-            "minimum": 1,
+            "maximum": 10.0,
+            "minimum": 1.0,
             "title": "Top K",
             "description": "Number of context snippets to use",
             "default": 5
@@ -3232,32 +3262,32 @@
           },
           "top_k": {
             "type": "integer",
-            "maximum": 50,
-            "minimum": 1,
+            "maximum": 50.0,
+            "minimum": 1.0,
             "title": "Top K",
             "description": "Number of results to return",
             "default": 10
           },
           "semantic_weight": {
             "type": "number",
-            "maximum": 1,
-            "minimum": 0,
+            "maximum": 1.0,
+            "minimum": 0.0,
             "title": "Semantic Weight",
             "description": "Weight for semantic similarity",
             "default": 0.7
           },
           "text_weight": {
             "type": "number",
-            "maximum": 1,
-            "minimum": 0,
+            "maximum": 1.0,
+            "minimum": 0.0,
             "title": "Text Weight",
             "description": "Weight for text matching",
             "default": 0.3
           },
           "min_score": {
             "type": "number",
-            "maximum": 1,
-            "minimum": 0,
+            "maximum": 1.0,
+            "minimum": 0.0,
             "title": "Min Score",
             "description": "Minimum score threshold",
             "default": 0.1
@@ -3273,6 +3303,18 @@
             ],
             "title": "Video Filter",
             "description": "Filter by video filename"
+          },
+          "db_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Source",
+            "description": "Optional database source override: postgres, sqlserver, or both. Defaults to DB_QUERY_MODE."
           },
           "language": {
             "anyOf": [
@@ -3299,6 +3341,18 @@
           "query": {
             "type": "string",
             "title": "Query"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id",
+            "description": "Telemetry id used by the frontend to log click/dwell/feedback signals."
           },
           "results_count": {
             "type": "integer",
@@ -3340,6 +3394,34 @@
         ],
         "title": "SearchResponse",
         "description": "Search response model."
+      },
+      "UpdateDocumentRequest": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          }
+        },
+        "type": "object",
+        "title": "UpdateDocumentRequest"
       },
       "UpdateUserRequest": {
         "properties": {
@@ -3467,13 +3549,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

@@ -59,6 +59,8 @@ videos/*.mov
 videos/*.mkv
 videos/*.webm
 videos/*.ts
+videos/*.wav
+videos/*.mp3
 !videos/.gitkeep
 temp_*.wav
 temp_*.mp3
@@ -77,6 +79,18 @@ basepipeline.dump
 # Caches
 .cache/
 
+# Training/model artifacts
+training/asr_data/audio/
+training/asr_checkpoints/
+training/checkpoints/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.onnx
+*.bin
+
 # Data tables / exports
 # *.csv
 
@@ -85,6 +99,8 @@ Extras/
 
 # PDF Files
 *.pdf
+~$*.pptx
+
 # Large local import artifacts
 SQLImports/embeddings.jsonl
 SQLImports/manifest.json

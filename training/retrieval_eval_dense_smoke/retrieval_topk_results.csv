@@ -1,0 +1,61 @@
+variant,query_id,rank,score,relevant,iou,video,segment_index,scene_id,start_time,end_time,transcript,ocr,caption
+bm25_only,auto_0001,1,11.1444,True,1.0,17Min,64,65,264.7,272.16,"Over the past 60 million years or so, must have been happening on Europa to erase most of these craters from the surface.",NASA,Scene showing text: NASA
+bm25_only,auto_0001,2,2.8382,False,0.0,17Min,15,24,58.02,62.26,And how do you make a probe that can withstand the perilous conditions?,NASA,Scene showing text: NASA
+bm25_only,auto_0001,3,2.5599,False,0.0,17Min,4,7,14.26,16.72,they receive the following message from the aliens.,2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+bm25_only,auto_0001,4,1.9976,False,0.0,17Min,9,12,34.58,37.46,"42 years later, in October 2024,",Falcon Heavy Via Spacellight Now on YouTube,Scene showing text: Falcon Heavy Via Spacellight Now on YouTube
+bm25_only,auto_0001,5,0.0,False,0.0,17Min,0,0,0.0,3.4,Arthur C. Clarke had a sequel to 2001 A Space Odyssey.,GLARKE 2001 ODYSSEY,Scene showing text: GLARKE 2001 ODYSSEY
+bm25_only,auto_0001,6,0.0,False,0.0,17Min,1,0,3.62,5.78,It's called 2010 Odyssey 2.,GLARKE 2001 ODYSSEY,Scene showing text: GLARKE 2001 ODYSSEY
+bm25_only,auto_0001,7,0.0,False,0.0,17Min,2,1,5.96,10.2,"And at the end of it, an alien intelligence converts Jupiter into a star.",,"Scene discussing: And at the end of it, an alien intelligence converts Jupiter into a star."
+bm25_only,auto_0001,8,0.0,False,0.0,17Min,3,4,10.6,14.1,"As a group of astronauts narrowly escape the implosion,",2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+bm25_only,auto_0001,9,0.0,False,0.0,17Min,5,8,17.14,20.58,"All these worlds are yours, except Europa.",2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+bm25_only,auto_0001,10,0.0,False,0.0,17Min,6,9,21.14,22.9,Attempt no landing there.,ALL THESE WORLDS ARE YOURS EXCEPT EUR 2010: The Year We Make Contact,Scene showing text: ALL THESE WORLDS ARE YOURS EXCEPT EUR 2010: The Year We Make Contact
+bm25_only,auto_0002,1,5.7043,True,1.0,17Min,64,65,264.7,272.16,"Over the past 60 million years or so, must have been happening on Europa to erase most of these craters from the surface.",NASA,Scene showing text: NASA
+bm25_only,auto_0002,2,3.0559,False,0.0,17Min,8,12,28.02,34.08,we suspected that Europa might offer our best chance of finding alien life in our solar system.,Falcon Heavy Via Spacellight Now on YouTube,Scene showing text: Falcon Heavy Via Spacellight Now on YouTube
+bm25_only,auto_0002,3,2.5471,False,0.0,17Min,11,18,43.68000000000001,46.72,"And it's going to Jupiter's moon, Europa.",NASA,Scene showing text: NASA
+bm25_only,auto_0002,4,2.296,False,0.0,17Min,9,12,34.58,37.46,"42 years later, in October 2024,",Falcon Heavy Via Spacellight Now on YouTube,Scene showing text: Falcon Heavy Via Spacellight Now on YouTube
+bm25_only,auto_0002,5,1.3227,False,0.0,17Min,5,8,17.14,20.58,"All these worlds are yours, except Europa.",2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+bm25_only,auto_0002,6,1.0039,False,0.0,17Min,17,27,70.94,74.8,hydrogen is believed to take the form of a metallic liquid.,,Scene discussing: Deep inside Jupiter there is so much pressure that hydrogen is believed to take the form of a metallic liquid.
+bm25_only,auto_0002,7,0.8508,False,0.0,17Min,0,0,0.0,3.4,Arthur C. Clarke had a sequel to 2001 A Space Odyssey.,GLARKE 2001 ODYSSEY,Scene showing text: GLARKE 2001 ODYSSEY
+bm25_only,auto_0002,8,0.8508,False,0.0,17Min,10,15,38.54,42.94,NASA is actually launching the most advanced mission to hunt for signs of alien life.,NASA,Scene showing text: NASA
+bm25_only,auto_0002,9,0.6695,False,0.0,17Min,18,27,75.64,80.1,"And this metallic liquid hydrogen generates an incredibly powerful magnetic field,",,Scene discussing: Deep inside Jupiter there is so much pressure that hydrogen is believed to take the form of a metallic liquid.
+bm25_only,auto_0002,10,0.0,False,0.0,17Min,1,0,3.62,5.78,It's called 2010 Odyssey 2.,GLARKE 2001 ODYSSEY,Scene showing text: GLARKE 2001 ODYSSEY
+dense_only,auto_0001,1,0.4928,True,1.0,17Min,64,65,264.7,272.16,"Over the past 60 million years or so, must have been happening on Europa to erase most of these craters from the surface.",NASA,Scene showing text: NASA
+dense_only,auto_0001,2,0.4409,False,0.0,17Min,1,0,3.62,5.78,It's called 2010 Odyssey 2.,GLARKE 2001 ODYSSEY,Scene showing text: GLARKE 2001 ODYSSEY
+dense_only,auto_0001,3,0.4408,False,0.0,17Min,14,22,54.4,56.58,So how could life even exist there?,NASA,Scene showing text: NASA
+dense_only,auto_0001,4,0.4364,False,0.0,17Min,4,7,14.26,16.72,they receive the following message from the aliens.,2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+dense_only,auto_0001,5,0.4241,False,0.0,17Min,5,8,17.14,20.58,"All these worlds are yours, except Europa.",2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+dense_only,auto_0001,6,0.4194,False,0.0,17Min,16,26,67.22,70.94,Deep inside Jupiter there is so much pressure that,NASA,Scene showing text: NASA
+dense_only,auto_0001,7,0.3962,False,0.0,17Min,13,21,51.72,53.74,Jupiter kills everything around it.,NASA,Scene showing text: NASA
+dense_only,auto_0001,8,0.3902,False,0.0,17Min,11,18,43.68000000000001,46.72,"And it's going to Jupiter's moon, Europa.",NASA,Scene showing text: NASA
+dense_only,auto_0001,9,0.3855,False,0.0,17Min,12,20,48.480000000000004,50.02,There's just one problem.,NASA,Scene showing text: NASA
+dense_only,auto_0001,10,0.3821,False,0.0,17Min,8,12,28.02,34.08,we suspected that Europa might offer our best chance of finding alien life in our solar system.,Falcon Heavy Via Spacellight Now on YouTube,Scene showing text: Falcon Heavy Via Spacellight Now on YouTube
+dense_only,auto_0002,1,0.6733,False,0.0,17Min,11,18,43.68000000000001,46.72,"And it's going to Jupiter's moon, Europa.",NASA,Scene showing text: NASA
+dense_only,auto_0002,2,0.6703,False,0.0,17Min,5,8,17.14,20.58,"All these worlds are yours, except Europa.",2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+dense_only,auto_0002,3,0.5649,False,0.0,17Min,8,12,28.02,34.08,we suspected that Europa might offer our best chance of finding alien life in our solar system.,Falcon Heavy Via Spacellight Now on YouTube,Scene showing text: Falcon Heavy Via Spacellight Now on YouTube
+dense_only,auto_0002,4,0.5461,True,1.0,17Min,64,65,264.7,272.16,"Over the past 60 million years or so, must have been happening on Europa to erase most of these craters from the surface.",NASA,Scene showing text: NASA
+dense_only,auto_0002,5,0.5391,False,0.0,17Min,13,21,51.72,53.74,Jupiter kills everything around it.,NASA,Scene showing text: NASA
+dense_only,auto_0002,6,0.5051,False,0.0,17Min,6,9,21.14,22.9,Attempt no landing there.,ALL THESE WORLDS ARE YOURS EXCEPT EUR 2010: The Year We Make Contact,Scene showing text: ALL THESE WORLDS ARE YOURS EXCEPT EUR 2010: The Year We Make Contact
+dense_only,auto_0002,7,0.4891,False,0.0,17Min,1,0,3.62,5.78,It's called 2010 Odyssey 2.,GLARKE 2001 ODYSSEY,Scene showing text: GLARKE 2001 ODYSSEY
+dense_only,auto_0002,8,0.4611,False,0.0,17Min,16,26,67.22,70.94,Deep inside Jupiter there is so much pressure that,NASA,Scene showing text: NASA
+dense_only,auto_0002,9,0.4573,False,0.0,17Min,12,20,48.480000000000004,50.02,There's just one problem.,NASA,Scene showing text: NASA
+dense_only,auto_0002,10,0.4303,False,0.0,17Min,2,1,5.96,10.2,"And at the end of it, an alien intelligence converts Jupiter into a star.",,"Scene discussing: And at the end of it, an alien intelligence converts Jupiter into a star."
+hybrid,auto_0001,1,1.0,True,1.0,17Min,64,65,264.7,272.16,"Over the past 60 million years or so, must have been happening on Europa to erase most of these craters from the surface.",NASA,Scene showing text: NASA
+hybrid,auto_0001,2,0.6465,False,0.0,17Min,4,7,14.26,16.72,they receive the following message from the aliens.,2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+hybrid,auto_0001,3,0.5298,False,0.0,17Min,1,0,3.62,5.78,It's called 2010 Odyssey 2.,GLARKE 2001 ODYSSEY,Scene showing text: GLARKE 2001 ODYSSEY
+hybrid,auto_0001,4,0.5295,False,0.0,17Min,14,22,54.4,56.58,So how could life even exist there?,NASA,Scene showing text: NASA
+hybrid,auto_0001,5,0.491,False,0.0,17Min,5,8,17.14,20.58,"All these worlds are yours, except Europa.",2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+hybrid,auto_0001,6,0.48,False,0.0,17Min,16,26,67.22,70.94,Deep inside Jupiter there is so much pressure that,NASA,Scene showing text: NASA
+hybrid,auto_0001,7,0.4264,False,0.0,17Min,13,21,51.72,53.74,Jupiter kills everything around it.,NASA,Scene showing text: NASA
+hybrid,auto_0001,8,0.4124,False,0.0,17Min,11,18,43.68000000000001,46.72,"And it's going to Jupiter's moon, Europa.",NASA,Scene showing text: NASA
+hybrid,auto_0001,9,0.4015,False,0.0,17Min,12,20,48.480000000000004,50.02,There's just one problem.,NASA,Scene showing text: NASA
+hybrid,auto_0001,10,0.3937,False,0.0,17Min,8,12,28.02,34.08,we suspected that Europa might offer our best chance of finding alien life in our solar system.,Falcon Heavy Via Spacellight Now on YouTube,Scene showing text: Falcon Heavy Via Spacellight Now on YouTube
+hybrid,auto_0002,1,0.8311,False,0.0,17Min,11,18,43.68000000000001,46.72,"And it's going to Jupiter's moon, Europa.",NASA,Scene showing text: NASA
+hybrid,auto_0002,2,0.8169,True,1.0,17Min,64,65,264.7,272.16,"Over the past 60 million years or so, must have been happening on Europa to erase most of these craters from the surface.",NASA,Scene showing text: NASA
+hybrid,auto_0002,3,0.7568,False,0.0,17Min,5,8,17.14,20.58,"All these worlds are yours, except Europa.",2010: The Year We Make Contact,Scene showing text: 2010: The Year We Make Contact
+hybrid,auto_0002,4,0.5674,False,0.0,17Min,8,12,28.02,34.08,we suspected that Europa might offer our best chance of finding alien life in our solar system.,Falcon Heavy Via Spacellight Now on YouTube,Scene showing text: Falcon Heavy Via Spacellight Now on YouTube
+hybrid,auto_0002,5,0.4569,False,0.0,17Min,13,21,51.72,53.74,Jupiter kills everything around it.,NASA,Scene showing text: NASA
+hybrid,auto_0002,6,0.408,False,0.0,17Min,6,9,21.14,22.9,Attempt no landing there.,ALL THESE WORLDS ARE YOURS EXCEPT EUR 2010: The Year We Make Contact,Scene showing text: ALL THESE WORLDS ARE YOURS EXCEPT EUR 2010: The Year We Make Contact
+hybrid,auto_0002,7,0.3849,False,0.0,17Min,1,0,3.62,5.78,It's called 2010 Odyssey 2.,GLARKE 2001 ODYSSEY,Scene showing text: GLARKE 2001 ODYSSEY
+hybrid,auto_0002,8,0.3526,False,0.0,17Min,17,27,70.94,74.8,hydrogen is believed to take the form of a metallic liquid.,,Scene discussing: Deep inside Jupiter there is so much pressure that hydrogen is believed to take the form of a metallic liquid.
+hybrid,auto_0002,9,0.3446,False,0.0,17Min,16,26,67.22,70.94,Deep inside Jupiter there is so much pressure that,NASA,Scene showing text: NASA
+hybrid,auto_0002,10,0.3391,False,0.0,17Min,12,20,48.480000000000004,50.02,There's just one problem.,NASA,Scene showing text: NASA

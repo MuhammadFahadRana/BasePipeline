@@ -55,7 +55,7 @@ class MultiModalSearchEngine:
             text_weight: Default weight for text similarity (0-1)
             vision_weight: Default weight for vision similarity (0-1)
             vision_model: Vision model name (SigLIP 2 by default)
-            text_search: Optional pre-existing SemanticSearchEngine singleton to reuse
+            text_search: Optional pre-existing SemanticSearchEngine to reuse
         """
         self.db = db
         self.text_weight = text_weight
@@ -76,11 +76,6 @@ class MultiModalSearchEngine:
             raise ValueError(
                 f"Weights must sum to 1.0, got {text_weight + vision_weight}"
             )
-
-    def update_db(self, db: Session):
-        """Update the database session (for singleton reuse across requests)."""
-        self.db = db
-        self.text_search.db = db
 
     @staticmethod
     def _infer_query_intent(query: str) -> Dict[str, bool]:
@@ -280,7 +275,7 @@ class MultiModalSearchEngine:
         Returns:
             Dict with 'results', 'search_metadata'
         """
-        # Use local weight variables so we don't mutate singleton state
+        # Use local weight variables so fallback tuning stays inside this request.
         tw = self.text_weight
         vw = self.vision_weight
 

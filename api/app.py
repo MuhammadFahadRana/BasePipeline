@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 # Add parent directory to path to allow imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fastapi import FastAPI, Depends, HTTPException, Query, Request, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, File, UploadFile, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from typing import List, Optional, Dict, Any, Tuple
@@ -39,6 +39,8 @@ from database.models import (
 from search.semantic_search import SemanticSearchEngine, SearchResult
 from search.multi_modal_search import MultiModalSearchEngine
 from api.auth import (
+    AUTH_COOKIE_NAME,
+    JWT_EXPIRE_HOURS,
     hash_password,
     verify_password,
     create_access_token,
@@ -59,21 +61,33 @@ from contextlib import asynccontextmanager
 # Formats that browsers cannot play natively → must be transcoded
 TRANSCODE_EXTENSIONS = {".ts", ".mp2t", ".m2ts", ".mts", ".avi", ".mkv", ".mov"}
 
-# Lazy-loaded components
-_video_qa = None
-_search_engine = None
-_mm_search_engine = None
-_mm_text_search_engine = None
-
 PROJECT_ROOT = Path(__file__).parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 INDEX_HTML_PATH = FRONTEND_DIR / "index.html"
 FRONTEND_ASSETS = ("styles.css", "app.js", "chat.js")
+VIDEOS_DIR = PROJECT_ROOT / "videos"
+DOCUMENTS_DIR = PROJECT_ROOT / "documents"
+PROCESSED_DIR = PROJECT_ROOT / "processed"
 _PIPELINE_JOB_LOCK = threading.Lock()
 _PIPELINE_JOBS: Dict[str, Dict[str, Any]] = {}
 _PIPELINE_MAX_JOBS = 200
-_SEARCH_ENGINE_MODE_LOCK = threading.Lock()
-_SEARCH_ENGINE_MODE_CACHE: Dict[str, Any] = {}
+
+
+def _cors_origins() -> List[str]:
+    raw = os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:8000,http://127.0.0.1:8000",
+    )
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _auth_cookie_secure() -> bool:
+    return os.getenv("AUTH_COOKIE_SECURE", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _normalize_db_query_mode(raw_mode: Optional[str], default: str = "postgres") -> str:
@@ -151,12 +165,6 @@ def _build_search_engine(db: Session, query_mode: Optional[str] = None):
         return SemanticSearchEngine(db)
 
 
-def _session_dialect_name(db: Optional[Session]) -> str:
-    bind = getattr(db, "bind", None)
-    dialect = getattr(bind, "dialect", None)
-    return str(getattr(dialect, "name", "") or "").lower()
-
-
 def _close_engine(engine: Any) -> None:
     if engine is None:
         return
@@ -173,78 +181,9 @@ def _close_engine(engine: Any) -> None:
             _close_engine(child)
 
 
-def _engine_matches_mode(engine: Any, requested_mode: str) -> bool:
-    if engine is None:
-        return False
-
-    requested_mode = _normalize_db_query_mode(requested_mode)
-    if requested_mode == "both":
-        postgres_engine = getattr(engine, "postgres_engine", None)
-        sqlserver_engine = getattr(engine, "sqlserver_engine", None)
-        return _engine_matches_mode(postgres_engine, "postgres") and _engine_matches_mode(
-            sqlserver_engine, "sqlserver"
-        )
-
-    dialect_name = _session_dialect_name(getattr(engine, "db", None))
-    if requested_mode == "postgres":
-        return dialect_name.startswith("postgres")
-    if requested_mode == "sqlserver":
-        return dialect_name.startswith("mssql")
-    return False
-
-
-def _sync_engine_db(engine: Any, db: Session) -> None:
-    if engine is None:
-        return
-    try:
-        if hasattr(engine, "update_db"):
-            engine.update_db(db)
-        elif hasattr(engine, "db"):
-            engine.db = db
-    except Exception:
-        # Keep request path resilient; engine can still be rebuilt lazily.
-        pass
-
-
-def _sync_search_engine_db(db: Session) -> None:
-    """Update active search engine's DB session when supported."""
-    global _search_engine
-    _sync_engine_db(_search_engine, db)
-
-
 def _get_search_engine_for_mode(db: Session, raw_mode: Optional[str] = None):
-    global _search_engine
-
     requested_mode = _get_request_db_query_mode(raw_mode)
-    default_mode = _get_db_query_mode()
-
-    if requested_mode == default_mode:
-        if _search_engine is None or not _engine_matches_mode(_search_engine, requested_mode):
-            if _search_engine is not None:
-                print(
-                    f"[search] Rebuilding default engine for mode={requested_mode} "
-                    f"(session dialect mismatch)"
-                )
-                _close_engine(_search_engine)
-            _search_engine = _build_search_engine(db, query_mode=requested_mode)
-        else:
-            _sync_engine_db(_search_engine, db)
-        return _search_engine, requested_mode
-
-    with _SEARCH_ENGINE_MODE_LOCK:
-        engine = _SEARCH_ENGINE_MODE_CACHE.get(requested_mode)
-        if engine is None or not _engine_matches_mode(engine, requested_mode):
-            if engine is not None:
-                print(
-                    f"[search] Rebuilding cached engine for mode={requested_mode} "
-                    f"(session dialect mismatch)"
-                )
-                _close_engine(engine)
-            engine = _build_search_engine(db, query_mode=requested_mode)
-            _SEARCH_ENGINE_MODE_CACHE[requested_mode] = engine
-        else:
-            _sync_engine_db(engine, db)
-    return engine, requested_mode
+    return _build_search_engine(db, query_mode=requested_mode), requested_mode
 
 
 def _get_multimodal_text_engine(db: Session) -> SemanticSearchEngine:
@@ -252,16 +191,7 @@ def _get_multimodal_text_engine(db: Session) -> SemanticSearchEngine:
     Multi-modal search requires postgres-native text/vision joins.
     Keep this path on SemanticSearchEngine even when DB_QUERY_MODE=both/sqlserver.
     """
-    global _search_engine, _mm_text_search_engine
-    if isinstance(_search_engine, SemanticSearchEngine):
-        _search_engine.db = db
-        return _search_engine
-
-    if _mm_text_search_engine is None:
-        _mm_text_search_engine = SemanticSearchEngine(db)
-    else:
-        _mm_text_search_engine.db = db
-    return _mm_text_search_engine
+    return SemanticSearchEngine(db)
 
 
 def _server_capabilities() -> dict:
@@ -324,44 +254,78 @@ def _prune_pipeline_jobs() -> None:
             _PIPELINE_JOBS.pop(jid, None)
 
 
-def _resolve_video_file_path(raw_path: Optional[str]) -> Optional[Path]:
+def _is_within_directory(path: Path, directory: Path) -> bool:
+    try:
+        path.resolve().relative_to(directory.resolve())
+        return True
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _resolve_local_file_path(
+    raw_path: Optional[str],
+    allowed_roots: Tuple[Path, ...],
+    basename_root: Optional[Path] = None,
+) -> Optional[Path]:
     if not raw_path:
         return None
 
+    candidates: List[Path] = []
     candidate = Path(raw_path)
-    if candidate.exists():
-        return candidate if candidate.is_absolute() else (PROJECT_ROOT / candidate)
+    if candidate.is_absolute():
+        candidates.append(candidate)
+    else:
+        candidates.append(PROJECT_ROOT / candidate)
+    if basename_root is not None:
+        candidates.append(basename_root / os.path.basename(raw_path))
 
-    local_candidate = PROJECT_ROOT / "videos" / os.path.basename(raw_path)
-    if local_candidate.exists():
-        return local_candidate
-
-    if not candidate.is_absolute():
-        relative_candidate = PROJECT_ROOT / candidate
-        if relative_candidate.exists():
-            return relative_candidate
-
+    for item in candidates:
+        try:
+            resolved = item.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if not resolved.exists() or not resolved.is_file():
+            continue
+        if any(_is_within_directory(resolved, root) for root in allowed_roots):
+            return resolved
     return None
+
+
+def _resolve_video_file_path(raw_path: Optional[str]) -> Optional[Path]:
+    return _resolve_local_file_path(
+        raw_path,
+        allowed_roots=(VIDEOS_DIR,),
+        basename_root=VIDEOS_DIR,
+    )
 
 
 def _resolve_document_file_path(raw_path: Optional[str]) -> Optional[Path]:
-    if not raw_path:
-        return None
+    return _resolve_local_file_path(
+        raw_path,
+        allowed_roots=(DOCUMENTS_DIR,),
+        basename_root=DOCUMENTS_DIR,
+    )
 
-    candidate = Path(raw_path)
-    if candidate.exists():
-        return candidate if candidate.is_absolute() else (PROJECT_ROOT / candidate)
 
-    local_candidate = PROJECT_ROOT / "documents" / os.path.basename(raw_path)
-    if local_candidate.exists():
-        return local_candidate
+def _resolve_keyframe_file_path(raw_path: Optional[str]) -> Optional[Path]:
+    return _resolve_local_file_path(
+        raw_path,
+        allowed_roots=(PROCESSED_DIR,),
+    )
 
-    if not candidate.is_absolute():
-        relative_candidate = PROJECT_ROOT / candidate
-        if relative_candidate.exists():
-            return relative_candidate
 
-    return None
+def _safe_upload_filename(filename: str, fallback_prefix: str, suffix: str = "") -> str:
+    raw_name = os.path.basename(filename or "")
+    requested_suffix = suffix or Path(raw_name).suffix.lower()
+    safe_stem = re.sub(r"[^\w\s\-\(\)]", "", Path(raw_name).stem).strip(" ._-")
+    if not safe_stem:
+        safe_stem = f"{fallback_prefix}_{int(time.time())}"
+    return f"{safe_stem[:120]}{requested_suffix.lower()}"
+
+
+def _media_type_for_image(path: Path) -> str:
+    suffix = path.suffix.lower().lstrip(".").replace("jpg", "jpeg")
+    return f"image/{suffix}"
 
 
 # ── Category-intent detection from natural-language queries ──────────────
@@ -1058,19 +1022,27 @@ async def lifespan(app: FastAPI):
     from database.models import Base
     Base.metadata.create_all(bind=engine)
 
-    # Seed a default admin user if no users exist at all
+    # Seed an initial admin only when an explicit bootstrap password is provided.
     from database.config import SessionLocal
     db = SessionLocal()
     try:
         if db.query(User).count() == 0:
-            admin = User(
-                username="admin",
-                password_hash=hash_password("admin"),
-                role="admin",
-            )
-            db.add(admin)
-            db.commit()
-            print("[auth] Created default admin user (admin / admin)")
+            admin_username = os.getenv("ATLAS_BOOTSTRAP_ADMIN_USER", "admin").strip()
+            admin_password = os.getenv("ATLAS_BOOTSTRAP_ADMIN_PASSWORD")
+            if not admin_password:
+                print(
+                    "[auth] No users exist. Set ATLAS_BOOTSTRAP_ADMIN_PASSWORD "
+                    "to create the initial admin account."
+                )
+            else:
+                admin = User(
+                    username=admin_username,
+                    password_hash=hash_password(admin_password),
+                    role="admin",
+                )
+                db.add(admin)
+                db.commit()
+                print(f"[auth] Created bootstrap admin user ({admin_username})")
         else:
             print("[auth] Users table OK")
 
@@ -1094,16 +1066,13 @@ async def lifespan(app: FastAPI):
     print("[warmup] Pre-loading search engines...")
     warmup_db = SessionLocal()
     try:
-        global _search_engine, _mm_search_engine
-        if _search_engine is None:
-            _search_engine = _build_search_engine(warmup_db)
-        else:
-            _sync_search_engine_db(warmup_db)
-        if has_cuda and _mm_search_engine is None:
-            _mm_search_engine = MultiModalSearchEngine(
+        warmup_search_engine = _build_search_engine(warmup_db)
+        if has_cuda:
+            MultiModalSearchEngine(
                 db=warmup_db,
                 text_search=_get_multimodal_text_engine(warmup_db),
             )
+        _close_engine(warmup_search_engine)
             
         if has_cuda:
             # Only preload heavy stuff on GPU
@@ -1135,10 +1104,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware (adjust origins as needed)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1148,41 +1116,23 @@ app.add_middleware(
 
 
 def get_video_qa(db: Session = Depends(get_db)):
-    """Lazy loader for VideoQA."""
-    global _video_qa
-    if _video_qa is None:
-        from llm.video_qa import VideoQA
+    """Create a request-bound VideoQA wrapper around shared model resources."""
+    from llm.video_qa import VideoQA
 
-        print("Initializing Video QA system (this may take a moment)...")
-        _video_qa = VideoQA(db)
-    else:
-        _video_qa.update_db(db)
-    return _video_qa
+    return VideoQA(db)
 
 
 def get_search_engine(db: Session = Depends(get_db)):
-    """Lazy loader for configured search engine (postgres/sqlserver/both)."""
-    global _search_engine
-    if _search_engine is None:
-        print("Initializing Semantic Search Engine (this may take a moment)...")
-        _search_engine = _build_search_engine(db)
-    else:
-        _sync_search_engine_db(db)
-    return _search_engine
+    """Create a request-bound configured search engine."""
+    return _build_search_engine(db)
 
 
 def get_mm_search_engine(db: Session = Depends(get_db)):
-    """Lazy loader for MultiModalSearchEngine (singleton, reuses text search engine)."""
-    global _mm_search_engine
-    if _mm_search_engine is None:
-        print("Initializing Multi-Modal Search Engine (this may take a moment)...")
-        _mm_search_engine = MultiModalSearchEngine(
-            db=db,
-            text_search=_get_multimodal_text_engine(db),
-        )
-    else:
-        _mm_search_engine.update_db(db)
-    return _mm_search_engine
+    """Create a request-bound MultiModalSearchEngine."""
+    return MultiModalSearchEngine(
+        db=db,
+        text_search=_get_multimodal_text_engine(db),
+    )
 
 
 @app.get("/health")
@@ -1235,12 +1185,25 @@ class UserInfoResponse(BaseModel):
 
 
 @app.post("/auth/login")
-async def login(req: LoginRequest, db: Session = Depends(get_db)):
+async def login(
+    req: LoginRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     """Authenticate and return a JWT token."""
     user = db.query(User).filter(User.username == req.username).first()
     if not user or not verify_password(req.password, str(user.password_hash)):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_access_token(user.id, str(user.username), str(user.role))
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=token,
+        max_age=JWT_EXPIRE_HOURS * 3600,
+        httponly=True,
+        secure=_auth_cookie_secure(),
+        samesite="lax",
+        path="/",
+    )
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -1251,6 +1214,19 @@ async def login(req: LoginRequest, db: Session = Depends(get_db)):
             "categories": [a.category for a in user.category_access],
         },
     }
+
+
+@app.post("/auth/logout")
+async def logout(response: Response):
+    """Clear the browser auth cookie."""
+    response.delete_cookie(
+        key=AUTH_COOKIE_NAME,
+        httponly=True,
+        secure=_auth_cookie_secure(),
+        samesite="lax",
+        path="/",
+    )
+    return {"status": "ok"}
 
 
 @app.get("/auth/me", response_model=UserInfoResponse)
@@ -2230,6 +2206,7 @@ async def search(
     Search video transcripts using hybrid semantic + fuzzy text matching.
     """
     start_time = time.time()
+    search_engine = None
 
     try:
         search_engine, active_db_mode = _get_search_engine_for_mode(db, request.db_source)
@@ -2281,6 +2258,8 @@ async def search(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+    finally:
+        _close_engine(search_engine)
 
 
 @app.get("/search/quick")
@@ -2316,6 +2295,7 @@ async def quick_search(
     ```
     """
     start_time = time.time()
+    search_engine = None
 
     # Build set of allowed filenames: enforce user category access + optional category/label/site UI filter
     acl_filenames = _get_allowed_filenames(user, db)
@@ -2411,6 +2391,8 @@ async def quick_search(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+    finally:
+        _close_engine(search_engine)
 
 
 @app.get("/search/browse")
@@ -2547,6 +2529,7 @@ async def exact_search(
     Exact phrase search (case-insensitive).
     """
     start_time = time.time()
+    search_engine = None
 
     try:
         search_engine, active_db_mode = _get_search_engine_for_mode(db, db_source)
@@ -2581,6 +2564,8 @@ async def exact_search(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+    finally:
+        _close_engine(search_engine)
 
 
 @app.post("/search/multimodal", response_model=SearchResponse)
@@ -2609,17 +2594,12 @@ async def multimodal_search(
         text_weight = request.text_weight
         vision_weight = request.vision_weight
 
-        # Reuse singleton multi-modal search engine
-        global _mm_search_engine
-        if _mm_search_engine is None:
-            _mm_search_engine = MultiModalSearchEngine(
-                db=db,
-                text_search=_get_multimodal_text_engine(db),
-            )
-        _mm_search_engine.update_db(db)
-        _mm_search_engine.text_weight = text_weight
-        _mm_search_engine.vision_weight = vision_weight
-        mm_search = _mm_search_engine
+        mm_search = MultiModalSearchEngine(
+            db=db,
+            text_weight=text_weight,
+            vision_weight=vision_weight,
+            text_search=_get_multimodal_text_engine(db),
+        )
 
         allowed_filenames = _get_allowed_filenames(user, db)
         allowed_document_ids = _get_allowed_document_ids(user, db)
@@ -2783,17 +2763,12 @@ async def quick_multimodal_search(
 
         start_time = time.time()
 
-        # Reuse singleton multi-modal search engine
-        global _mm_search_engine
-        if _mm_search_engine is None:
-            _mm_search_engine = MultiModalSearchEngine(
-                db=db,
-                text_search=_get_multimodal_text_engine(db),
-            )
-        _mm_search_engine.update_db(db)
-        _mm_search_engine.text_weight = text_weight
-        _mm_search_engine.vision_weight = vision_weight
-        mm_search = _mm_search_engine
+        mm_search = MultiModalSearchEngine(
+            db=db,
+            text_weight=text_weight,
+            vision_weight=vision_weight,
+            text_search=_get_multimodal_text_engine(db),
+        )
 
         fallback_data = mm_search.search_with_fallback(
             query=q,
@@ -3518,7 +3493,7 @@ async def chat_completions(
 
     allowed_filenames = _get_allowed_filenames(user, db)
 
-    # ── Load StreamingVideoQA (singleton, lazy) ──────────────────────────
+    # Load a request-bound StreamingVideoQA wrapper around shared model resources.
     try:
         qa = get_streaming_qa(db=db)
     except Exception as e:
@@ -3579,9 +3554,13 @@ async def get_video_thumbnail(
 ):
     """Return the first keyframe of a video as a thumbnail image."""
     from database.models import Scene as SceneModel
-    from pathlib import Path as FilePath
 
-    # Get the first scene for this video (smallest start_time)
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    if not user_can_access_video(user, str(video.filename)):
+        raise HTTPException(status_code=403, detail="Not authorized for this video")
+
     scene = (
         db.query(SceneModel)
         .filter(
@@ -3597,42 +3576,57 @@ async def get_video_thumbnail(
             status_code=404, detail="No thumbnail available for this video"
         )
 
-    # Resolve path — try absolute first, then relative to project root
-    kf = FilePath(scene.keyframe_path)
-    if not kf.exists():
-        project_root = FilePath(__file__).parent.parent
-        kf = project_root / scene.keyframe_path
-    if not kf.exists():
+    kf = _resolve_keyframe_file_path(scene.keyframe_path)
+    if not kf:
         raise HTTPException(status_code=404, detail="Keyframe file not found on disk")
 
-    suffix = kf.suffix.lower()
-    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
+    if kf.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
         raise HTTPException(status_code=400, detail="Invalid keyframe file type")
 
-    media_type = f"image/{suffix.lstrip('.').replace('jpg', 'jpeg')}"
-    return FileResponse(str(kf), media_type=media_type)
+    return FileResponse(str(kf), media_type=_media_type_for_image(kf))
 
 
 @app.get("/keyframe")
 async def serve_keyframe(
     path: str = Query(..., description="Path to keyframe image"),
+    db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Serve keyframe images for thumbnails in search results."""
-    from pathlib import Path as FilePath
+    from database.models import Scene as SceneModel
 
-    keyframe_path = FilePath(path)
-    if not keyframe_path.exists():
+    keyframe_path = _resolve_keyframe_file_path(path)
+    if not keyframe_path:
         raise HTTPException(status_code=404, detail="Keyframe not found")
 
-    # Basic security: only serve image files
     if keyframe_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
         raise HTTPException(status_code=400, detail="Invalid file type")
 
-    return FileResponse(
-        str(keyframe_path),
-        media_type=f"image/{keyframe_path.suffix.lstrip('.').replace('jpg', 'jpeg')}",
+    scene = (
+        db.query(SceneModel)
+        .join(Video, SceneModel.video_id == Video.id)
+        .filter(SceneModel.keyframe_path == path)
+        .first()
     )
+    if scene is None:
+        basename = os.path.basename(path)
+        candidates = (
+            db.query(SceneModel)
+            .join(Video, SceneModel.video_id == Video.id)
+            .filter(SceneModel.keyframe_path.ilike(f"%{basename}"))
+            .limit(20)
+            .all()
+        )
+        for candidate in candidates:
+            candidate_path = _resolve_keyframe_file_path(candidate.keyframe_path)
+            if candidate_path == keyframe_path:
+                scene = candidate
+                break
+
+    if scene is None or not user_can_access_video(user, str(scene.video.filename)):
+        raise HTTPException(status_code=403, detail="Not authorized for this keyframe")
+
+    return FileResponse(str(keyframe_path), media_type=_media_type_for_image(keyframe_path))
 
 
 @app.get("/api-info")
@@ -3985,32 +3979,49 @@ async def upload_document(
     Upload and process a document (PDF, DOCX, PPTX, image).
     Extracts text, generates embeddings, and stores in DB.
     """
-    suffix = Path(file.filename).suffix.lower()
+    suffix = Path(file.filename or "").suffix.lower()
     if suffix not in _ALLOWED_DOCUMENT_EXT:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type: {suffix}. Allowed: {', '.join(sorted(_ALLOWED_DOCUMENT_EXT))}",
         )
 
-    # Save to documents folder
-    upload_dir = PROJECT_ROOT / "documents"
+    upload_dir = DOCUMENTS_DIR
     upload_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = upload_dir / file.filename
+    safe_filename = _safe_upload_filename(file.filename or "", "document", suffix)
+    dest_path = (upload_dir / safe_filename).resolve()
+    if dest_path.exists():
+        stem = Path(safe_filename).stem
+        safe_filename = f"{stem[:100]}_{uuid.uuid4().hex[:8]}{suffix}"
+        dest_path = (upload_dir / safe_filename).resolve()
+    if not _is_within_directory(dest_path, upload_dir):
+        raise HTTPException(status_code=400, detail="Invalid upload path")
 
-    with open(dest_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
+    max_bytes = int(os.getenv("MAX_DOCUMENT_UPLOAD_MB", "100")) * 1024 * 1024
+    written = 0
+    try:
+        with open(dest_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Document exceeds {max_bytes // (1024 * 1024)} MB limit",
+                    )
+                f.write(chunk)
+    except HTTPException:
+        dest_path.unlink(missing_ok=True)
+        raise
 
-    # Run document pipeline
     try:
         from document_pipeline import DocumentPipeline
 
         pipeline = DocumentPipeline(skip_ingest=False)
-        results = pipeline.process_file(str(dest_path))
+        results = await asyncio.to_thread(pipeline.process_file, str(dest_path))
 
         return {
             "status": "ok",
-            "filename": file.filename,
+            "filename": safe_filename,
             "chunks": len(results.get("chunks", [])),
             "pages": results.get("metadata", {}).get("total_pages", 0),
             "extraction_method": results.get("metadata", {}).get("extraction_method"),

@@ -5,8 +5,9 @@
  */
 
 const ChatAssistant = (() => {
-    const API_URL = 'http://localhost:8000/v1/chat/completions';
-    const TRANSLATE_URL = 'http://localhost:8000/translate';
+    const API_BASE_URL = window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin;
+    const API_URL = `${API_BASE_URL}/v1/chat/completions`;
+    const TRANSLATE_URL = `${API_BASE_URL}/translate`;
     const LANGUAGE_CODE_MAP = {
         English: 'en',
         Norwegian: 'no',
@@ -542,12 +543,11 @@ const ChatAssistant = (() => {
 
     async function translateAssistantMessage(text, targetCode) {
         const headers = { 'Content-Type': 'application/json' };
-        const token = sessionStorage.getItem('atlas_token');
-        if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const response = await fetch(TRANSLATE_URL, {
             method: 'POST',
             headers,
+            credentials: 'include',
             body: JSON.stringify({
                 text,
                 source: 'auto',
@@ -619,14 +619,13 @@ const ChatAssistant = (() => {
             }
 
             const headers = { 'Content-Type': 'application/json' };
-            const token = sessionStorage.getItem('atlas_token');
-            if (token) headers['Authorization'] = `Bearer ${token}`;
             const controller = new AbortController();
             activeRequestController = controller;
 
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers,
+                credentials: 'include',
                 signal: controller.signal,
                 body: JSON.stringify({
                     model: 'ATLAS',
@@ -689,7 +688,7 @@ const ChatAssistant = (() => {
 
             console.error('Chat error:', err);
             bubble.classList.remove('streaming');
-            bubble.innerHTML = `<span class="chat-error">Failed to get response: ${err.message}</span>`;
+            bubble.innerHTML = `<span class="chat-error">Failed to get response: ${formatMarkdown(err.message || 'Unknown error')}</span>`;
         } finally {
             activeRequestController = null;
             setGenerating(false);

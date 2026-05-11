@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-05-11T11:24:24.538359",
+  "project_root": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline",
+  "processed_dir": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline\\processed",
+  "processed_source": "auto",
+  "dataset": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline\\training\\retrieval_dataset.json",
+  "judgments": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline\\training\\relevance_judgments.csv",
+  "output_dir": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline\\training\\retrieval_eval_smoke",
+  "queries": 20,
+  "processed_units": 6911,
+  "variants": [
+    {
+      "name": "bm25_only",
+      "display_name": "BM25-only",
+      "group": "method_baseline",
+      "method": "bm25",
+      "evidence_mode": "full",
+      "dense_model": "none",
+      "dense_weight": 0.0,
+      "bm25_weight": 1.0,
+      "description": "Lexical BM25 over transcript, OCR, captions, and labels."
+    },
+    {
+      "name": "ocr_only_bm25",
+      "display_name": "OCR only BM25",
+      "group": "modality_ablation",
+      "method": "bm25",
+      "evidence_mode": "ocr",
+      "dense_model": "none",
+      "dense_weight": 0.0,
+      "bm25_weight": 1.0,
+      "description": "Lexical OCR-only ablation."
+    },
+    {
+      "name": "caption_only_bm25",
+      "display_name": "Caption only BM25",
+      "group": "modality_ablation",
+      "method": "bm25",
+      "evidence_mode": "caption",
+      "dense_model": "none",
+      "dense_weight": 0.0,
+      "bm25_weight": 1.0,
+      "description": "Lexical caption-only ablation."
+    }
+  ],
+  "k_values": [
+    1,
+    3,
+    5,
+    10
+  ],
+  "eval_depth": 10,
+  "iou_threshold": 0.1,
+  "base_model": "Qwen/Qwen3-Embedding-0.6B",
+  "lora_model": "training/checkpoints",
+  "include_lora": false
+}

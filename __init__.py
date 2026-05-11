@@ -5,14 +5,14 @@ It includes tools for scene detection, transcription, and embedding.
 """
 
 from .scene_detector import SceneDetector
-from .transcriber import Transcriber
+from .transcriber import SimpleTranscriber
 from .basic_pipeline import BasicVideoPipeline
-from semantic_refiner import SemanticSceneRefiner, RefinerConfig
-# from .embedder import Embedder
+
+Transcriber = SimpleTranscriber
 
 __all__ = [
     "SceneDetector",
+    "SimpleTranscriber",
     "Transcriber",
     "BasicVideoPipeline",
-    # "Embedder",
 ]

@@ -119,10 +119,10 @@ GO
 IF OBJECT_ID(N'dbo.embeddings', N'U') IS NULL
 BEGIN
     DECLARE @HasVectorEmb BIT = CASE WHEN EXISTS (SELECT 1 FROM sys.types WHERE name = N'vector') THEN 1 ELSE 0 END;
-    DECLARE @EmbeddingDim INT = 4096;
+    DECLARE @EmbeddingDim INT = 1024;
     DECLARE @UseVectorEmb BIT = CASE WHEN @HasVectorEmb = 1 AND @EmbeddingDim <= 1998 THEN 1 ELSE 0 END;
     DECLARE @EmbeddingColumnDef NVARCHAR(200) =
-        CASE WHEN @UseVectorEmb = 1 THEN N'embedding VECTOR(4096) NULL,' ELSE N'embedding NVARCHAR(MAX) NULL,' END;
+        CASE WHEN @UseVectorEmb = 1 THEN N'embedding VECTOR(1024) NULL,' ELSE N'embedding NVARCHAR(MAX) NULL,' END;
     DECLARE @EmbeddingJsonConstraint NVARCHAR(MAX) =
         CASE WHEN @HasVectorEmb = 1 THEN N'' ELSE N'CONSTRAINT CK_embeddings_embedding_json CHECK (embedding IS NULL OR ISJSON(embedding) = 1),' END;
 
@@ -222,10 +222,10 @@ GO
 IF OBJECT_ID(N'dbo.search_queries', N'U') IS NULL
 BEGIN
     DECLARE @HasVectorSearchQuery BIT = CASE WHEN EXISTS (SELECT 1 FROM sys.types WHERE name = N'vector') THEN 1 ELSE 0 END;
-    DECLARE @SearchQueryEmbeddingDim INT = 4096;
+    DECLARE @SearchQueryEmbeddingDim INT = 1024;
     DECLARE @UseVectorSearchQuery BIT = CASE WHEN @HasVectorSearchQuery = 1 AND @SearchQueryEmbeddingDim <= 1998 THEN 1 ELSE 0 END;
     DECLARE @SearchQueryEmbeddingColumnDef NVARCHAR(200) =
-        CASE WHEN @UseVectorSearchQuery = 1 THEN N'query_embedding VECTOR(4096) NULL,' ELSE N'query_embedding NVARCHAR(MAX) NULL,' END;
+        CASE WHEN @UseVectorSearchQuery = 1 THEN N'query_embedding VECTOR(1024) NULL,' ELSE N'query_embedding NVARCHAR(MAX) NULL,' END;
     DECLARE @SearchQueryEmbeddingJsonConstraint NVARCHAR(MAX) =
         CASE WHEN @HasVectorSearchQuery = 1 THEN N'' ELSE N'CONSTRAINT CK_search_queries_query_embedding_json CHECK (query_embedding IS NULL OR ISJSON(query_embedding) = 1),' END;
 

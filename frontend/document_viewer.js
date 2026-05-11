@@ -3,7 +3,6 @@
 (() => {
     const qs = new URLSearchParams(window.location.search || '');
     const docId = qs.get('doc_id');
-    const token = qs.get('token');
     const filename = (qs.get('filename') || '').trim();
     const initialPage = Number.parseInt(qs.get('page') || '1', 10);
 
@@ -36,12 +35,12 @@
         filenameEl.title = filename || '';
     }
 
-    if (!docId || !token) {
-        showError('Missing <code>doc_id</code> or <code>token</code> in the URL.');
+    if (!docId) {
+        showError('Missing <code>doc_id</code> in the URL.');
         return;
     }
 
-    const pdfUrl = `${apiBase()}/documents/stream/${encodeURIComponent(docId)}?token=${encodeURIComponent(token)}`;
+    const pdfUrl = `${apiBase()}/documents/stream/${encodeURIComponent(docId)}`;
     if (downloadLink) downloadLink.href = pdfUrl;
 
     if (!canvas || !pdfjsLib) {
@@ -153,6 +152,7 @@
     pdfjsLib
         .getDocument({
             url: pdfUrl,
+            withCredentials: true,
             stopAtErrors: false,
             disableAutoFetch: false,
             disableStream: false,

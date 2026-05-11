@@ -217,12 +217,6 @@ pip install --index-url https://download.pytorch.org/whl/cu124 torch==2.6.0+cu12
 pip install -r requirements.txt
 ```
 
-The API imports FastAPI, Uvicorn, multipart upload support, JWT handling, and optional bcrypt password hashing. Install these if they are not already present in your environment:
-
-```powershell
-pip install fastapi uvicorn python-multipart PyJWT bcrypt
-```
-
 ### 3. Start PostgreSQL with pgvector
 
 ```powershell
@@ -251,8 +245,8 @@ Create a local `.env` file. Do not commit this file.
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=video_semantic_search
-DB_USER=user
-DB_PASSWORD=user
+DB_USER=postgres
+DB_PASSWORD=postgres
 
 DB_QUERY_MODE=postgres
 PIPELINE_INGEST_TARGET=postgres
@@ -264,6 +258,9 @@ VISUAL_ENRICHMENT_MODEL=Qwen/Qwen2.5-VL-7B-Instruct
 
 JWT_SECRET=replace-with-a-long-random-secret
 JWT_EXPIRE_HOURS=24
+CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+ATLAS_BOOTSTRAP_ADMIN_USER=admin
+ATLAS_BOOTSTRAP_ADMIN_PASSWORD=replace-before-first-start
 ```
 
 ### 5. Process Videos
@@ -319,14 +316,14 @@ http://localhost:8000
 http://localhost:8000/docs
 ```
 
-On the first startup, the API creates a default admin user if the users table is empty:
+On the first startup, the API creates an admin account only when `ATLAS_BOOTSTRAP_ADMIN_PASSWORD` is set and the users table is empty:
 
 ```text
-username: user
-password: user
+username: value of ATLAS_BOOTSTRAP_ADMIN_USER, default admin
+password: value of ATLAS_BOOTSTRAP_ADMIN_PASSWORD
 ```
 
-Change this account immediately for any shared or production-like deployment.
+Unset `ATLAS_BOOTSTRAP_ADMIN_PASSWORD` after the first successful startup.
 
 ## Configuration
 
@@ -337,8 +334,8 @@ Change this account immediately for any shared or production-like deployment.
 | `DB_HOST`                   | `localhost`                         | PostgreSQL host.                                                    |
 | `DB_PORT`                   | `5432`                              | PostgreSQL port.                                                    |
 | `DB_NAME`                   | `video_semantic_search`             | PostgreSQL database name.                                           |
-| `DB_USER`                   | `user`                              | PostgreSQL username.                                                |
-| `DB_PASSWORD`               | `user`                              | PostgreSQL password.                                                |
+| `DB_USER`                   | `postgres`                          | PostgreSQL username.                                                |
+| `DB_PASSWORD`               | `postgres`                          | PostgreSQL password.                                                |
 | `DB_QUERY_MODE`             | `postgres`                          | Runtime search backend: `postgres`, `sqlserver`, or `both`.         |
 | `PIPELINE_INGEST_TARGET`    | `postgres`                          | Video ingestion target: `postgres`, `sqlserver`, `both`, or `none`. |
 | `TEXT_EMBEDDING_MODEL`      | `Qwen/Qwen3-Embedding-0.6B`         | Text embedding model.                                               |
@@ -348,6 +345,11 @@ Change this account immediately for any shared or production-like deployment.
 | `SHARED_LLM_MODEL`          | `Qwen/Qwen2.5-1.5B-Instruct`        | Shared local LLM for QA/reranking helpers.                          |
 | `JWT_SECRET`                | process-local random value          | JWT signing key. Set a stable secret outside development.           |
 | `JWT_EXPIRE_HOURS`          | `24`                                | Access token lifetime.                                              |
+| `CORS_ORIGINS`              | localhost API origins               | Comma-separated browser origins allowed to call the API.            |
+| `AUTH_COOKIE_SECURE`        | `0`                                 | Set to `1` when serving over HTTPS so auth cookies are Secure.      |
+| `ATLAS_BOOTSTRAP_ADMIN_USER` | `admin`                            | Username for the first admin account when bootstrapping.            |
+| `ATLAS_BOOTSTRAP_ADMIN_PASSWORD` | unset                          | Required to create the first admin account automatically.           |
+| `MAX_DOCUMENT_UPLOAD_MB`    | `100`                               | Maximum accepted document upload size.                              |
 
 ### Search and Ranking Variables
 
@@ -527,9 +529,9 @@ The PostgreSQL schema uses pgvector HNSW indexes for vector similarity and GIN i
 ## Operations and Security
 
 - Set a stable, high-entropy `JWT_SECRET` before sharing the service.
-- Replace or delete the default `admin/admin` account immediately after first startup.
+- Bootstrap the first admin with `ATLAS_BOOTSTRAP_ADMIN_PASSWORD`; the API no longer creates a hard-coded default password.
 - Do not commit `.env`, local media, database dumps, checkpoints, processed outputs, or private documents.
-- Review CORS settings in `api/app.py` before deployment. The development configuration allows all origins.
+- Set `CORS_ORIGINS` to the exact UI origins allowed to call the API.
 - Keep model names and embedding dimensions aligned between ingestion, schemas, and search runtime. If changing text embedding dimensions, rebuild or migrate vector columns accordingly.
 - Use external storage for large datasets and model checkpoints. GitHub repositories should stay small and source-focused.
 - Treat query logs, feedback, source videos, transcripts, and documents as potentially sensitive data.
@@ -550,8 +552,8 @@ Check that `.env` matches the Docker defaults:
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=video_semantic_search
-DB_USER=user
-DB_PASSWORD=user
+DB_USER=postgres
+DB_PASSWORD=postgres
 ```
 
 ### Port 5432 Is Already in Use
@@ -591,4 +593,4 @@ The API preloads some search components and lazily loads heavier GPU models. Fir
 
 ## License
 
-No explicit license file is currently included. Add a `LICENSE` file before public distribution so users know how the repository can be used, modified, and redistributed.
+This repository is currently marked all rights reserved in `LICENSE`. Replace it with the license your project requires before public distribution.

@@ -61,10 +61,10 @@ GO
 IF OBJECT_ID(N'dbo.document_embeddings', N'U') IS NULL
 BEGIN
     DECLARE @HasVectorDoc BIT = CASE WHEN EXISTS (SELECT 1 FROM sys.types WHERE name = N'vector') THEN 1 ELSE 0 END;
-    DECLARE @DocEmbeddingDim INT = 4096;
+    DECLARE @DocEmbeddingDim INT = 1024;
     DECLARE @UseVectorDoc BIT = CASE WHEN @HasVectorDoc = 1 AND @DocEmbeddingDim <= 1998 THEN 1 ELSE 0 END;
     DECLARE @DocEmbeddingColumnDef NVARCHAR(200) =
-        CASE WHEN @UseVectorDoc = 1 THEN N'embedding VECTOR(4096) NULL,' ELSE N'embedding NVARCHAR(MAX) NULL,' END;
+        CASE WHEN @UseVectorDoc = 1 THEN N'embedding VECTOR(1024) NULL,' ELSE N'embedding NVARCHAR(MAX) NULL,' END;
     DECLARE @DocEmbeddingJsonConstraint NVARCHAR(MAX) =
         CASE WHEN @HasVectorDoc = 1 THEN N'' ELSE N'CONSTRAINT CK_document_embeddings_embedding_json CHECK (embedding IS NULL OR ISJSON(embedding) = 1),' END;
 

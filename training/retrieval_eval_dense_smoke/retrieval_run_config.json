@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-05-11T11:27:55.283379",
+  "project_root": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline",
+  "processed_dir": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline\\processed",
+  "processed_source": "auto",
+  "dataset": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline\\training\\retrieval_dataset.json",
+  "judgments": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline\\training\\relevance_judgments.csv",
+  "output_dir": "D:\\Education\\UiS\\MS Computer Science\\Spring 2026, 4th\\Code\\BasePipeline\\training\\retrieval_eval_dense_smoke",
+  "queries": 2,
+  "processed_units": 20,
+  "max_queries": 2,
+  "max_corpus_units": 20,
+  "variants": [
+    {
+      "name": "bm25_only",
+      "display_name": "BM25-only",
+      "group": "method_baseline",
+      "method": "bm25",
+      "evidence_mode": "full",
+      "dense_model": "none",
+      "dense_weight": 0.0,
+      "bm25_weight": 1.0,
+      "description": "Lexical BM25 over transcript, OCR, captions, and labels."
+    },
+    {
+      "name": "dense_only",
+      "display_name": "Dense-only",
+      "group": "method_baseline",
+      "method": "dense",
+      "evidence_mode": "transcript",
+      "dense_model": "base",
+      "dense_weight": 1.0,
+      "bm25_weight": 0.0,
+      "description": "Qwen3 dense retrieval over transcript text only."
+    },
+    {
+      "name": "hybrid",
+      "display_name": "Hybrid",
+      "group": "method_baseline",
+      "method": "hybrid",
+      "evidence_mode": "transcript",
+      "dense_model": "base",
+      "dense_weight": 0.65,
+      "bm25_weight": 0.35,
+      "description": "BM25 plus Qwen3 dense retrieval over transcript text."
+    }
+  ],
+  "k_values": [
+    1,
+    3,
+    5,
+    10
+  ],
+  "eval_depth": 10,
+  "iou_threshold": 0.1,
+  "base_model": "Qwen/Qwen3-Embedding-0.6B",
+  "lora_model": "training/checkpoints",
+  "include_lora": false
+}

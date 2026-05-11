@@ -273,20 +273,11 @@ def _build_citation_block(results: List[SearchResult]) -> str:
 
 # ── Singleton ──────────────────────────────────────────────────────────────────
 
-_streaming_qa: Optional[StreamingVideoQA] = None
-
-
 def get_streaming_qa(db: Session) -> StreamingVideoQA:
-    """Get or create the global StreamingVideoQA instance."""
-    global _streaming_qa
-    if _streaming_qa is None:
-        _streaming_qa = StreamingVideoQA(db=db)
-    else:
-        _streaming_qa.update_db(db)
-    return _streaming_qa
+    """Create a request-bound StreamingVideoQA wrapper around shared LLM resources."""
+    return StreamingVideoQA(db=db)
 
 
 def reset_streaming_qa():
-    """Force recreation of the singleton (e.g. after DB reconnect)."""
-    global _streaming_qa
-    _streaming_qa = None
+    """Backward-compatible no-op; StreamingVideoQA is request-bound now."""
+    return None

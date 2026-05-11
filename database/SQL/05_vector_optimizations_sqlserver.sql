@@ -35,8 +35,8 @@ GO
 
 CREATE OR ALTER FUNCTION dbo.fn_vector_cosine_similarity
 (
-    @vector_a VECTOR(4096),
-    @vector_b VECTOR(4096)
+    @vector_a VECTOR(1024),
+    @vector_b VECTOR(1024)
 )
 RETURNS FLOAT
 AS
