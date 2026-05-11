@@ -2285,6 +2285,44 @@ function displayAiAnswer(qaData) {
     }
 }
 
+function getResultsTitle(data) {
+    const explicitTitle = (data?.display_title || '').toString().trim();
+    if (explicitTitle) return explicitTitle;
+
+    const filters = data?.browse_filters || null;
+    const categories = Array.isArray(filters?.category) ? filters.category.filter(Boolean) : [];
+    const installations = Array.isArray(filters?.site) ? filters.site.filter(Boolean) : [];
+    if (categories.length || installations.length) {
+        const parts = [];
+        if (categories.length) parts.push(`Category: ${categories.join(', ')}`);
+        if (installations.length) parts.push(`Installation: ${installations.join(', ')}`);
+        return `Results for ${parts.join(' / ')}`;
+    }
+
+    const queryText = (data?.query || '').toString();
+    return queryText ? `Results for "${queryText}"` : 'Results';
+}
+
+function getBrowseSourceCountText(results = []) {
+    const videoIds = new Set();
+    const documentIds = new Set();
+
+    results.forEach(result => {
+        if (isDocumentResult(result)) {
+            const id = result.document_id ?? result.video_id ?? result.video_filename;
+            if (id !== undefined && id !== null) documentIds.add(String(id));
+            return;
+        }
+        const id = result.video_id ?? result.video_filename;
+        if (id !== undefined && id !== null) videoIds.add(String(id));
+    });
+
+    const parts = [];
+    if (videoIds.size) parts.push(`${videoIds.size} video${videoIds.size !== 1 ? 's' : ''}`);
+    if (documentIds.size) parts.push(`${documentIds.size} document${documentIds.size !== 1 ? 's' : ''}`);
+    return parts.join(' | ');
+}
+
 // Display Results (and optional AI answer)
 function displayResults(data, qaData = null) {
     hideLoading();
@@ -2328,7 +2366,7 @@ function displayResults(data, qaData = null) {
     // If backend applied a facet, keep it in state
     currentFacet = data.facet_applied || currentFacet || 'auto';
 
-    resultsTitle.textContent = `Results for "${query}"`;
+    resultsTitle.textContent = getResultsTitle(data);
 
     // Show AI answer if provided synchronously; otherwise leave the panel
     // alone — the streaming fetchAiAnswer manages its own visibility.
@@ -2337,7 +2375,14 @@ function displayResults(data, qaData = null) {
     }
 
     // Display count and search time (like Google)
-    let countText = `${textCount} text result${textCount !== 1 ? 's' : ''}`;
+    const isBrowseResult = data?.search_strategy === 'category_browse';
+    let countText = isBrowseResult
+        ? `${textCount} result${textCount !== 1 ? 's' : ''}`
+        : `${textCount} text result${textCount !== 1 ? 's' : ''}`;
+    if (isBrowseResult) {
+        const sourceCountText = getBrowseSourceCountText(lastSearchSets.text?.results || results || []);
+        if (sourceCountText) countText += ` | ${sourceCountText}`;
+    }
     if (hasMultimodalDataset) {
         countText += ` • ${multimodalCount} visual result${multimodalCount !== 1 ? 's' : ''}`;
     }
@@ -2350,7 +2395,8 @@ function displayResults(data, qaData = null) {
     resultsCount.textContent = countText;
 
     if (textCount === 0 && multimodalCount === 0) {
-        resultsTitle.textContent = query ? `No matches for "${query}"` : 'No matches found';
+        const resultTitle = getResultsTitle(data).replace(/^Results for\s+/i, '');
+        resultsTitle.textContent = resultTitle ? `No matches for ${resultTitle}` : 'No matches found';
         let emptyCountText = '0 matches';
         if (activeDbMode) {
             emptyCountText += ` | DB: ${formatDbSourceLabel(activeDbMode)}`;

@@ -549,6 +549,44 @@ def _get_allowed_document_ids(user: User, db: Session) -> Optional[set]:
     return {row.id for row in rows}
 
 
+def _get_document_ids_for_filters(
+    user: User,
+    db: Session,
+    categories: Optional[List[str]] = None,
+    sites: Optional[List[str]] = None,
+    label: Optional[str] = None,
+) -> Optional[set]:
+    """Return document IDs visible to the user and matching optional UI filters."""
+    allowed_ids = _get_allowed_document_ids(user, db)
+    cats = [c for c in (categories or []) if c]
+    site_labels = [s for s in (sites or []) if s]
+    label_filter = (label or "").strip()
+
+    if not cats and not site_labels and not label_filter:
+        return allowed_ids
+
+    try:
+        from database.document_models import Document as DocumentModel
+    except Exception:
+        return set()
+
+    query = (
+        db.query(DocumentModel.id)
+        .outerjoin(VideoCategory, DocumentModel.category_id == VideoCategory.id)
+    )
+    if cats:
+        query = query.filter(VideoCategory.name.in_(cats))
+    if label_filter:
+        query = query.filter(DocumentModel.label.ilike(f"%{label_filter}%"))
+    if site_labels:
+        query = query.filter(DocumentModel.label.in_(site_labels))
+
+    filtered_ids = {row.id for row in query.all()}
+    if allowed_ids is None:
+        return filtered_ids
+    return allowed_ids & filtered_ids
+
+
 def _get_accessible_available_videos(
     user: User, db: Session
 ) -> List[tuple[Video, Path]]:
@@ -2356,7 +2394,13 @@ async def quick_search(
         allowed_filenames = acl_filenames
     else:
         allowed_filenames = extra_filter
-    allowed_document_ids = _get_allowed_document_ids(user, db)
+    allowed_document_ids = _get_document_ids_for_filters(
+        user,
+        db,
+        categories=cats,
+        sites=sites,
+        label=label,
+    )
 
     try:
         search_engine, active_db_mode = _get_search_engine_for_mode(db, db_source)
@@ -2435,8 +2479,12 @@ async def browse_by_category(
     category: Optional[List[str]] = Query(
         None, description="Category name(s) to browse"
     ),
-    site: Optional[List[str]] = Query(None, description="Site/label name(s) to browse"),
-    limit: int = Query(10, description="Max videos to return", ge=1, le=50),
+    site: Optional[List[str]] = Query(
+        None, description="Installation/site label name(s) to browse"
+    ),
+    limit: int = Query(
+        10, description="Max videos and documents to return per source", ge=1, le=50
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -2450,10 +2498,10 @@ async def browse_by_category(
     sites = [s for s in (site or []) if s]
     if not cats and not sites:
         raise HTTPException(
-            status_code=400, detail="At least one category or site is required"
+            status_code=400, detail="At least one category or installation is required"
         )
 
-    # Build query based on category and/or site filters
+    # Build video query based on category and/or installation filters.
     q_videos = db.query(Video)
     if cats:
         q_videos = q_videos.join(
@@ -2473,7 +2521,38 @@ async def browse_by_category(
 
     matched_videos = matched_videos[:limit]
 
-    # Build grouped results with a few transcript snippets per video
+    matched_documents = []
+    DocumentModel = None
+    DocumentChunkModel = None
+    try:
+        from database.document_models import (
+            Document as DocumentModel,
+            DocumentChunk as DocumentChunkModel,
+        )
+    except Exception:
+        DocumentModel = None
+        DocumentChunkModel = None
+
+    if DocumentModel is not None and DocumentChunkModel is not None:
+        q_docs = db.query(DocumentModel)
+        if cats:
+            q_docs = q_docs.join(
+                VideoCategory, DocumentModel.category_id == VideoCategory.id
+            ).filter(VideoCategory.name.in_(cats))
+        if sites:
+            q_docs = q_docs.filter(DocumentModel.label.in_(sites))
+
+        acl_clause = _document_acl_clause(user)
+        if acl_clause is not None:
+            if not cats:
+                q_docs = q_docs.outerjoin(
+                    VideoCategory, DocumentModel.category_id == VideoCategory.id
+                )
+            q_docs = q_docs.filter(acl_clause)
+
+        matched_documents = q_docs.order_by(DocumentModel.id.desc()).limit(limit).all()
+
+    # Build grouped results with a few transcript snippets/passages per source item.
     grouped_results = []
     result_dicts = []
     for v in matched_videos:
@@ -2487,8 +2566,10 @@ async def browse_by_category(
         occurrences = []
         for seg in segments:
             rd = {
+                "source_type": "video",
                 "video_id": v.id,
                 "video_filename": v.filename,
+                "video_path": v.file_path,
                 "segment_index": seg.segment_index,
                 "start_time": seg.start_time,
                 "end_time": seg.end_time,
@@ -2497,10 +2578,82 @@ async def browse_by_category(
             }
             occurrences.append(rd)
             result_dicts.append(rd)
+        if occurrences:
+            grouped_results.append(
+                {
+                    "source_type": "video",
+                    "video_id": v.id,
+                    "video_filename": v.filename,
+                    "occurrences": occurrences,
+                }
+            )
+
+    for doc in matched_documents:
+        chunks = (
+            db.query(DocumentChunkModel)
+            .filter(DocumentChunkModel.document_id == doc.id)
+            .order_by(DocumentChunkModel.chunk_index)
+            .limit(5)
+            .all()
+        )
+        if not chunks:
+            chunks = [None]
+
+        occurrences = []
+        for idx, chunk in enumerate(chunks):
+            page_number = getattr(chunk, "page_number", None)
+            chunk_index = (
+                getattr(chunk, "chunk_index", None)
+                if chunk is not None
+                else idx
+            )
+            section_heading = (
+                getattr(chunk, "section_heading", None)
+                if chunk is not None
+                else None
+            )
+            text = getattr(chunk, "text", None) or f"Document: {doc.filename}"
+            if section_heading:
+                text = f"[{section_heading}] {text}"
+
+            if page_number:
+                location = f"Page {page_number}"
+            elif chunk_index is not None:
+                location = f"Chunk {int(chunk_index) + 1}"
+            else:
+                location = "Document"
+
+            rd = {
+                "source_type": "document",
+                "segment_id": getattr(chunk, "id", None),
+                "video_id": doc.id,
+                "video_filename": doc.filename,
+                "video_path": doc.file_path,
+                "document_id": doc.id,
+                "document_filename": doc.filename,
+                "document_path": doc.file_path,
+                "document_page": page_number,
+                "document_chunk_index": chunk_index,
+                "document_section_heading": section_heading,
+                "document_file_type": doc.file_type,
+                "document_location": location,
+                "timestamp": location,
+                "start_time": 0.0,
+                "end_time": 0.0,
+                "text": text,
+                "score": 1.0,
+                "match_type": "browse",
+                "result_id": getattr(chunk, "id", None),
+            }
+            occurrences.append(rd)
+            result_dicts.append(rd)
+
         grouped_results.append(
             {
-                "video_id": v.id,
-                "video_filename": v.filename,
+                "source_type": "document",
+                "video_id": doc.id,
+                "video_filename": doc.filename,
+                "display_name": doc.filename,
                 "occurrences": occurrences,
             }
         )
@@ -2519,25 +2672,36 @@ async def browse_by_category(
 
     # Rebuild grouped payload from telemetry-enriched result rows (has impression ids).
     grouped_results = []
-    grouped_map: Dict[int, Dict[str, Any]] = {}
+    grouped_map: Dict[str, Dict[str, Any]] = {}
     for row in result_dicts:
-        vid = row["video_id"]
-        if vid not in grouped_map:
-            grouped_map[vid] = {
-                "video_id": vid,
+        source_type = row.get("source_type") or "video"
+        entity_id = (
+            row.get("document_id")
+            if source_type == "document"
+            else row.get("video_id")
+        )
+        group_key = f"{source_type}:{entity_id}"
+        if group_key not in grouped_map:
+            grouped_map[group_key] = {
+                "source_type": source_type,
+                "video_id": row["video_id"],
                 "video_filename": row["video_filename"],
+                "display_name": row.get("document_filename") or row["video_filename"],
                 "occurrences": [],
             }
-        grouped_map[vid]["occurrences"].append(row)
+        grouped_map[group_key]["occurrences"].append(row)
     grouped_results = list(grouped_map.values())
 
-    browse_parts = []
+    title_parts = []
     if cats:
-        browse_parts.append(", ".join(cats))
+        title_parts.append(f"Category: {', '.join(cats)}")
     if sites:
-        browse_parts.append(", ".join(sites))
+        title_parts.append(f"Installation: {', '.join(sites)}")
+    display_query = " / ".join(title_parts)
     return {
-        "query": f"[Browse: {' / '.join(browse_parts)}]",
+        "query": display_query,
+        "display_title": f"Results for {display_query}",
+        "browse_filters": {"category": cats, "site": sites},
         "request_id": request_id,
         "results_count": len(result_dicts),
         "results": result_dicts,
@@ -2791,7 +2955,13 @@ async def quick_multimodal_search(
         allowed_filenames = acl_filenames
     else:
         allowed_filenames = extra_filter
-    allowed_document_ids = _get_allowed_document_ids(user, db)
+    allowed_document_ids = _get_document_ids_for_filters(
+        user,
+        db,
+        categories=cats,
+        sites=sites,
+        label=label,
+    )
 
     try:
         text_weight, vision_weight = 0.5, 0.5
