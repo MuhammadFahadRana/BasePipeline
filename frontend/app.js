@@ -2613,6 +2613,11 @@ function getResultIconSvg(result) {
     `;
 }
 
+function isDocumentGroup(group) {
+    const topOcc = (group?.occurrences || [])[0] || {};
+    return isDocumentResult(topOcc) || String(group?.source_type || '').toLowerCase() === 'document';
+}
+
 /**
  * Render results grouped by video.  Each video is a collapsible card showing
  * the video name + number of occurrences.  Inside, every occurrence is listed
@@ -2665,7 +2670,38 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
     // Detect browse mode (no search query — just browsing by category/site)
     const isBrowse = search_strategy === 'category_browse';
 
-    // Render each video group
+    const videoGroups = groupedResults.filter(group => !isDocumentGroup(group));
+    const documentGroups = groupedResults.filter(group => isDocumentGroup(group));
+    const splitBySource = videoGroups.length > 0 && documentGroups.length > 0;
+    let sourceBodies = null;
+
+    if (splitBySource) {
+        const sourceGrid = document.createElement('div');
+        sourceGrid.className = 'results-source-grid';
+
+        const makeSourceColumn = (kind, title, count, itemLabel) => {
+            const column = document.createElement('section');
+            column.className = `results-source-column results-source-column-${kind}`;
+            column.innerHTML = `
+                <div class="results-source-column-header">
+                    <h3>${title}</h3>
+                    <span>${count} ${itemLabel}${count !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="results-source-column-body"></div>
+            `;
+            sourceGrid.appendChild(column);
+            return column.querySelector('.results-source-column-body');
+        };
+
+        sourceBodies = {
+            videos: makeSourceColumn('videos', 'Videos', videoGroups.length, 'video'),
+            documents: makeSourceColumn('documents', 'Documents', documentGroups.length, 'document'),
+        };
+
+        resultsContainer.appendChild(sourceGrid);
+    }
+
+    // Render each source group
     groupedResults.forEach((group) => {
         const videoCard = document.createElement('div');
         videoCard.className = 'video-group-card';
@@ -2797,7 +2833,11 @@ function renderGroupedResults(groupedResults, flatResults, search_strategy, sear
 
         videoCard.appendChild(header);
         videoCard.appendChild(occList);
-        resultsContainer.appendChild(videoCard);
+        if (sourceBodies) {
+            (groupIsDocument ? sourceBodies.documents : sourceBodies.videos).appendChild(videoCard);
+        } else {
+            resultsContainer.appendChild(videoCard);
+        }
     });
 }
 

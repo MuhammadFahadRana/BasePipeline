@@ -107,3 +107,9 @@ SQLImports/manifest.json
 
 #Scripts Folder
 scripts/
+
+# The generated results files
+*.npz
+
+# Training Folder
+training/

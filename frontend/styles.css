@@ -2730,6 +2730,54 @@ select {
    GROUPED RESULTS BY VIDEO
    ======================================== */
 
+.results-source-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.results-source-column {
+    min-width: 0;
+}
+
+.results-source-column-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.65rem;
+    padding: 0 0.1rem;
+}
+
+.results-source-column-header h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.results-source-column-header span {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.results-source-column-body .video-group-card {
+    margin-bottom: 0.85rem;
+}
+
+.results-source-grid .occurrence-ts-row {
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.results-source-grid .occurrence-score-badges,
+.results-source-grid .occurrence-score {
+    margin-left: 0;
+}
+
 .video-group-card {
     background: var(--bg-primary, #fff);
     border: 1px solid var(--border-light);
@@ -2901,6 +2949,12 @@ select {
 
 .occurrence-show-more:hover {
     background: rgba(99, 102, 241, 0.04);
+}
+
+@media (max-width: 860px) {
+    .results-source-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .admin-upload-area:hover,
