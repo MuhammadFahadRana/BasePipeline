@@ -1,7 +1,0 @@
-variant,display_name,method,evidence_mode,query_id,query,query_type,target_video,target_start_time,target_end_time,target_segment_index,rank,found,first_relevant_iou,first_relevant_abs_error_s,top1_video,top1_segment_index,top1_start_time,top1_end_time,top1_score,top1_iou,top1_abs_error_s,query_latency_ms
-bm25_only,BM25-only,bm25,full,auto_0001,where do they talk about Over past million years must?,natural_search,17Min,264.7,272.16,64,1,True,1.0,0.0,17Min,64,264.7,272.16,11.1444,1.0,0.0,1.379
-bm25_only,BM25-only,bm25,full,auto_0002,happening on Europa to,exact_keyword,17Min,264.7,272.16,64,1,True,1.0,0.0,17Min,64,264.7,272.16,5.7043,1.0,0.0,0.071
-dense_only,Dense-only,dense,transcript,auto_0001,where do they talk about Over past million years must?,natural_search,17Min,264.7,272.16,64,1,True,1.0,0.0,17Min,64,264.7,272.16,0.4928,1.0,0.0,2563.569
-dense_only,Dense-only,dense,transcript,auto_0002,happening on Europa to,exact_keyword,17Min,264.7,272.16,64,4,True,1.0,0.0,17Min,11,43.68000000000001,46.72,0.6733,0.0,221.02,2561.565
-hybrid,Hybrid,hybrid,transcript,auto_0001,where do they talk about Over past million years must?,natural_search,17Min,264.7,272.16,64,1,True,1.0,0.0,17Min,64,264.7,272.16,1.0,1.0,0.0,2205.882
-hybrid,Hybrid,hybrid,transcript,auto_0002,happening on Europa to,exact_keyword,17Min,264.7,272.16,64,2,True,1.0,0.0,17Min,11,43.68000000000001,46.72,0.8311,0.0,221.02,2204.268

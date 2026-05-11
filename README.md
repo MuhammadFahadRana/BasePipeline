@@ -181,7 +181,6 @@ BasePipeline/
 |   |-- sqlserver_search.py       # SQL Server retrieval path
 |   |-- reranker.py               # Optional cross-encoder/LLM reranking
 |   `-- query_translation.py      # Query translation and expansion
-|-- training/                     # Retrieval, ASR, embedding, and reranker training utilities
 |-- basic_pipeline.py             # End-to-end video processing CLI
 |-- document_pipeline.py          # End-to-end document processing CLI
 |-- ingest_processed_documents.py # Batch document results ingestion CLI
