@@ -9,6 +9,7 @@ The project is designed for research and applied industrial search scenarios whe
 - [Capabilities](#capabilities)
 - [Architecture](#architecture)
 - [Repository Layout](#repository-layout)
+- [Instruction Manual](#instruction-manual)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
@@ -189,6 +190,10 @@ BasePipeline/
 `-- README.md
 ```
 
+## Instruction Manual
+
+For company handover, simple operating instructions, file descriptions, setup notes, and model/configuration guidance, use [INSTRUCTION_MANUAL.md](INSTRUCTION_MANUAL.md) together with this README.
+
 ## Prerequisites
 
 - Python 3.11 recommended.
@@ -216,6 +221,12 @@ pip install --index-url https://download.pytorch.org/whl/cu124 torch==2.6.0+cu12
 pip install -r requirements.txt
 ```
 
+If pip cannot resolve the `transformers` dependency, reinstall the project constraint:
+
+```powershell
+pip install "transformers>=4.57,<5.0" --force-reinstall
+```
+
 ### 3. Start PostgreSQL with pgvector
 
 ```powershell
@@ -230,11 +241,16 @@ python -c "from database.config import test_connection, init_db; test_connection
 
 The Docker container also mounts `database/schema.sql` as an initialization script for a fresh volume.
 
-If you plan to use document ingestion or document search, apply the document schema after the main schema:
+Apply the recommended optimization helpers and the document schema after the main schema:
 
 ```powershell
+Get-Content -Raw database\apply_optimizations.sql | docker exec -i video_search_db psql -U postgres -d video_semantic_search
 Get-Content -Raw database\document_schema.sql | docker exec -i video_search_db psql -U postgres -d video_semantic_search
 ```
+
+If the database volume already existed before this project version, re-run the commands above after pulling updates. They are written to be safe for repeated execution.
+
+If you do not need document ingestion or document search, `database\document_schema.sql` can be skipped.
 
 ### 4. Configure Environment
 
@@ -328,27 +344,27 @@ Unset `ATLAS_BOOTSTRAP_ADMIN_PASSWORD` after the first successful startup.
 
 ### Core Runtime Variables
 
-| Variable                    | Default                             | Purpose                                                             |
-| --------------------------- | ----------------------------------- | ------------------------------------------------------------------- |
-| `DB_HOST`                   | `localhost`                         | PostgreSQL host.                                                    |
-| `DB_PORT`                   | `5432`                              | PostgreSQL port.                                                    |
-| `DB_NAME`                   | `video_semantic_search`             | PostgreSQL database name.                                           |
-| `DB_USER`                   | `postgres`                          | PostgreSQL username.                                                |
-| `DB_PASSWORD`               | `postgres`                          | PostgreSQL password.                                                |
-| `DB_QUERY_MODE`             | `postgres`                          | Runtime search backend: `postgres`, `sqlserver`, or `both`.         |
-| `PIPELINE_INGEST_TARGET`    | `postgres`                          | Video ingestion target: `postgres`, `sqlserver`, `both`, or `none`. |
-| `TEXT_EMBEDDING_MODEL`      | `Qwen/Qwen3-Embedding-0.6B`         | Text embedding model.                                               |
-| `VISION_EMBEDDING_MODEL`    | `google/siglip2-so400m-patch14-384` | Visual embedding model.                                             |
-| `VISUAL_ENRICHMENT_ENABLED` | `true`                              | Enables OCR/caption/object enrichment.                              |
-| `VISUAL_ENRICHMENT_MODEL`   | `Qwen/Qwen2.5-VL-7B-Instruct`       | Vision-language enrichment model.                                   |
-| `SHARED_LLM_MODEL`          | `Qwen/Qwen2.5-1.5B-Instruct`        | Shared local LLM for QA/reranking helpers.                          |
-| `JWT_SECRET`                | process-local random value          | JWT signing key. Set a stable secret outside development.           |
-| `JWT_EXPIRE_HOURS`          | `24`                                | Access token lifetime.                                              |
-| `CORS_ORIGINS`              | localhost API origins               | Comma-separated browser origins allowed to call the API.            |
-| `AUTH_COOKIE_SECURE`        | `0`                                 | Set to `1` when serving over HTTPS so auth cookies are Secure.      |
-| `ATLAS_BOOTSTRAP_ADMIN_USER` | `admin`                            | Username for the first admin account when bootstrapping.            |
-| `ATLAS_BOOTSTRAP_ADMIN_PASSWORD` | unset                          | Required to create the first admin account automatically.           |
-| `MAX_DOCUMENT_UPLOAD_MB`    | `100`                               | Maximum accepted document upload size.                              |
+| Variable                         | Default                             | Purpose                                                                          |
+| -------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
+| `DB_HOST`                        | `localhost`                         | PostgreSQL host.                                                                 |
+| `DB_PORT`                        | `5432`                              | PostgreSQL port.                                                                 |
+| `DB_NAME`                        | `video_semantic_search`             | PostgreSQL database name.                                                        |
+| `DB_USER`                        | `postgres`                          | PostgreSQL username.                                                             |
+| `DB_PASSWORD`                    | `postgres`                          | PostgreSQL password.                                                             |
+| `DB_QUERY_MODE`                  | `postgres`                          | Runtime search backend: `postgres`, `sqlserver`, or `both`.                      |
+| `PIPELINE_INGEST_TARGET`         | `postgres`                          | Video ingestion target: `postgres`, `sqlserver`, `both`, or `none`.              |
+| `TEXT_EMBEDDING_MODEL`           | `Qwen/Qwen3-Embedding-0.6B`         | Text embedding model.                                                            |
+| `VISION_EMBEDDING_MODEL`         | `google/siglip2-so400m-patch14-384` | Visual embedding model. If changed, validate vector dimensions before ingesting. |
+| `VISUAL_ENRICHMENT_ENABLED`      | `true`                              | Enables OCR/caption/object enrichment.                                           |
+| `VISUAL_ENRICHMENT_MODEL`        | `Qwen/Qwen2.5-VL-7B-Instruct`       | Vision-language enrichment model.                                                |
+| `SHARED_LLM_MODEL`               | `Qwen/Qwen2.5-1.5B-Instruct`        | Shared local LLM for QA/reranking helpers.                                       |
+| `JWT_SECRET`                     | process-local random value          | JWT signing key. Set a stable secret outside development.                        |
+| `JWT_EXPIRE_HOURS`               | `24`                                | Access token lifetime.                                                           |
+| `CORS_ORIGINS`                   | localhost API origins               | Comma-separated browser origins allowed to call the API.                         |
+| `AUTH_COOKIE_SECURE`             | `0`                                 | Set to `1` when serving over HTTPS so auth cookies are Secure.                   |
+| `ATLAS_BOOTSTRAP_ADMIN_USER`     | `admin`                             | Username for the first admin account when bootstrapping.                         |
+| `ATLAS_BOOTSTRAP_ADMIN_PASSWORD` | unset                               | Required to create the first admin account automatically.                        |
+| `MAX_DOCUMENT_UPLOAD_MB`         | `100`                               | Maximum accepted document upload size.                                           |
 
 ### Search and Ranking Variables
 
@@ -532,6 +548,7 @@ The PostgreSQL schema uses pgvector HNSW indexes for vector similarity and GIN i
 - Do not commit `.env`, local media, database dumps, checkpoints, processed outputs, or private documents.
 - Set `CORS_ORIGINS` to the exact UI origins allowed to call the API.
 - Keep model names and embedding dimensions aligned between ingestion, schemas, and search runtime. If changing text embedding dimensions, rebuild or migrate vector columns accordingly.
+- Keep SQL Server and PostgreSQL model settings aligned. SQL Server ingestion now reads the shared `VISION_EMBEDDING_MODEL` default, but existing SQL Server schemas may still need vector-dimension changes.
 - Use external storage for large datasets and model checkpoints. GitHub repositories should stay small and source-focused.
 - Treat query logs, feedback, source videos, transcripts, and documents as potentially sensitive data.
 

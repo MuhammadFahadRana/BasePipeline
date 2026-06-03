@@ -41,17 +41,17 @@ The schema is idempotent (`IF NOT EXISTS` patterns), so it can be re-run safely.
 Run from repository root:
 
 ```powershell
-sqlcmd -S "LAPTOP-GMO7MPTH\SQLEXPRESS" -E -N o -i "database\SQL\05_run_all.sql" -b
+sqlcmd -S "localhost\SQLEXPRESS" -E -N o -i "database\SQL\05_run_all.sql" -b
 ```
 
 Clean rebuild:
 
 ```powershell
-sqlcmd -S "LAPTOP-GMO7MPTH\SQLEXPRESS" -E -N o -i "database\SQL\00_recreate_database.sql" -b
-sqlcmd -S "LAPTOP-GMO7MPTH\SQLEXPRESS" -E -N o -i "database\SQL\01_schema_sqlserver.sql" -b
-sqlcmd -S "LAPTOP-GMO7MPTH\SQLEXPRESS" -E -N o -i "database\SQL\02_document_schema_sqlserver.sql" -b
-sqlcmd -S "LAPTOP-GMO7MPTH\SQLEXPRESS" -E -N o -i "database\SQL\03_schema_training_sqlserver.sql" -b
-sqlcmd -S "LAPTOP-GMO7MPTH\SQLEXPRESS" -E -N o -i "database\SQL\04_apply_optimizations_sqlserver.sql" -b
+sqlcmd -S "localhost\SQLEXPRESS" -E -N o -i "database\SQL\00_recreate_database.sql" -b
+sqlcmd -S "localhost\SQLEXPRESS" -E -N o -i "database\SQL\01_schema_sqlserver.sql" -b
+sqlcmd -S "localhost\SQLEXPRESS" -E -N o -i "database\SQL\02_document_schema_sqlserver.sql" -b
+sqlcmd -S "localhost\SQLEXPRESS" -E -N o -i "database\SQL\03_schema_training_sqlserver.sql" -b
+sqlcmd -S "localhost\SQLEXPRESS" -E -N o -i "database\SQL\04_apply_optimizations_sqlserver.sql" -b
 ```
 
 If local SQL setup requires trust cert mode, add `-C`.
@@ -59,7 +59,7 @@ If local SQL setup requires trust cert mode, add `-C`.
 ## Run From SSMS
 
 1. Open each script in order.
-2. Ensure target instance is `LAPTOP-GMO7MPTH\SQLEXPRESS`.
+2. Ensure target instance is your SQL Server instance, for example `localhost\SQLEXPRESS`.
 3. Execute:
    - `00_create_or_reuse_database.sql` (or `00_recreate_database.sql`)
    - `01_schema_sqlserver.sql`
@@ -114,7 +114,7 @@ pip install pyodbc
 If needed, set env vars before running Python helpers:
 
 ```powershell
-$env:MSSQL_SERVER = "LAPTOP-GMO7MPTH\SQLEXPRESS"
+$env:MSSQL_SERVER = "localhost\SQLEXPRESS"
 $env:MSSQL_DATABASE = "VideoSemanticDB"
 $env:TEXT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-8B"
 $env:SEARCH_QUERY_TRANSLATION_ENABLED = "1"
@@ -144,7 +144,7 @@ $env:MSSQL_ALLOW_DB_ENV_FALLBACK = "yes"
 For existing databases, apply projection tables without rebuilding:
 
 ```powershell
-sqlcmd -S "LAPTOP-GMO7MPTH\SQLEXPRESS" -E -N o -i "database\SQL\06_add_projection_tables_sqlserver.sql" -b
+sqlcmd -S "localhost\SQLEXPRESS" -E -N o -i "database\SQL\06_add_projection_tables_sqlserver.sql" -b
 ```
 
 ## Slurm / No-ODBC Setup

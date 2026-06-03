@@ -30,12 +30,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from database.SQL.mssql_connection import engine, test_connection
 from embeddings.text_embeddings import get_default_embedding_model, get_embedding_generator
-from embeddings.vision_embeddings import get_vision_embedding_generator
+from embeddings.vision_embeddings import (
+    get_default_vision_embedding_model,
+    get_vision_embedding_generator,
+)
 
 DEFAULT_TEXT_MODEL = get_default_embedding_model()
-DEFAULT_VISION_MODEL = os.getenv(
-    "VISION_EMBEDDING_MODEL", "google/siglip2-base-patch16-224"
-)
+DEFAULT_VISION_MODEL = get_default_vision_embedding_model()
 DEFAULT_TEXT_DEVICE = os.getenv("TEXT_EMBEDDING_DEVICE", "auto")
 DEFAULT_VISION_DEVICE = os.getenv("VISION_EMBEDDING_DEVICE", "auto")
 DEFAULT_TEXT_PROJECTION_DIM = int(os.getenv("MSSQL_TEXT_PROJECTION_DIM", "1024"))

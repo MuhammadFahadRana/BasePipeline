@@ -47,7 +47,6 @@ from api.auth import (
     get_current_user,
     require_admin,
     get_video_category,
-    user_can_access_video,
     get_user_allowed_categories,
 )
 import traceback
@@ -479,6 +478,22 @@ def _translate_text_via_mymemory(text: str, target: str, source: str = "auto") -
         return text
 
 
+def _get_effective_video_category(video: Video) -> str:
+    """Return the DB-assigned video category, falling back to legacy filename rules."""
+    category_rel = getattr(video, "category_rel", None)
+    if category_rel and getattr(category_rel, "name", None):
+        return str(category_rel.name)
+    return get_video_category(str(video.filename))
+
+
+def _user_can_access_video_row(user: User, video: Video) -> bool:
+    """Return True when a user may access a video row."""
+    allowed_cats = get_user_allowed_categories(user)
+    if allowed_cats is None:  # admin
+        return True
+    return _get_effective_video_category(video) in allowed_cats
+
+
 def _get_allowed_filenames(user: User, db: Session) -> Optional[set]:
     """Return the set of video filenames the user may see, or None for admins (=all)."""
     allowed_cats = get_user_allowed_categories(user)
@@ -486,7 +501,7 @@ def _get_allowed_filenames(user: User, db: Session) -> Optional[set]:
         return None
     all_videos = db.query(Video).all()
     return {
-        v.filename for v in all_videos if get_video_category(v.filename) in allowed_cats
+        v.filename for v in all_videos if _get_effective_video_category(v) in allowed_cats
     }
 
 
@@ -594,7 +609,7 @@ def _get_accessible_available_videos(
     visible_videos: List[tuple[Video, Path]] = []
 
     for video in db.query(Video).all():
-        if allowed_cats is not None and get_video_category(video.filename) not in allowed_cats:
+        if allowed_cats is not None and _get_effective_video_category(video) not in allowed_cats:
             continue
 
         resolved_path = _resolve_video_file_path(video.file_path)
@@ -1524,6 +1539,7 @@ EMBEDDING_MODELS = [
 ]
 
 VISION_MODELS = [
+    {"id": "siglip2-so400m", "label": "google/siglip2-so400m-patch14-384"},
     {"id": "siglip2-base", "label": "google/siglip2-base-patch16-224"},
     {"id": "siglip-base", "label": "google/siglip-base-patch16-224"},
     {"id": "clip-vit-b32", "label": "CLIP ViT-B/32 (OpenAI)"},
@@ -1997,7 +2013,7 @@ async def stream_video(
         raise HTTPException(status_code=404, detail="Video not found")
 
     # Access control: check category
-    if not user_can_access_video(user, video.filename):
+    if not _user_can_access_video_row(user, video):
         raise HTTPException(status_code=403, detail="Access denied to this video")
 
     resolved_path = _resolve_video_file_path(video.file_path)
@@ -2101,7 +2117,7 @@ async def transcode_video(
         raise HTTPException(status_code=404, detail="Video not found")
 
     # Security check: can user access this video's category?
-    if not user_can_access_video(user, video.filename):
+    if not _user_can_access_video_row(user, video):
         raise HTTPException(
             status_code=403, detail="You do not have permission to access this video"
         )
@@ -3763,7 +3779,7 @@ async def get_video_thumbnail(
     video = db.query(Video).filter(Video.id == video_id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-    if not user_can_access_video(user, str(video.filename)):
+    if not _user_can_access_video_row(user, video):
         raise HTTPException(status_code=403, detail="Not authorized for this video")
 
     scene = (
@@ -3828,7 +3844,7 @@ async def serve_keyframe(
                 scene = candidate
                 break
 
-    if scene is None or not user_can_access_video(user, str(scene.video.filename)):
+    if scene is None or not _user_can_access_video_row(user, scene.video):
         raise HTTPException(status_code=403, detail="Not authorized for this keyframe")
 
     return FileResponse(str(keyframe_path), media_type=_media_type_for_image(keyframe_path))
