@@ -6,6 +6,8 @@ Hugging Face vision-language models that support image-text generation.
 """
 
 import torch
+import argparse
+import fnmatch
 import json
 import os
 import re
@@ -758,13 +760,456 @@ class VisualFeatureExtractor:
             out.append(label)
         return list(dict.fromkeys(out))
 
+
+def _has_text(value: Any) -> bool:
+    """Return True when a scene field contains meaningful text."""
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return False
+    return text.lower() not in {"none", "null", "n/a", "na", "no text"}
+
+
+def _has_labels(value: Any) -> bool:
+    """Return True when object_labels has at least one meaningful tag."""
+    if not isinstance(value, list):
+        return False
+    return any(_has_text(str(item)) for item in value)
+
+
+def _scene_needs_visual_features(scene: Dict[str, Any], force: bool = False) -> bool:
+    """Process scenes that do not already have caption + object labels."""
+    if force:
+        return True
+    return not (_has_text(scene.get("caption")) and _has_labels(scene.get("object_labels")))
+
+
+def _scene_json_stem(scene_json_path: Path) -> str:
+    stem = scene_json_path.stem
+    if stem.endswith("_scenes"):
+        return stem[: -len("_scenes")]
+    return stem
+
+
+def _resolve_keyframe_path(
+    scene: Dict[str, Any],
+    scene_json_path: Path,
+    project_root: Path,
+) -> Optional[Path]:
+    """Resolve keyframe paths stored either repo-relative or JSON-folder-relative."""
+    candidates: List[Path] = []
+    raw_path = scene.get("keyframe_path") or scene.get("keyframe") or scene.get("image_path")
+
+    if raw_path:
+        path = Path(str(raw_path))
+        if path.is_absolute():
+            candidates.append(path)
+        else:
+            candidates.extend(
+                [
+                    project_root / path,
+                    scene_json_path.parent / path,
+                    Path.cwd() / path,
+                ]
+            )
+
+    scene_id = scene.get("scene_id")
+    if scene_id is not None:
+        base = _scene_json_stem(scene_json_path)
+        for suffix in (".jpg", ".jpeg", ".png"):
+            candidates.append(scene_json_path.parent / f"{base}_scene_{scene_id}{suffix}")
+
+    seen = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            resolved = candidate
+        key = str(resolved).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if resolved.exists() and resolved.is_file():
+            return resolved
+    return None
+
+
+def _find_scene_jsons(scenes_root: Path, pattern: str) -> List[Path]:
+    if not scenes_root.exists():
+        raise FileNotFoundError(f"Scenes root not found: {scenes_root}")
+    if not scenes_root.is_dir():
+        raise NotADirectoryError(f"Scenes root is not a directory: {scenes_root}")
+
+    matches = list(scenes_root.glob(pattern))
+    matches.extend(scenes_root.glob(f"*/{pattern}"))
+    unique = {str(path.resolve()).lower(): path for path in matches if path.is_file()}
+    return sorted(unique.values(), key=lambda p: str(p).lower())
+
+
+def _filter_scene_jsons(scene_jsons: List[Path], selectors: List[str]) -> List[Path]:
+    if not selectors:
+        return scene_jsons
+
+    selected: List[Path] = []
+    for scene_json in scene_jsons:
+        video_name = scene_json.parent.name
+        json_name = scene_json.name
+        haystacks = [video_name.lower(), json_name.lower()]
+        for selector in selectors:
+            needle = selector.lower()
+            if any(fnmatch.fnmatch(h, needle) or needle in h for h in haystacks):
+                selected.append(scene_json)
+                break
+    return selected
+
+
+def _resolve_shard_from_env(
+    shard_index: Optional[int],
+    num_shards: Optional[int],
+) -> Tuple[Optional[int], Optional[int]]:
+    """Use Slurm array env vars when explicit sharding flags are omitted."""
+    if shard_index is not None and num_shards is not None:
+        return shard_index, num_shards
+
+    task_id = os.getenv("SLURM_ARRAY_TASK_ID")
+    task_count = os.getenv("SLURM_ARRAY_TASK_COUNT")
+    task_min = os.getenv("SLURM_ARRAY_TASK_MIN", "0")
+
+    if shard_index is None and task_id is not None:
+        try:
+            shard_index = int(task_id) - int(task_min)
+        except ValueError:
+            shard_index = None
+
+    if num_shards is None and task_count is not None:
+        try:
+            num_shards = int(task_count)
+        except ValueError:
+            num_shards = None
+
+    return shard_index, num_shards
+
+
+def _apply_shard(
+    scene_jsons: List[Path],
+    shard_index: Optional[int],
+    num_shards: Optional[int],
+) -> Tuple[List[Path], Optional[int], Optional[int]]:
+    shard_index, num_shards = _resolve_shard_from_env(shard_index, num_shards)
+    if num_shards is None or num_shards <= 1:
+        return scene_jsons, shard_index, num_shards
+    if shard_index is None:
+        raise ValueError("--num-shards requires --shard-index")
+    if shard_index < 0 or shard_index >= num_shards:
+        raise ValueError(
+            f"Shard index {shard_index} is outside 0..{num_shards - 1}"
+        )
+
+    selected = [
+        scene_json
+        for idx, scene_json in enumerate(scene_jsons)
+        if idx % num_shards == shard_index
+    ]
+    return selected, shard_index, num_shards
+
+
+def _atomic_write_json(path: Path, data: Any) -> None:
+    tmp_path = path.with_name(path.name + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+    os.replace(tmp_path, path)
+
+
+def _merge_visual_result(
+    scene: Dict[str, Any],
+    result: Dict[str, Any],
+    force: bool = False,
+) -> Tuple[bool, int]:
+    """Merge non-empty model outputs without erasing existing useful values."""
+    changed = False
+
+    caption = result.get("caption")
+    if _has_text(caption) and (force or not _has_text(scene.get("caption"))):
+        new_caption = str(caption).strip()
+        if scene.get("caption") != new_caption:
+            scene["caption"] = new_caption
+            changed = True
+
+    labels = VisualFeatureExtractor._clean_labels(result.get("object_labels") or [])
+    if labels and (force or not _has_labels(scene.get("object_labels"))):
+        if scene.get("object_labels") != labels:
+            scene["object_labels"] = labels
+            changed = True
+
+    ocr_text = result.get("ocr_text")
+    if _has_text(ocr_text) and (force or not _has_text(scene.get("ocr_text"))):
+        new_ocr = str(ocr_text).strip()
+        if scene.get("ocr_text") != new_ocr:
+            scene["ocr_text"] = new_ocr
+            changed = True
+
+    return changed, len(labels)
+
+
+def process_scene_tree(args: argparse.Namespace) -> Dict[str, Any]:
+    project_root = Path.cwd().resolve()
+    scenes_root = Path(args.scenes_root).expanduser()
+    if not scenes_root.is_absolute():
+        scenes_root = project_root / scenes_root
+    scenes_root = scenes_root.resolve()
+
+    scene_jsons = _find_scene_jsons(scenes_root, args.pattern)
+    scene_jsons = _filter_scene_jsons(scene_jsons, args.video)
+    scene_jsons, shard_index, num_shards = _apply_shard(
+        scene_jsons,
+        args.shard_index,
+        args.num_shards,
+    )
+    if args.limit_videos:
+        scene_jsons = scene_jsons[: args.limit_videos]
+
+    summary: Dict[str, Any] = {
+        "scenes_root": str(scenes_root),
+        "videos_selected": len(scene_jsons),
+        "videos_processed": 0,
+        "scenes_total": 0,
+        "scenes_pending": 0,
+        "scenes_processed": 0,
+        "scenes_changed": 0,
+        "scenes_skipped": 0,
+        "missing_keyframes": 0,
+        "model_empty_labels": 0,
+        "errors": 0,
+    }
+    if num_shards and num_shards > 1:
+        summary["shard_index"] = shard_index
+        summary["num_shards"] = num_shards
+
+    work_items: List[Tuple[Path, List[Dict[str, Any]], List[int]]] = []
+    for scene_json in scene_jsons:
+        with scene_json.open("r", encoding="utf-8") as handle:
+            scenes = json.load(handle)
+        if not isinstance(scenes, list):
+            print(f"Skipping non-list scene JSON: {scene_json}")
+            continue
+
+        pending = [
+            idx
+            for idx, scene in enumerate(scenes)
+            if isinstance(scene, dict) and _scene_needs_visual_features(scene, args.force)
+        ]
+        if args.limit_scenes:
+            pending = pending[: args.limit_scenes]
+
+        summary["scenes_total"] += len(scenes)
+        summary["scenes_pending"] += len(pending)
+        summary["scenes_skipped"] += max(0, len(scenes) - len(pending))
+        work_items.append((scene_json, scenes, pending))
+
+    print(f"Scenes root: {scenes_root}")
+    print(f"Video JSONs selected: {summary['videos_selected']}")
+    if num_shards and num_shards > 1:
+        print(f"Shard: {shard_index}/{num_shards}")
+    print(f"Scenes total: {summary['scenes_total']}")
+    print(f"Scenes pending: {summary['scenes_pending']}")
+
+    if args.dry_run:
+        print("Dry run only; model was not loaded and no files were changed.")
+        return summary
+
+    if not work_items:
+        print("No scene JSON files matched the request.")
+        return summary
+
+    extractor = VisualFeatureExtractor(
+        model_name=args.model,
+        device=args.device,
+        load_in_4bit=args.load_in_4bit,
+        trust_remote_code=args.trust_remote_code,
+        torch_dtype=args.torch_dtype,
+    )
+
+    for video_idx, (scene_json, scenes, pending) in enumerate(work_items, start=1):
+        video_name = scene_json.parent.name
+        print(
+            f"\n[{video_idx}/{len(work_items)}] {video_name}: "
+            f"{len(scenes)} scenes, {len(pending)} pending"
+        )
+        if not pending:
+            summary["videos_processed"] += 1
+            continue
+
+        changed_since_save = 0
+        for pending_idx, scene_idx in enumerate(pending, start=1):
+            scene = scenes[scene_idx]
+            keyframe_path = _resolve_keyframe_path(scene, scene_json, project_root)
+            if keyframe_path is None:
+                summary["missing_keyframes"] += 1
+                print(
+                    f"  Missing keyframe for scene {scene.get('scene_id', scene_idx)} "
+                    f"in {video_name}"
+                )
+                continue
+
+            print(
+                f"  [{pending_idx}/{len(pending)}] scene "
+                f"{scene.get('scene_id', scene_idx)}"
+            )
+            try:
+                result = extractor.analyze_image(keyframe_path)
+                changed, label_count = _merge_visual_result(scene, result, args.force)
+                summary["scenes_processed"] += 1
+                if label_count == 0:
+                    summary["model_empty_labels"] += 1
+                if changed:
+                    summary["scenes_changed"] += 1
+                    changed_since_save += 1
+            except Exception as exc:
+                summary["errors"] += 1
+                print(
+                    f"  Warning: failed scene {scene.get('scene_id', scene_idx)} "
+                    f"in {video_name}: {exc}"
+                )
+                continue
+
+            if changed_since_save and args.save_every > 0:
+                if changed_since_save >= args.save_every:
+                    _atomic_write_json(scene_json, scenes)
+                    print(f"  Saved progress to {scene_json}")
+                    changed_since_save = 0
+
+        if changed_since_save:
+            _atomic_write_json(scene_json, scenes)
+            print(f"  Saved {scene_json}")
+        summary["videos_processed"] += 1
+
+    if args.summary_path:
+        summary_path = Path(args.summary_path)
+        if not summary_path.is_absolute():
+            summary_path = project_root / summary_path
+        _atomic_write_json(summary_path, summary)
+        print(f"\nSummary written to {summary_path}")
+
+    print("\nBatch visual extraction summary:")
+    for key, value in summary.items():
+        print(f"  {key}: {value}")
+    return summary
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Extract captions, object labels, and OCR text for one image or for "
+            "all per-video scene JSON files under processed/scenes."
+        )
+    )
+    parser.add_argument(
+        "image",
+        nargs="?",
+        help="Single image path. If this is a directory, it is treated as --scenes-root.",
+    )
+    parser.add_argument(
+        "--scenes-root",
+        help="Root folder containing per-video scene folders, e.g. processed/scenes.",
+    )
+    parser.add_argument(
+        "--pattern",
+        default="*_scenes.json",
+        help="Scene JSON glob pattern inside each video folder.",
+    )
+    parser.add_argument(
+        "--video",
+        action="append",
+        default=[],
+        help="Only process matching video folder/json names. Supports substrings or globs; repeatable.",
+    )
+    parser.add_argument("--limit-videos", type=int, default=0)
+    parser.add_argument("--limit-scenes", type=int, default=0)
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-run scenes even when caption and object_labels already exist.",
+    )
+    parser.add_argument(
+        "--save-every",
+        type=int,
+        default=25,
+        help="Save each scene JSON after this many changed scenes; 0 saves only at video end.",
+    )
+    parser.add_argument(
+        "--shard-index",
+        type=int,
+        default=None,
+        help="Zero-based shard index for Slurm arrays. Defaults to SLURM_ARRAY_TASK_ID - SLURM_ARRAY_TASK_MIN.",
+    )
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=None,
+        help="Number of shards for Slurm arrays. Defaults to SLURM_ARRAY_TASK_COUNT.",
+    )
+    parser.add_argument("--summary-path", help="Optional JSON path for the batch summary.")
+    parser.add_argument("--dry-run", action="store_true", help="Count work without loading the model.")
+    parser.add_argument("--model", default=VisualFeatureExtractor.DEFAULT_MODEL)
+    parser.add_argument("--device", default="auto", help='"auto", "cuda", or "cpu".')
+    parser.add_argument("--torch-dtype", default="auto", help='"auto", "bf16", "fp16", or "fp32".')
+    parser.add_argument(
+        "--load-in-4bit",
+        dest="load_in_4bit",
+        action="store_true",
+        default=True,
+        help="Use 4-bit quantization when available. Enabled by default.",
+    )
+    parser.add_argument(
+        "--no-4bit",
+        dest="load_in_4bit",
+        action="store_false",
+        help="Disable 4-bit quantization.",
+    )
+    parser.add_argument(
+        "--trust-remote-code",
+        dest="trust_remote_code",
+        action="store_true",
+        default=True,
+    )
+    parser.add_argument(
+        "--no-trust-remote-code",
+        dest="trust_remote_code",
+        action="store_false",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+
+    if args.scenes_root is None and args.image:
+        maybe_root = Path(args.image)
+        if maybe_root.exists() and maybe_root.is_dir():
+            args.scenes_root = args.image
+            args.image = None
+
+    if args.scenes_root:
+        process_scene_tree(args)
+        return
+
+    if args.image:
+        extractor = VisualFeatureExtractor(
+            model_name=args.model,
+            device=args.device,
+            load_in_4bit=args.load_in_4bit,
+            trust_remote_code=args.trust_remote_code,
+            torch_dtype=args.torch_dtype,
+        )
+        result = extractor.analyze_image(args.image)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    print("Usage: python extract_visual_features.py <path_to_image>")
+    print("   or: python extract_visual_features.py --scenes-root processed/scenes")
+
+
 if __name__ == "__main__":
-    # Test script if run directly
-    import sys
-    if len(sys.argv) > 1:
-        img_path = sys.argv[1]
-        extractor = VisualFeatureExtractor(load_in_4bit=True)
-        result = extractor.analyze_image(img_path)
-        print(json.dumps(result, indent=2))
-    else:
-        print("Usage: python extract_visual_features.py <path_to_image>")
+    main()
