@@ -56,7 +56,7 @@ class VisualFeatureExtractor:
         device: str = "auto",
         load_in_4bit: bool = False,
         trust_remote_code: bool = True,
-        torch_dtype: str = "auto",
+        torch_dtype: str = "fp32",
     ):
         """
         Initialize visual feature extractor.
@@ -125,7 +125,7 @@ class VisualFeatureExtractor:
                     bnb_4bit_use_double_quant=True,
                 )
             except ImportError:
-                print("Warning: bitsandbytes not installed. Falling back to FP16.")
+                print("Warning: bitsandbytes not installed. Loading without 4-bit quantization.")
                 self.load_in_4bit = False
 
         self.processor = AutoProcessor.from_pretrained(self.model_name, trust_remote_code=trust_remote_code)
@@ -1154,13 +1154,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Count work without loading the model.")
     parser.add_argument("--model", default=VisualFeatureExtractor.DEFAULT_MODEL)
     parser.add_argument("--device", default="auto", help='"auto", "cuda", or "cpu".')
-    parser.add_argument("--torch-dtype", default="auto", help='"auto", "bf16", "fp16", or "fp32".')
+    parser.add_argument("--torch-dtype", default="fp32", help='"auto", "bf16", "fp16", or "fp32".')
     parser.add_argument(
         "--load-in-4bit",
         dest="load_in_4bit",
         action="store_true",
-        default=True,
-        help="Use 4-bit quantization when available. Enabled by default.",
+        default=False,
+        help="Use 4-bit quantization when available. Disabled by default.",
     )
     parser.add_argument(
         "--no-4bit",

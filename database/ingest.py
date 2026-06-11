@@ -92,6 +92,7 @@ class DataIngester:
                 model_name=self.visual_enrichment_model,
                 device=device,
                 load_in_4bit=load_in_4bit,
+                torch_dtype=os.getenv("VISUAL_ENRICHMENT_DTYPE", "fp32"),
             )
         except Exception as exc:
             print(f"Warning: visual enricher unavailable: {exc}")

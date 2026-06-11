@@ -83,7 +83,8 @@ class SceneConfig:
     # Visual Enrichment (Qwen2.5-VL) - primary enrichment: captions, object labels, OCR
     enable_visual_enrichment: bool = True
     qwen_vl_model: str = "Qwen/Qwen2.5-VL-7B-Instruct"
-    qwen_vl_load_in_4bit: bool = True
+    qwen_vl_load_in_4bit: bool = False
+    qwen_vl_torch_dtype: str = "fp32"
 
     # Format conversion
     ffmpeg_path: str = "ffmpeg"  # assumes ffmpeg is on PATH
@@ -182,6 +183,7 @@ class SceneDetector:
                         model_name=model_name,
                         device=self.config.get_device(),
                         load_in_4bit=self.config.qwen_vl_load_in_4bit,
+                        torch_dtype=self.config.qwen_vl_torch_dtype,
                     )
                     self.config.qwen_vl_model = model_name
                     last_error = None

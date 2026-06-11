@@ -270,6 +270,8 @@ TEXT_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
 VISION_EMBEDDING_MODEL=google/siglip2-so400m-patch14-384
 VISUAL_ENRICHMENT_ENABLED=true
 VISUAL_ENRICHMENT_MODEL=Qwen/Qwen2.5-VL-7B-Instruct
+VISUAL_ENRICHMENT_LOAD_IN_4BIT=false
+VISUAL_ENRICHMENT_DTYPE=fp32
 
 JWT_SECRET=replace-with-a-long-random-secret
 JWT_EXPIRE_HOURS=24
@@ -357,6 +359,8 @@ Unset `ATLAS_BOOTSTRAP_ADMIN_PASSWORD` after the first successful startup.
 | `VISION_EMBEDDING_MODEL`         | `google/siglip2-so400m-patch14-384` | Visual embedding model. If changed, validate vector dimensions before ingesting. |
 | `VISUAL_ENRICHMENT_ENABLED`      | `true`                              | Enables OCR/caption/object enrichment.                                           |
 | `VISUAL_ENRICHMENT_MODEL`        | `Qwen/Qwen2.5-VL-7B-Instruct`       | Vision-language enrichment model.                                                |
+| `VISUAL_ENRICHMENT_LOAD_IN_4BIT` | `false`                             | Enables 4-bit quantization for the visual enrichment model when explicitly set.  |
+| `VISUAL_ENRICHMENT_DTYPE`        | `fp32`                              | Torch dtype for the visual enrichment model.                                     |
 | `SHARED_LLM_MODEL`               | `Qwen/Qwen2.5-1.5B-Instruct`        | Shared local LLM for QA/reranking helpers.                                       |
 | `JWT_SECRET`                     | process-local random value          | JWT signing key. Set a stable secret outside development.                        |
 | `JWT_EXPIRE_HOURS`               | `24`                                | Access token lifetime.                                                           |

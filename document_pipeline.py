@@ -71,7 +71,7 @@ class DocumentPipeline:
         enrichment_model: Optional[str] = None,
         enrichment_load_in_4bit: Optional[bool] = None,
         enrichment_device: str = "auto",
-        enrichment_dtype: str = "auto",
+        enrichment_dtype: str = "fp32",
         enrichment_trust_remote_code: Optional[bool] = None,
     ):
         self.force_ocr = force_ocr
@@ -431,7 +431,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--enrichment-dtype",
         type=str,
-        default="auto",
+        default="fp32",
         choices=["auto", "bf16", "fp16", "fp32", "bfloat16", "float16", "float32"],
         help="Torch dtype for enrichment model",
     )

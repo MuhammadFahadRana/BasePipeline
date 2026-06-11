@@ -25,7 +25,7 @@ class DocumentEnricher:
         load_in_4bit: Optional[bool] = None,
         device: str = "auto",
         trust_remote_code: Optional[bool] = None,
-        torch_dtype: str = "auto",
+        torch_dtype: str = "fp32",
     ):
         self.enabled = _env_bool("VISUAL_ENRICHMENT_ENABLED", True)
         self.model_name = model_name or os.getenv(
